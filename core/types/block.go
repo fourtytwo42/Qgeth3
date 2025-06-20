@@ -93,6 +93,13 @@ type Header struct {
 
 	// ParentBeaconRoot was added by EIP-4788 and is ignored in legacy headers.
 	ParentBeaconRoot *common.Hash `json:"parentBeaconBlockRoot" rlp:"optional"`
+
+	// Quantum micro-puzzle fields for QMPoW consensus
+	QBits    *uint8  `json:"qBits" rlp:"optional"`    // qubits per puzzle
+	TCount   *uint16 `json:"tCount" rlp:"optional"`   // T gates per puzzle
+	LUsed    *uint16 `json:"lUsed" rlp:"optional"`    // L_net when block was mined
+	QOutcome []byte  `json:"qOutcome" rlp:"optional"` // concatenated y₀…y_L-1
+	QProof   []byte  `json:"qProof" rlp:"optional"`   // aggregate Mahadev proof blob
 }
 
 // field type overrides for gencodec

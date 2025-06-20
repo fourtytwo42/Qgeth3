@@ -261,6 +261,7 @@ type CoreGethChainConfig struct {
 	Ethash    *ctypes.EthashConfig `json:"ethash,omitempty"`
 	Clique    *ctypes.CliqueConfig `json:"clique,omitempty"`
 	Lyra2     *ctypes.Lyra2Config  `json:"lyra2,omitempty"`
+	QMPoW     *ctypes.QMPoWConfig  `json:"qmpow,omitempty"`
 	IsDevMode bool                 `json:"isDev,omitempty"`
 
 	// TerminalTotalDifficulty is the amount of total difficulty reached by

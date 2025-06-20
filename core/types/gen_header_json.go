@@ -36,6 +36,11 @@ func (h Header) MarshalJSON() ([]byte, error) {
 		BlobGasUsed      *hexutil.Uint64 `json:"blobGasUsed" rlp:"optional"`
 		ExcessBlobGas    *hexutil.Uint64 `json:"excessBlobGas" rlp:"optional"`
 		ParentBeaconRoot *common.Hash    `json:"parentBeaconBlockRoot" rlp:"optional"`
+		QBits            *uint8          `json:"qBits" rlp:"optional"`
+		TCount           *uint16         `json:"tCount" rlp:"optional"`
+		LUsed            *uint16         `json:"lUsed" rlp:"optional"`
+		QOutcome         []byte          `json:"qOutcome" rlp:"optional"`
+		QProof           []byte          `json:"qProof" rlp:"optional"`
 		Hash             common.Hash     `json:"hash"`
 	}
 	var enc Header
@@ -59,6 +64,11 @@ func (h Header) MarshalJSON() ([]byte, error) {
 	enc.BlobGasUsed = (*hexutil.Uint64)(h.BlobGasUsed)
 	enc.ExcessBlobGas = (*hexutil.Uint64)(h.ExcessBlobGas)
 	enc.ParentBeaconRoot = h.ParentBeaconRoot
+	enc.QBits = h.QBits
+	enc.TCount = h.TCount
+	enc.LUsed = h.LUsed
+	enc.QOutcome = h.QOutcome
+	enc.QProof = h.QProof
 	enc.Hash = h.Hash()
 	return json.Marshal(&enc)
 }
@@ -86,6 +96,11 @@ func (h *Header) UnmarshalJSON(input []byte) error {
 		BlobGasUsed      *hexutil.Uint64 `json:"blobGasUsed" rlp:"optional"`
 		ExcessBlobGas    *hexutil.Uint64 `json:"excessBlobGas" rlp:"optional"`
 		ParentBeaconRoot *common.Hash    `json:"parentBeaconBlockRoot" rlp:"optional"`
+		QBits            *uint8          `json:"qBits" rlp:"optional"`
+		TCount           *uint16         `json:"tCount" rlp:"optional"`
+		LUsed            *uint16         `json:"lUsed" rlp:"optional"`
+		QOutcome         []byte          `json:"qOutcome" rlp:"optional"`
+		QProof           []byte          `json:"qProof" rlp:"optional"`
 	}
 	var dec Header
 	if err := json.Unmarshal(input, &dec); err != nil {
@@ -162,6 +177,21 @@ func (h *Header) UnmarshalJSON(input []byte) error {
 	}
 	if dec.ParentBeaconRoot != nil {
 		h.ParentBeaconRoot = dec.ParentBeaconRoot
+	}
+	if dec.QBits != nil {
+		h.QBits = dec.QBits
+	}
+	if dec.TCount != nil {
+		h.TCount = dec.TCount
+	}
+	if dec.LUsed != nil {
+		h.LUsed = dec.LUsed
+	}
+	if dec.QOutcome != nil {
+		h.QOutcome = dec.QOutcome
+	}
+	if dec.QProof != nil {
+		h.QProof = dec.QProof
 	}
 	return nil
 }
