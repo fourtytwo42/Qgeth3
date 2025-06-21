@@ -134,11 +134,13 @@ $miningArgs = @(
     "--miner.gasprice", "1000000000",
     "--miner.gaslimit", "8000000",
     "--http",
-    "--http.api", "eth,net,web3,personal,miner",
+    "--http.api", "eth,net,web3,personal,miner,qmpow",
     "--http.corsdomain", "*",
     "--allow-insecure-unlock",
     "--unlock", $etherbase,
-    "--password", $passwordFile
+    "--password", $passwordFile,
+    "--nodiscover",
+    "--maxpeers", "0"
 )
 
 if ($VerboseLogging) {
@@ -149,12 +151,13 @@ $commandStr = "$gethPath " + ($miningArgs -join " ")
 Write-Host "Command: $commandStr"
 
 Write-Host "`nQuantum Parameters:" -ForegroundColor Yellow
-Write-Host "  QBits: 8"
-Write-Host "  T-Gates: 25" 
-Write-Host "  Puzzles per block (L_net): 64"
+Write-Host "  QBits: 6 (lowered for testing)"
+Write-Host "  T-Gates: 15 (lowered for testing)" 
+Write-Host "  Puzzles per block (L_net): 20 (lowered for testing)"
 Write-Host "  Mining threads: $Threads"
 Write-Host "  Mining account: $etherbase"
 Write-Host "  Target block time: 12 seconds"
+Write-Host "  Peer discovery: DISABLED (local testnet)"
 
 Write-Host "`nPress Ctrl+C to stop mining" -ForegroundColor Yellow
 Write-Host "Monitor progress in the output below:" -ForegroundColor Yellow
