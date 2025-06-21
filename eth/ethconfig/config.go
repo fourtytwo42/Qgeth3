@@ -245,13 +245,13 @@ func CreateConsensusEngine(stack *node.Node, ethashConfig *ethash.Config, clique
 			"tcount", qmpowConfig.TCount,
 			"lnet", qmpowConfig.LNet,
 			"epochLen", qmpowConfig.EpochLen)
-		
+
 		config := qmpow.Config{
 			PowMode:  qmpow.ModeFake,
 			TestMode: true,
 		}
 		log.Info("🔬 DEBUG: Creating QMPoW engine", "powMode", config.PowMode, "testMode", config.TestMode)
-		
+
 		engine = qmpow.New(config)
 	} else if cliqueConfig != nil {
 		engine = clique.New(cliqueConfig, db)
@@ -263,5 +263,12 @@ func CreateConsensusEngine(stack *node.Node, ethashConfig *ethash.Config, clique
 		panic("No valid consensus engine configured")
 	}
 
+	// Return the engine directly for quantum blockchain (no beacon wrapper needed)
+	if qmpowConfig != nil {
+		log.Info("🔬 DEBUG: Returning QMPoW engine directly (bypassing beacon wrapper)")
+		return engine
+	}
+
+	// For other consensus engines, use beacon wrapper
 	return beacon.New(engine)
 }
