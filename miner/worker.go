@@ -751,9 +751,11 @@ func (w *worker) taskLoop() {
 // and flush relative data to the database.
 func (w *worker) resultLoop() {
 	defer w.wg.Done()
+	log.Info("🔄 ResultLoop started - ready to receive sealed blocks")
 	for {
 		select {
 		case block := <-w.resultCh:
+			log.Info("📥 ResultLoop received sealed block", "number", block.Number(), "hash", block.Hash().Hex()[:10])
 			// Short circuit when receiving empty result.
 			if block == nil {
 				continue
@@ -800,11 +802,13 @@ func (w *worker) resultLoop() {
 				logs = append(logs, receipt.Logs...)
 			}
 			// Commit block and state to database.
+			log.Info("🔗 Attempting to write quantum block to blockchain", "number", block.Number(), "hash", block.Hash().Hex()[:10])
 			_, err := w.chain.WriteBlockAndSetHead(block, receipts, logs, task.state, true)
 			if err != nil {
-				log.Error("Failed writing block to chain", "err", err)
+				log.Error("❌ Failed writing quantum block to chain", "err", err, "number", block.Number())
 				continue
 			}
+			log.Info("✅ Quantum block successfully written to blockchain", "number", block.Number())
 			log.Info("Successfully sealed new block", "number", block.Number(), "sealhash", sealhash, "hash", hash,
 				"elapsed", common.PrettyDuration(time.Since(task.createdAt)))
 
