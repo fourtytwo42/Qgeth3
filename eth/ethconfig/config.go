@@ -245,10 +245,14 @@ func CreateConsensusEngine(stack *node.Node, ethashConfig *ethash.Config, clique
 			"tcount", qmpowConfig.TCount,
 			"lnet", qmpowConfig.LNet,
 			"epochLen", qmpowConfig.EpochLen)
-		engine = qmpow.New(qmpow.Config{
+		
+		config := qmpow.Config{
 			PowMode:  qmpow.ModeFake,
 			TestMode: true,
-		})
+		}
+		log.Info("🔬 DEBUG: Creating QMPoW engine", "powMode", config.PowMode, "testMode", config.TestMode)
+		
+		engine = qmpow.New(config)
 	} else if cliqueConfig != nil {
 		engine = clique.New(cliqueConfig, db)
 	} else if lyra2Config != nil {

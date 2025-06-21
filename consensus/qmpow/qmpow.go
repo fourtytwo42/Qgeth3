@@ -329,8 +329,9 @@ func (q *QMPoW) SetThreads(threads int) {
 
 // verifyQuantumProof verifies the quantum proof in a block header
 func (q *QMPoW) verifyQuantumProof(chain consensus.ChainHeaderReader, header *types.Header) error {
-	if q.config.TestMode {
-		// In test mode, just verify the structure
+	if q.config.TestMode || q.config.PowMode == ModeFake {
+		// In test mode or fake mode, just verify the structure instantly
+		log.Info("🧪 Using INSTANT verification (test/fake mode)")
 		return q.verifyQuantumProofStructure(header)
 	}
 
@@ -374,10 +375,14 @@ func (q *QMPoW) verifyQuantumProofStructure(header *types.Header) error {
 
 // solveQuantumPuzzles generates quantum puzzle solutions (simplified for development)
 func (q *QMPoW) solveQuantumPuzzles(seed []byte, qbits uint8, tcount uint16, lnet uint16) ([]byte, []byte, error) {
+	log.Info("🔬 DEBUG: solveQuantumPuzzles called", "mode", q.config.PowMode, "testMode", q.config.TestMode)
+
 	if q.config.PowMode == ModeFake {
+		log.Info("🧪 Using ModeFake - generating instant fake quantum solution")
 		return q.generateFakeQuantumSolution(seed, qbits, tcount, lnet)
 	}
 
+	log.Info("🔬 Using simulation mode - this will be slow")
 	// For development, use deterministic simulation
 	return q.simulateQuantumSolver(seed, qbits, tcount, lnet)
 }
@@ -425,27 +430,31 @@ func (q *QMPoW) simulateQuantumSolver(seed []byte, qbits uint8, tcount uint16, l
 
 // generateFakeQuantumSolution generates fake quantum solution for testing
 func (q *QMPoW) generateFakeQuantumSolution(seed []byte, qbits uint8, tcount uint16, lnet uint16) ([]byte, []byte, error) {
-	log.Info("🧪 Generating fake quantum solution", "qbits", qbits, "tcount", tcount, "lnet", lnet)
+	log.Info("🧪 Generating INSTANT fake quantum solution", "qbits", qbits, "tcount", tcount, "lnet", lnet)
 
-	// Generate deterministic fake outcomes
-	h := sha256.New()
-	h.Write(seed)
-	h.Write([]byte("fake_quantum"))
-	digest := h.Sum(nil)
-
+	// Generate deterministic fake outcomes with minimal computation
 	outcomeLen := int(qbits+7) / 8
 	totalOutcomeLen := int(lnet) * outcomeLen
 	outcomes := make([]byte, totalOutcomeLen)
 
-	for i := 0; i < totalOutcomeLen; i++ {
-		outcomes[i] = digest[i%len(digest)]
+	// Use simple deterministic pattern based on seed (no hashing)
+	seedByte := byte(0x42) // Default pattern
+	if len(seed) > 0 {
+		seedByte = seed[0] // Use first byte of seed for determinism
 	}
 
-	// Generate fake proof
-	fakeProof := make([]byte, 64) // Fixed size fake proof
-	copy(fakeProof, digest[:])
+	// Fill outcomes with simple pattern
+	for i := 0; i < totalOutcomeLen; i++ {
+		outcomes[i] = seedByte ^ byte(i) // Simple XOR pattern
+	}
 
-	log.Info("🧪 Fake quantum solution generated", "outcomes_len", len(outcomes), "proof_len", len(fakeProof))
+	// Generate minimal fake proof (just 32 bytes)
+	fakeProof := make([]byte, 32)
+	for i := 0; i < 32; i++ {
+		fakeProof[i] = seedByte ^ byte(i+100) // Simple pattern
+	}
+
+	log.Info("🧪 INSTANT fake quantum solution generated", "outcomes_len", len(outcomes), "proof_len", len(fakeProof))
 	return outcomes, fakeProof, nil
 }
 
