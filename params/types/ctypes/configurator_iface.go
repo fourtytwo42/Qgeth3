@@ -302,6 +302,7 @@ type ConsensusEnginator interface {
 	EthashConfigurator
 	CliqueConfigurator
 	Lyra2Configurator
+	QMPoWConfigurator
 }
 
 type EthashConfigurator interface {
@@ -371,6 +372,11 @@ type CliqueConfigurator interface {
 type Lyra2Configurator interface {
 	GetLyra2NonceTransition() *uint64
 	SetLyra2NonceTransition(n *uint64) error
+}
+
+type QMPoWConfigurator interface {
+	// No additional configuration methods needed for QMPoW
+	// All parameters are handled through the QMPoWConfig struct
 }
 
 type BlockSealer interface {

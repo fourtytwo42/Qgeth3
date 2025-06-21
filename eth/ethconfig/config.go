@@ -239,45 +239,24 @@ type Config struct {
 func CreateConsensusEngine(stack *node.Node, ethashConfig *ethash.Config, cliqueConfig *ctypes.CliqueConfig, lyra2Config *lyra2.Config, qmpowConfig *ctypes.QMPoWConfig, notify []string, noverify bool, db ethdb.Database) consensus.Engine {
 	// If proof-of-authority is requested, set it up
 	var engine consensus.Engine
-	if cliqueConfig != nil {
+	if qmpowConfig != nil {
+		log.Info("🚀 Quantum Micro-Puzzle PoW (QMPoW) consensus engine activated",
+			"qbits", qmpowConfig.QBits,
+			"tcount", qmpowConfig.TCount,
+			"lnet", qmpowConfig.LNet,
+			"epochLen", qmpowConfig.EpochLen)
+		engine = qmpow.New(qmpow.Config{
+			PowMode:  qmpow.ModeFake,
+			TestMode: true,
+		})
+	} else if cliqueConfig != nil {
 		engine = clique.New(cliqueConfig, db)
 	} else if lyra2Config != nil {
 		engine = lyra2.New(lyra2Config, notify, noverify)
-	} else if qmpowConfig != nil {
-		engine = qmpow.New(qmpow.Config{
-			PowMode:  qmpow.ModeNormal,
-			TestMode: qmpowConfig.TestMode,
-		})
 	} else {
-		switch ethashConfig.PowMode {
-		case ethash.ModeFake:
-			log.Warn("Ethash used in fake mode")
-			engine = ethash.NewFaker()
-		case ethash.ModeTest:
-			log.Warn("Ethash used in test mode")
-			engine = ethash.NewTester(nil, noverify)
-		case ethash.ModeShared:
-			log.Warn("Ethash used in shared mode")
-			engine = ethash.NewShared()
-		case ethash.ModePoissonFake:
-			log.Warn("Ethash used in fake Poisson mode")
-			engine = ethash.NewPoissonFaker()
-		default:
-			engine = ethash.New(ethash.Config{
-				PowMode:          ethashConfig.PowMode,
-				CacheDir:         stack.ResolvePath(ethashConfig.CacheDir),
-				CachesInMem:      ethashConfig.CachesInMem,
-				CachesOnDisk:     ethashConfig.CachesOnDisk,
-				CachesLockMmap:   ethashConfig.CachesLockMmap,
-				DatasetDir:       ethashConfig.DatasetDir,
-				DatasetsInMem:    ethashConfig.DatasetsInMem,
-				DatasetsOnDisk:   ethashConfig.DatasetsOnDisk,
-				DatasetsLockMmap: ethashConfig.DatasetsLockMmap,
-				NotifyFull:       ethashConfig.NotifyFull,
-				ECIP1099Block:    ethashConfig.ECIP1099Block,
-			}, notify, noverify)
-			engine.(*ethash.Ethash).SetThreads(-1) // Disable CPU mining
-		}
+		// Ethash fallback disabled for quantum blockchain
+		log.Error("❌ No consensus engine configured - QMPoW, Clique, or Lyra2 required")
+		panic("No valid consensus engine configured")
 	}
 
 	return beacon.New(engine)

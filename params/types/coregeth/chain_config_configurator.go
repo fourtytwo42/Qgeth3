@@ -833,6 +833,9 @@ func (c *CoreGethChainConfig) GetConsensusEngineType() ctypes.ConsensusEngineT {
 	if c.Lyra2 != nil {
 		return ctypes.ConsensusEngineT_Lyra2
 	}
+	if c.QMPoW != nil {
+		return ctypes.ConsensusEngineT_QMPoW
+	}
 	return ctypes.ConsensusEngineT_Unknown
 }
 
@@ -841,15 +844,24 @@ func (c *CoreGethChainConfig) MustSetConsensusEngineType(t ctypes.ConsensusEngin
 	case ctypes.ConsensusEngineT_Ethash:
 		c.Ethash = new(ctypes.EthashConfig)
 		c.Clique = nil
+		c.QMPoW = nil
 		return nil
 	case ctypes.ConsensusEngineT_Clique:
 		c.Clique = new(ctypes.CliqueConfig)
 		c.Ethash = nil
+		c.QMPoW = nil
 		return nil
 	case ctypes.ConsensusEngineT_Lyra2:
 		c.Lyra2 = new(ctypes.Lyra2Config)
 		c.Ethash = nil
 		c.Clique = nil
+		c.QMPoW = nil
+		return nil
+	case ctypes.ConsensusEngineT_QMPoW:
+		c.QMPoW = new(ctypes.QMPoWConfig)
+		c.Ethash = nil
+		c.Clique = nil
+		c.Lyra2 = nil
 		return nil
 	default:
 		return ctypes.ErrUnsupportedConfigFatal

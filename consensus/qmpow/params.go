@@ -11,17 +11,17 @@ import (
 
 // Default quantum proof of work parameters
 const (
-	DefaultQBits    uint8  = 8    // qubits per micro-puzzle
-	DefaultTCount   uint16 = 25   // T-gate count per puzzle
-	DefaultLNet     uint16 = 64   // puzzles per block (network difficulty)
-	DefaultEpochLen uint64 = 2048 // difficulty retarget period in blocks
-	TargetBlockTime uint64 = 12   // target block time in seconds
+	DefaultQBits    uint8  = 6  // qubits per micro-puzzle (lowered for testing)
+	DefaultTCount   uint16 = 15 // T-gate count per puzzle (lowered for testing)
+	DefaultLNet     uint16 = 20 // puzzles per block (network difficulty) (lowered for testing)
+	DefaultEpochLen uint64 = 50 // difficulty retarget period in blocks
+	TargetBlockTime uint64 = 12 // target block time in seconds
 
 	// Difficulty adjustment parameters
 	DifficultyAdjustmentThreshold = 0.1 // 10% threshold for adjustment
-	DifficultyStep                = 4   // L_net adjustment step
-	MinLNet                       = 16  // minimum puzzles per block
-	MaxLNet                       = 256 // maximum puzzles per block
+	DifficultyStep                = 2   // L_net adjustment step (lowered)
+	MinLNet                       = 4   // minimum puzzles per block (lowered)
+	MaxLNet                       = 64  // maximum puzzles per block (lowered)
 )
 
 // QMPoWParams represents the configuration parameters for quantum proof of work

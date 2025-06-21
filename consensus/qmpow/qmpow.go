@@ -210,24 +210,28 @@ func (q *QMPoW) seal(chain consensus.ChainHeaderReader, block *types.Block, resu
 	// Generate the seed for quantum puzzles
 	seed := q.SealHash(header)
 
-	log.Info("Starting quantum proof of work",
+	log.Info("🔬 Starting quantum proof of work",
 		"number", header.Number.Uint64(),
 		"qbits", *header.QBits,
 		"tcount", *header.TCount,
-		"lused", *header.LUsed)
+		"lused", *header.LUsed,
+		"seed", fmt.Sprintf("%x", seed.Bytes()[:8]))
 
 	start := time.Now()
 
 	// Generate quantum proofs
+	log.Info("🔬 Calling solveQuantumPuzzles...")
 	outcomes, aggregateProof, err := q.solveQuantumPuzzles(seed.Bytes(), *header.QBits, *header.TCount, *header.LUsed)
 	if err != nil {
-		log.Error("Failed to solve quantum puzzles", "err", err)
+		log.Error("❌ Failed to solve quantum puzzles", "err", err)
 		return
 	}
+	log.Info("✅ Quantum puzzles solved successfully", "outcomes_len", len(outcomes), "proof_len", len(aggregateProof))
 
 	// Check if we were stopped
 	select {
 	case <-stop:
+		log.Info("🛑 Sealing stopped")
 		return
 	default:
 	}
@@ -237,18 +241,29 @@ func (q *QMPoW) seal(chain consensus.ChainHeaderReader, block *types.Block, resu
 	header.QProof = aggregateProof
 
 	sealTime := time.Since(start)
-	log.Info("Quantum proof of work completed",
+
+	// Update hashrate (puzzles per second)
+	puzzlesPerSecond := float64(*header.LUsed) / sealTime.Seconds()
+	q.lock.Lock()
+	q.hashrate = uint64(puzzlesPerSecond)
+	q.lock.Unlock()
+
+	log.Info("🎯 Quantum proof of work completed",
 		"number", header.Number.Uint64(),
 		"puzzles", *header.LUsed,
 		"time", sealTime,
+		"hashrate", fmt.Sprintf("%.2f puzzles/sec", puzzlesPerSecond),
 		"proof_size", len(aggregateProof))
 
 	// Create and send the sealed block
 	sealedBlock := block.WithSeal(header)
 
+	log.Info("📦 Sending sealed block to results channel")
 	select {
 	case results <- sealedBlock:
+		log.Info("✅ Sealed block sent successfully")
 	case <-stop:
+		log.Info("🛑 Sealing stopped while sending block")
 	}
 }
 
@@ -410,6 +425,8 @@ func (q *QMPoW) simulateQuantumSolver(seed []byte, qbits uint8, tcount uint16, l
 
 // generateFakeQuantumSolution generates fake quantum solution for testing
 func (q *QMPoW) generateFakeQuantumSolution(seed []byte, qbits uint8, tcount uint16, lnet uint16) ([]byte, []byte, error) {
+	log.Info("🧪 Generating fake quantum solution", "qbits", qbits, "tcount", tcount, "lnet", lnet)
+
 	// Generate deterministic fake outcomes
 	h := sha256.New()
 	h.Write(seed)
@@ -428,6 +445,7 @@ func (q *QMPoW) generateFakeQuantumSolution(seed []byte, qbits uint8, tcount uin
 	fakeProof := make([]byte, 64) // Fixed size fake proof
 	copy(fakeProof, digest[:])
 
+	log.Info("🧪 Fake quantum solution generated", "outcomes_len", len(outcomes), "proof_len", len(fakeProof))
 	return outcomes, fakeProof, nil
 }
 
@@ -478,4 +496,59 @@ func (api *API) GetThreads() int {
 	api.qmpow.lock.RLock()
 	defer api.qmpow.lock.RUnlock()
 	return api.qmpow.threads
+}
+
+// GetDifficulty returns the current quantum difficulty
+func (api *API) GetDifficulty() map[string]interface{} {
+	params := api.qmpow.ParamsForHeight(0) // Get current params
+	return map[string]interface{}{
+		"puzzlesPerBlock": params.LNet,
+		"qubitsPerPuzzle": params.QBits,
+		"tgatesPerPuzzle": params.TCount,
+		"totalComplexity": uint64(params.LNet) * uint64(params.QBits) * uint64(params.TCount),
+	}
+}
+
+// GetMiningStats returns comprehensive mining statistics
+func (api *API) GetMiningStats() map[string]interface{} {
+	api.qmpow.lock.RLock()
+	defer api.qmpow.lock.RUnlock()
+
+	params := api.qmpow.ParamsForHeight(0)
+	hashrate := float64(api.qmpow.hashrate)
+
+	return map[string]interface{}{
+		"hashrate":     hashrate,
+		"hashrateUnit": "puzzles/second",
+		"threads":      api.qmpow.threads,
+		"difficulty": map[string]interface{}{
+			"puzzlesPerBlock": params.LNet,
+			"qubitsPerPuzzle": params.QBits,
+			"tgatesPerPuzzle": params.TCount,
+			"totalComplexity": uint64(params.LNet) * uint64(params.QBits) * uint64(params.TCount),
+		},
+		"retargetPeriod":  params.EpochLen,
+		"targetBlockTime": TargetBlockTime,
+	}
+}
+
+// GetNetworkStats returns network-wide statistics
+func (api *API) GetNetworkStats() map[string]interface{} {
+	params := api.qmpow.ParamsForHeight(0)
+
+	// Calculate theoretical network hashrate based on difficulty and target time
+	theoreticalHashrate := float64(params.LNet) / float64(TargetBlockTime)
+
+	return map[string]interface{}{
+		"currentDifficulty":   params.LNet,
+		"theoreticalHashrate": theoreticalHashrate,
+		"hashrateUnit":        "puzzles/second",
+		"targetBlockTime":     TargetBlockTime,
+		"retargetPeriod":      params.EpochLen,
+		"quantumComplexity": map[string]interface{}{
+			"qubits":     params.QBits,
+			"tgates":     params.TCount,
+			"stateSpace": uint64(1) << params.QBits, // 2^qubits
+		},
+	}
 }

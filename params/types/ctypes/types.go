@@ -273,6 +273,7 @@ const (
 	ConsensusEngineT_Ethash
 	ConsensusEngineT_Clique
 	ConsensusEngineT_Lyra2
+	ConsensusEngineT_QMPoW
 )
 
 func (c ConsensusEngineT) String() string {
@@ -283,6 +284,8 @@ func (c ConsensusEngineT) String() string {
 		return "clique"
 	case ConsensusEngineT_Lyra2:
 		return "lyra2"
+	case ConsensusEngineT_QMPoW:
+		return "qmpow"
 	default:
 		return "unknown"
 	}
@@ -298,6 +301,10 @@ func (c ConsensusEngineT) IsClique() bool {
 
 func (c ConsensusEngineT) IsLyra2() bool {
 	return c == ConsensusEngineT_Lyra2
+}
+
+func (c ConsensusEngineT) IsQMPoW() bool {
+	return c == ConsensusEngineT_QMPoW
 }
 
 func (c ConsensusEngineT) IsUnknown() bool {

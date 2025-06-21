@@ -168,9 +168,24 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 		}
 	}
 
-	engine := ethconfig.CreateConsensusEngine(stack, &ethashConfig, cliqueConfig, lyra2Config, nil, config.Miner.Notify, config.Miner.Noverify, chainDb)
+	var qmpowConfig *ctypes.QMPoWConfig
 
+	// Load chain config from database to get QMPoW configuration
 	chainConfig, err := core.LoadChainConfig(chainDb, config.Genesis)
+	if err == nil && chainConfig != nil {
+		engineType := chainConfig.GetConsensusEngineType()
+		if engineType == ctypes.ConsensusEngineT_QMPoW {
+			if cg, ok := chainConfig.(*coregeth.CoreGethChainConfig); ok {
+				if cg.QMPoW != nil {
+					qmpowConfig = cg.QMPoW
+				}
+			}
+		}
+	}
+
+	engine := ethconfig.CreateConsensusEngine(stack, &ethashConfig, cliqueConfig, lyra2Config, qmpowConfig, config.Miner.Notify, config.Miner.Noverify, chainDb)
+
+	chainConfig, err = core.LoadChainConfig(chainDb, config.Genesis)
 	if err != nil {
 		return nil, err
 	}
