@@ -51,7 +51,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/holiman/uint256"
-	"github.com/tyler-smith/go-bip39"
+	// "github.com/tyler-smith/go-bip39" // Disabled for Windows build
 )
 
 // estimateGasErrorRatio is the amount of overestimation eth_estimateGas is
@@ -580,29 +580,34 @@ func (s *PersonalAccountAPI) EcRecover(ctx context.Context, data, sig hexutil.By
 
 // InitializeWallet initializes a new wallet at the provided URL, by generating and returning a new private key.
 func (s *PersonalAccountAPI) InitializeWallet(ctx context.Context, url string) (string, error) {
-	wallet, err := s.am.Wallet(url)
-	if err != nil {
-		return "", err
-	}
+	// BIP39 disabled for Windows build
+	return "", errors.New("wallet initialization disabled for Windows build")
 
-	entropy, err := bip39.NewEntropy(256)
-	if err != nil {
-		return "", err
-	}
+	/*
+		wallet, err := s.am.Wallet(url)
+		if err != nil {
+			return "", err
+		}
 
-	mnemonic, err := bip39.NewMnemonic(entropy)
-	if err != nil {
-		return "", err
-	}
+		entropy, err := bip39.NewEntropy(256)
+		if err != nil {
+			return "", err
+		}
 
-	seed := bip39.NewSeed(mnemonic, "")
+		mnemonic, err := bip39.NewMnemonic(entropy)
+		if err != nil {
+			return "", err
+		}
 
-	switch wallet := wallet.(type) {
-	case *scwallet.Wallet:
-		return mnemonic, wallet.Initialize(seed)
-	default:
-		return "", errors.New("specified wallet does not support initialization")
-	}
+		seed := bip39.NewSeed(mnemonic, "")
+
+		switch wallet := wallet.(type) {
+		case *scwallet.Wallet:
+			return mnemonic, wallet.Initialize(seed)
+		default:
+			return "", errors.New("specified wallet does not support initialization")
+		}
+	*/
 }
 
 // Unpair deletes a pairing between wallet and geth.

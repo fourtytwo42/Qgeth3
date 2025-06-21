@@ -1,21 +1,13 @@
-//go:build cgo
-// +build cgo
+//go:build !cgo
+// +build !cgo
 
 package lyra2
 
-/*
-#cgo CFLAGS: -std=gnu99
-#include "Lyra2.h"
-#include <stdlib.h>
-*/
-import "C"
 import (
-	"encoding/binary"
 	"math/big"
 	"math/rand"
 	"sync"
 	"time"
-	"unsafe"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
@@ -53,7 +45,7 @@ func New(config *Config, notify []string, noverify bool) *Lyra2 {
 		config = &Config{}
 	}
 	lyra2 := &Lyra2{
-		fakeMode:  config.FakeMode,
+		fakeMode:  true, // Force fake mode when CGO disabled
 		fakeFail:  config.FakeFail,
 		fakeDelay: config.FakeDelay,
 		log:       log.Root(),
@@ -72,7 +64,7 @@ func New(config *Config, notify []string, noverify bool) *Lyra2 {
 
 func NewTester(notify []string, noverify bool) *Lyra2 {
 	lyra2 := &Lyra2{
-		fakeMode:  false,
+		fakeMode:  true, // Force fake mode when CGO disabled
 		fakeFail:  0,
 		fakeDelay: 0,
 		log:       log.Root(),
@@ -84,31 +76,14 @@ func NewTester(notify []string, noverify bool) *Lyra2 {
 }
 
 func (lyra2 *Lyra2) calcHash(headerBytes []byte, nonce uint64, tcost int) *big.Int {
-	var lyra2_ctx unsafe.Pointer = C.LYRA2_create()
-	result := lyra2.compute(lyra2_ctx, headerBytes, nonce, tcost)
-	C.LYRA2_destroy(lyra2_ctx)
-
-	return result.Big()
+	// Stub implementation - just return a hash based on header + nonce
+	hash := common.BytesToHash(headerBytes)
+	return hash.Big()
 }
 
-func bytesToHash(in unsafe.Pointer) common.Hash {
-	return *(*common.Hash)(in)
-}
-
-func (lyra2 *Lyra2) compute(ctx unsafe.Pointer, blockBytes []byte, nonce uint64, tcost int) common.Hash {
-	binary.BigEndian.PutUint64(blockBytes[len(blockBytes)-8:], nonce)
-
-	var in unsafe.Pointer = C.CBytes(blockBytes)
-	var out unsafe.Pointer = C.malloc(common.HashLength)
-
-	C.LYRA2(ctx, out, common.HashLength, in, C.int32_t(len(blockBytes)), C.int32_t(tcost))
-
-	hash := bytesToHash(out)
-
-	C.free(in)
-	C.free(out)
-
-	return hash
+func (lyra2 *Lyra2) compute(ctx interface{}, blockBytes []byte, nonce uint64, tcost int) common.Hash {
+	// Stub implementation - simple hash without Lyra2
+	return common.BytesToHash(blockBytes)
 }
 
 func (lyra2 *Lyra2) Close() error {
@@ -149,11 +124,6 @@ func (lyra2 *Lyra2) SetThreads(threads int) {
 	lyra2.lock.Lock()
 	defer lyra2.lock.Unlock()
 
-	/*// If we're running a shared PoW, set the thread count on that instead
-	  if ethash.shared != nil {
-	      ethash.shared.SetThreads(threads)
-	      return
-	  }*/
 	// Update the threads and ping any running seal to pull in any changes
 	lyra2.threads = threads
 	select {

@@ -21,7 +21,9 @@ import (
 	"math/big"
 	"sync/atomic"
 
-	"github.com/ethereum/evmc/v7/bindings/go/evmc"
+	// EVMC disabled for Windows build
+	// "github.com/ethereum/evmc/bindings/go/evmc"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -170,15 +172,16 @@ func NewEVM(blockCtx BlockContext, txCtx TxContext, statedb StateDB, chainConfig
 
 	// In some implementations, EWASM may be configured with a block number.
 	// In this implementation, the interpreter is configured globally instead.
-	if config.EWASMInterpreter != "" {
-		evm.interpreters = append(evm.interpreters, &EVMC{ewasmModule, evm, evmc.CapabilityEWASM, false})
-	}
+	// EVMC disabled for Windows build
+	// if config.EWASMInterpreter != "" {
+	//	evm.interpreters = append(evm.interpreters, &EVMC{ewasmModule, evm, evmc.CapabilityEWASM, false})
+	// }
 
-	if config.EVMInterpreter != "" {
-		evm.interpreters = append(evm.interpreters, &EVMC{evmModule, evm, evmc.CapabilityEVM1, false})
-	} else {
-		evm.interpreters = append(evm.interpreters, NewEVMInterpreter(evm))
-	}
+	// if config.EVMInterpreter != "" {
+	//	evm.interpreters = append(evm.interpreters, &EVMC{evmModule, evm, evmc.CapabilityEVM1, false})
+	// } else {
+	evm.interpreters = append(evm.interpreters, NewEVMInterpreter(evm))
+	// }
 
 	evm.interpreter = evm.interpreters[0]
 

@@ -25,7 +25,7 @@ require (
 	github.com/edsrzf/mmap-go v1.1.0
 	github.com/etclabscore/go-openrpc-reflect v0.0.37
 	github.com/ethereum/c-kzg-4844 v0.4.0
-	github.com/ethereum/evmc/v7 v7.5.0
+	github.com/ethereum/evmc/v7 v7.4.0
 	github.com/fatih/color v1.13.0
 	github.com/ferranbt/fastssz v0.1.2
 	github.com/fjl/gencodec v0.0.0-20230517082657-f9840df7b83e
@@ -108,6 +108,8 @@ require (
 	github.com/aws/smithy-go v1.15.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bits-and-blooms/bitset v1.10.0 // indirect
+	github.com/btcsuite/btcd v0.20.1-beta // indirect
+	github.com/btcsuite/btcutil v0.0.0-20190425235716-9e5f4b9a998d // indirect
 	github.com/campoy/embedmd v1.0.0 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/cockroachdb/errors v1.8.1 // indirect
@@ -184,4 +186,6 @@ require (
 	rsc.io/tmplfunc v0.0.3 // indirect
 )
 
-replace github.com/tyler-smith/go-bip39 => github.com/miguelmota/go-bip39 v1.0.2
+replace github.com/tyler-smith/go-bip39 => github.com/btcsuite/btcutil v1.0.2
+
+exclude github.com/ethereum/evmc/v7 v7.5.0
