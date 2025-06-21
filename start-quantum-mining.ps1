@@ -1,170 +1,164 @@
+# Quantum Geth Mining Startup Script
+# Starts quantum proof-of-work mining with QμPoW consensus
+
 param(
-    [Parameter(Mandatory=$true)]
-    [int]$Threads,
-    [string]$DataDir = "qdata",
-    [string]$NetworkId = "73428",
-    [string]$MinerAccount = "",
-    [string]$PasswordFile = "",
+    [int]$Threads = 4,
+    [string]$DataDir = "qdata", 
+    [int]$NetworkId = 73428,
     [switch]$InitGenesis,
-    [switch]$VerboseLogging
+    [switch]$VerboseLogging,
+    [switch]$Force
 )
 
-# Quantum Geth Mining Startup Script
-Write-Host "=== Quantum Geth Mining Startup ===" -ForegroundColor Green
-Write-Host "Threads: $Threads" -ForegroundColor Cyan
-Write-Host "Data Directory: $DataDir" -ForegroundColor Cyan  
-Write-Host "Network ID: $NetworkId" -ForegroundColor Cyan
+Write-Host "=== Quantum Geth Mining Startup ===" -ForegroundColor Cyan
+Write-Host "Threads: $Threads"
+Write-Host "Data Directory: $DataDir"
+Write-Host "Network ID: $NetworkId"
 
-# Check if we're in the right directory
-if (-not (Test-Path "quantum-geth")) {
-    Write-Host "Error: quantum-geth directory not found. Run this script from the project root." -ForegroundColor Red
-    exit 1
-}
-
-# Navigate to quantum-geth directory
-Set-Location "quantum-geth"
-
-try {
-    # Build geth if needed
-    if (-not (Test-Path "build/bin/geth.exe") -and -not (Test-Path "build/bin/geth")) {
-        Write-Host "Building quantum geth..." -ForegroundColor Yellow
-        
-        # Create build directory if it doesn't exist
-        if (-not (Test-Path "build/bin")) {
-            New-Item -ItemType Directory -Path "build/bin" -Force | Out-Null
-        }
-        
-        if ($VerboseLogging) {
-            if ($IsWindows -or $env:OS -eq "Windows_NT") {
-                & go build -o build/bin/geth.exe ./cmd/geth
-            } else {
-                & make geth
-            }
-        } else {
-            if ($IsWindows -or $env:OS -eq "Windows_NT") {
-                & go build -o build/bin/geth.exe ./cmd/geth 2>&1 | Out-Null
-            } else {
-                & make geth 2>&1 | Out-Null
-            }
-        }
-        
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "Build failed. Attempting to resolve dependencies..." -ForegroundColor Yellow
-            
-            # Try to fix the go-bip39 dependency issue
-            Write-Host "Attempting dependency fix..." -ForegroundColor Yellow
-            & go mod edit -replace github.com/tyler-smith/go-bip39=github.com/wealdtech/go-bip39@v1.8.0
-            & go mod tidy
-            
-            Write-Host "Retrying build..." -ForegroundColor Yellow
-            if ($VerboseLogging) {
-                if ($IsWindows -or $env:OS -eq "Windows_NT") {
-                    & go build -o build/bin/geth.exe ./cmd/geth
-                } else {
-                    & make geth
-                }
-            } else {
-                if ($IsWindows -or $env:OS -eq "Windows_NT") {
-                    & go build -o build/bin/geth.exe ./cmd/geth 2>&1 | Out-Null
-                } else {
-                    & make geth 2>&1 | Out-Null
-                }
-            }
-            
-            if ($LASTEXITCODE -ne 0) {
-                Write-Host "Build still failing. You may need to resolve dependencies manually." -ForegroundColor Red
-                Write-Host "Try running: go mod download && go mod tidy" -ForegroundColor Yellow
-                exit 1
-            }
-        }
-        
-        Write-Host "Build completed successfully!" -ForegroundColor Green
-    } else {
-        Write-Host "Geth binary already exists." -ForegroundColor Green
-    }
-
-    # Determine geth executable path
-    $gethPath = ""
-    if (Test-Path "build/bin/geth.exe") {
-        $gethPath = "./build/bin/geth.exe"
-    } elseif (Test-Path "build/bin/geth") {
-        $gethPath = "./build/bin/geth"
-    } else {
-        Write-Host "Error: Could not find geth executable after build." -ForegroundColor Red
+# Check for quantum geth binary
+$gethPath = ""
+if (Test-Path "./geth.exe") {
+    $gethPath = "./geth.exe"
+    Write-Host "Quantum geth binary found. Skipping build." -ForegroundColor Green
+} elseif (Test-Path "./quantum-geth/build/bin/geth.exe") {
+    $gethPath = "./quantum-geth/build/bin/geth.exe"
+    Write-Host "Using quantum geth from build directory." -ForegroundColor Green
+} else {
+    Write-Host "Building quantum geth..." -ForegroundColor Yellow
+    
+    # Check if quantum-geth directory exists
+    if (-not (Test-Path "./quantum-geth")) {
+        Write-Host "Error: quantum-geth directory not found!" -ForegroundColor Red
+        Write-Host "Please run this script from the Qgeth3 root directory." -ForegroundColor Red
         exit 1
     }
-
-    # Initialize genesis if requested or if datadir doesn't exist
-    if ($InitGenesis -or -not (Test-Path $DataDir)) {
-        Write-Host "Initializing quantum blockchain with genesis..." -ForegroundColor Yellow
+    
+    # Build the quantum geth
+    Push-Location "./quantum-geth"
+    try {
+        # Set environment for Windows build
+        $env:CGO_ENABLED = "0"
         
-        # Clean up existing data if reinitializing
-        if ($InitGenesis -and (Test-Path $DataDir)) {
-            Write-Host "Cleaning up existing blockchain data..." -ForegroundColor Yellow
-            Remove-Item -Recurse -Force $DataDir
-        }
+        Write-Host "Installing dependencies..." -ForegroundColor Yellow
+        go mod tidy
         
-        # Initialize with quantum genesis
-        & $gethPath --datadir $DataDir init eth/configs/genesis_qmpow.json
+        Write-Host "Building quantum geth binary..." -ForegroundColor Yellow
+        go build -o build/bin/geth.exe ./cmd/geth
         
         if ($LASTEXITCODE -ne 0) {
-            Write-Host "Genesis initialization failed!" -ForegroundColor Red
+            Write-Host "Build failed!" -ForegroundColor Red
             exit 1
         }
         
-        Write-Host "Genesis initialized successfully!" -ForegroundColor Green
+        $gethPath = "./build/bin/geth.exe"
+        Write-Host "Build successful!" -ForegroundColor Green
     }
-
-    # Prepare mining command
-    $miningArgs = @(
-        "--datadir", $DataDir,
-        "--networkid", $NetworkId,
-        "--mine",
-        "--miner.threads", $Threads,
-        "--miner.gasprice", "1000000000",
-        "--miner.gaslimit", "8000000",
-        "--http",
-        "--http.api", "eth,net,web3,personal,miner",
-        "--http.corsdomain", "*",
-        "--allow-insecure-unlock"
-    )
-
-    # Add account unlock if specified
-    if ($MinerAccount -ne "") {
-        $miningArgs += "--unlock"
-        $miningArgs += $MinerAccount
-        
-        if ($PasswordFile -ne "") {
-            $miningArgs += "--password"
-            $miningArgs += $PasswordFile
-        }
+    finally {
+        Pop-Location
     }
+}
 
-    # Add verbose logging if requested
-    if ($VerboseLogging) {
-        $miningArgs += "--verbosity"
-        $miningArgs += "4"
+# Initialize genesis if requested
+if ($InitGenesis) {
+    Write-Host "`n=== Initializing Quantum Genesis ===" -ForegroundColor Yellow
+    
+    # Create data directory
+    if (-not (Test-Path $DataDir)) {
+        New-Item -ItemType Directory -Path $DataDir | Out-Null
     }
+    
+    # Initialize with quantum genesis
+    $genesisPath = "./quantum-geth/eth/configs/genesis_qmpow.json"
+    if (-not (Test-Path $genesisPath)) {
+        Write-Host "Error: Genesis file not found at $genesisPath" -ForegroundColor Red
+        exit 1
+    }
+    
+    & $gethPath --datadir $DataDir init $genesisPath
+    
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Genesis initialization failed!" -ForegroundColor Red
+        exit 1
+    }
+    
+    Write-Host "Genesis initialized successfully!" -ForegroundColor Green
+}
 
-    Write-Host "`n=== Starting Quantum Mining ===" -ForegroundColor Green
-    Write-Host "Command: $gethPath $($miningArgs -join ' ')" -ForegroundColor Cyan
-    Write-Host "`nQuantum Parameters:" -ForegroundColor Yellow
-    Write-Host "  QBits: 8" -ForegroundColor White
-    Write-Host "  T-Gates: 25" -ForegroundColor White  
-    Write-Host "  Puzzles per block (L_net): 64" -ForegroundColor White
-    Write-Host "  Mining threads: $Threads" -ForegroundColor White
-    Write-Host "  Target block time: 12 seconds" -ForegroundColor White
-    Write-Host "`nPress Ctrl+C to stop mining" -ForegroundColor Yellow
-    Write-Host "Monitor progress in the output below:" -ForegroundColor Yellow
-    Write-Host ("=" * 50) -ForegroundColor Green
+# Create mining account if it doesn't exist
+Write-Host "`n=== Setting up Mining Account ===" -ForegroundColor Yellow
 
-    # Start mining
-    & $gethPath @miningArgs
+$accountFile = "$DataDir/mining-account.txt"
+$passwordFile = "$DataDir/password.txt"
+$etherbase = ""
 
-} catch {
-    Write-Host "Error starting quantum mining: $_" -ForegroundColor Red
-    exit 1
-} finally {
-    # Return to original directory
-    Set-Location ".."
-} 
+if (Test-Path $accountFile) {
+    $etherbase = Get-Content $accountFile -Raw
+    $etherbase = $etherbase.Trim()
+    Write-Host "Using existing mining account: $etherbase" -ForegroundColor Green
+} else {
+    # Create password file
+    "mining123" | Out-File -FilePath $passwordFile -Encoding ASCII
+    
+    # Create new account
+    Write-Host "Creating new mining account..." -ForegroundColor Yellow
+    $accountOutput = & $gethPath --datadir $DataDir account new --password $passwordFile 2>&1
+    
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Failed to create mining account!" -ForegroundColor Red
+        Write-Host $accountOutput
+        exit 1
+    }
+    
+    # Extract address from output
+    $addressMatch = $accountOutput | Select-String "Public address of the key:\s+(0x[a-fA-F0-9]{40})"
+    if ($addressMatch) {
+        $etherbase = $addressMatch.Matches[0].Groups[1].Value
+        $etherbase | Out-File -FilePath $accountFile -Encoding ASCII
+        Write-Host "Created new mining account: $etherbase" -ForegroundColor Green
+    } else {
+        Write-Host "Failed to extract mining address!" -ForegroundColor Red
+        Write-Host $accountOutput
+        exit 1
+    }
+}
+
+# Start mining
+Write-Host "`n=== Starting Quantum Mining ===" -ForegroundColor Cyan
+
+$miningArgs = @(
+    "--datadir", $DataDir,
+    "--networkid", $NetworkId,
+    "--mine",
+    "--miner.threads", $Threads,
+    "--miner.etherbase", $etherbase,
+    "--miner.gasprice", "1000000000",
+    "--miner.gaslimit", "8000000",
+    "--http",
+    "--http.api", "eth,net,web3,personal,miner",
+    "--http.corsdomain", "*",
+    "--allow-insecure-unlock",
+    "--unlock", $etherbase,
+    "--password", $passwordFile
+)
+
+if ($VerboseLogging) {
+    $miningArgs += "--verbosity", "4"
+}
+
+$commandStr = "$gethPath " + ($miningArgs -join " ")
+Write-Host "Command: $commandStr"
+
+Write-Host "`nQuantum Parameters:" -ForegroundColor Yellow
+Write-Host "  QBits: 8"
+Write-Host "  T-Gates: 25" 
+Write-Host "  Puzzles per block (L_net): 64"
+Write-Host "  Mining threads: $Threads"
+Write-Host "  Mining account: $etherbase"
+Write-Host "  Target block time: 12 seconds"
+
+Write-Host "`nPress Ctrl+C to stop mining" -ForegroundColor Yellow
+Write-Host "Monitor progress in the output below:" -ForegroundColor Yellow
+Write-Host "==================================================" -ForegroundColor Yellow
+
+# Start the quantum mining process
+& $gethPath @miningArgs 
