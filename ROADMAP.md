@@ -1,491 +1,155 @@
-# Quantum-Geth v0.9-rc4 Implementation Roadmap
-
-**Current Status**: v0.3-alpha (25% complete)  
-**Target**: v0.9-rc4 (100% specification compliance)  
-**Approach**: Step-by-step implementation guide
+Below is a **step-by-step implementation roadmap** for Quantum-Geth v0.9–BareBones+Halving. Each item builds on the previous and, once complete, yields a fully functional blockchain exactly matching the spec. Tick each box as you finish:
 
 ---
 
-## 🎯 Executive Summary
+## Implementation Roadmap
 
-This roadmap outlines the transformation of our current Quantum-Geth v0.3-alpha implementation into a fully compliant v0.9-rc4 system. We have successfully proven the core concept of quantum proof-of-work, but significant architectural changes are needed to meet the specification's advanced requirements.
+* [x] **Specification Freeze & Constant Embedding**
+  Define and lock all genesis constants and parameter schedules in code:
 
-### Current Implementation Strengths
-- ✅ **Working quantum PoW concept** - World's first operational quantum blockchain
-- ✅ **Bitcoin-style nonce iteration** - Proven mining mechanism
-- ✅ **Fractional difficulty system** - High-precision difficulty adjustment
-- ✅ **Real quantum computation** - Qiskit integration working
-- ✅ **1,152-bit security model** - 48 puzzles × 12 qubits × 2 states
+  * `ProofSystemHash`, `TemplateAuditRoot_v2`, `GlideTableHash`, `CanonicompSHA`, `ChainIDHash`
+  * Halving epoch length (600 000 blocks), initial subsidy (50 QGC), subsidy‐to‐zero schedule
+  * Immutable glide schedule for QBits/TCount/LNet bumps
 
-### Critical Gaps to Address
-- ❌ **ASERT-Q difficulty algorithm** - Current: Simple Bitcoin retargeting
-- ❌ **Epochic glide schedule** - Current: Fixed parameters
-- ❌ **Branch-serial templates** - Current: Independent puzzles
-- ❌ **Canonical-compile binding** - Current: Simulation only
-- ❌ **Dilithium attestation** - Current: No post-quantum signatures
-- ❌ **Phone-class verification** - Current: Desktop only
-- ❌ **Nova proof system** - Current: Simplified development proofs
-- ❌ **Advanced economic model** - Current: Basic block rewards
-- ❌ **On-chain governance** - Current: Hardcoded parameters
-- ❌ **Audit infrastructure** - Current: No security auditing
+* [x] **QASM-lite Grammar & Parser**
+  Publish the formal BNF of QASM-lite and implement a reference parser/serializer:
 
----
+  * Cover H, S, T, CX, Z-mask directives
+  * Include exhaustive test vectors: seed→QASM→serialized bytes
 
-## 📋 Implementation Phases
+* [x] **Canonical-Compile Module**
+  Build the deterministic compile pipeline:
 
-## Phase 1: Foundation Hardening
-**Goal**: Solidify current implementation and prepare for advanced features
+  1. QASM-lite → DAG (Qiskit opt\_level=0)
+  2. Apply Pauli-Z mask from `SHA256(seed)`
+  3. Serialize gate list byte-exactly
+  4. Unit-test against known seed/QASM→stream pairs
 
-### 1.1 Code Architecture Refactoring
-- [ ] **Modularize quantum consensus engine**
-  - Separate concerns: mining, verification, difficulty adjustment
-  - Create clean interfaces for future extensibility
-  - Implement comprehensive error handling
-  
-- [ ] **Standardize quantum data structures**
-  - Finalize RLP encoding for all quantum fields
-  - Implement proper serialization/deserialization
-  - Add backward compatibility mechanisms
+* [x] **Branch-Template Engine**
+  Encode the 16 iso-hard branch templates and PRP instantiation:
 
-- [ ] **Comprehensive testing framework**
-  - Unit tests for all quantum functions
-  - Integration tests for full mining cycles
-  - Performance benchmarking suite
-  - Quantum circuit simulation validation
+  * Store template skeletons in QASM-lite form
+  * Implement Keccak-based PRP to fill rotation angles/CX mapping from low‐bits
+  * Validate depth/T-count invariants for all templates
 
-### 1.2 Documentation and Specification Alignment
-- [ ] **Document current implementation**
-  - Complete API documentation
-  - Architecture decision records
-  - Performance characteristics
-  
-- [ ] **Gap analysis documentation**
-  - Detailed comparison with v0.9-rc4 spec
-  - Implementation complexity estimates
-  - Risk assessment for each component
+* [ ] **Puzzle Orchestrator & Seed-Chain**
+  Implement mining loop that for each `QNonce64` / `ExtraNonce32` does:
 
-**Deliverables**: Stable v0.3.1 release with comprehensive test coverage
+  * Compute `Seed0`; for i in \[0…47]: compile branch\_i, execute, record `Outcome_i`, chain to `Seed_{i+1}`
+  * Build `OutcomeRoot` (Merkle of outcomes) and `BranchNibbles`
+  * Compute `GateHash` across compiled streams
 
----
+* [ ] **Quantum Backend Abstraction**
+  Define an interface allowing interchangeable backends:
 
-## Phase 2: ASERT-Q Difficulty Algorithm
-**Goal**: Replace Bitcoin-style retargeting with sophisticated ASERT-Q algorithm
+  * Qiskit AerSimulator (state-vector / tensor)
+  * Qiskit Runtime (IBM Eagle/Heron)
+  * Vendor shim API (QASM-lite in → bitstring out)
+  * Inject noise-model toggles for future testing
 
-### 2.1 ASERT-Q Research and Design
-- [ ] **Study ASERT algorithm variants**
-  - Bitcoin Cash ASERT implementation analysis
-  - Quantum-specific modifications needed
-  - Mathematical modeling and simulation
+* [ ] **Mahadev Trace & CAPSS Integration**
+  Wire in Urmila Mahadev’s witnessing code to produce 48 interactive traces;
+  wrap each into a CAPSS SNARK:
 
-- [ ] **Design quantum-specific enhancements**
-  - Account for quantum circuit execution variance
-  - Handle quantum measurement uncertainty
-  - Optimize for 12-second target block times
+  * Automate transcript capture
+  * Generate 2.2 kB proofs per puzzle
+  * Ensure end-to-end trace→proof correctness
 
-### 2.2 ASERT-Q Implementation
-- [ ] **Core algorithm implementation**
-  ```go
-  // Target ASERT-Q function signature
-  func CalculateASERTQDifficulty(
-      parentHeader *types.Header,
-      targetBlockTime uint64,
-      halfLife uint64,
-      quantumVariance float64,
-  ) *big.Int
-  ```
+* [ ] **Nova-Lite Recursive Aggregation**
+  Batch the 48 CAPSS proofs into 3 Nova-Lite proofs (≤ 6 kB each):
 
-- [ ] **Integration with existing system**
-  - Replace Bitcoin-style retargeting
-  - Maintain backward compatibility
-  - Comprehensive testing against edge cases
+  * Construct Merkle tree over CAPSS proofs, compute `ProofRoot`
+  * Implement tier-B proof generation & streaming API
+  * Unit-test recursive verification logic
 
-- [ ] **Performance optimization**
-  - Sub-millisecond difficulty calculations
-  - Memory-efficient implementation
-  - Parallel computation where possible
+* [ ] **Dilithium-2 Self-Attestation Module**
+  Deterministic key derivation & signing:
 
-### 2.3 Validation and Testing
-- [ ] **Simulation testing**
-  - Monte Carlo simulations with various network conditions
-  - Stress testing with extreme difficulty changes
-  - Validation against theoretical models
+  * `Seed_att = SHA256("ATTEST"‖Seed₀‖OutcomeRoot‖ChainIDHash‖BlockNumber)`
+  * CBD sampler → `(sk,pk)` per NIST spec
+  * Sign `(Seed₀‖OutcomeRoot‖GateHash)`; enforce public-key norm guard
+  * Verify round-trip keygen/sign/verify
 
-- [ ] **Testnet deployment**
-  - Deploy ASERT-Q on isolated testnet
-  - Monitor stability over 10,000+ blocks
-  - Performance benchmarking
+* [ ] **RLP Header Extension & Tail Handling**
+  Modify Geth’s `Header` struct to append a single `[]byte` RLP-tail:
 
-**Deliverables**: v0.4.0 with production-ready ASERT-Q difficulty adjustment
+  * Ensure first 15 fields unchanged
+  * Encode quantum blob fields in one contiguous slice
+  * Add runtime sanity check on header‐encode length
 
----
+* [ ] **Proof & Attestation Integration in Block Assembly**
+  In miner code, integrate:
 
-## Phase 3: Epochic Glide Schedule
-**Goal**: Implement dynamic parameter scaling over time
+  * `QBits, TCount, LNet` fields from config
+  * `OutcomeRoot, BranchNibbles, GateHash, ProofRoot`
+  * `pk+Sig` appended to block body
+  * RLP‐encode and seal
 
-### 3.1 Glide Schedule Architecture
-- [ ] **Design epoch system**
-  ```go
-  type EpochParameters struct {
-      Epoch        uint32  // ⌊Height / 50,000⌋
-      QBits        uint16  // Dynamic: 12 + ⌊Epoch / 4⌋
-      TCount       uint32  // Dynamic: 4,096 + (Epoch * 512)
-      LNet         uint16  // Dynamic: 48 + ⌊Epoch / 8⌋
-      TargetTime   uint64  // May adjust with complexity
-  }
-  ```
+* [ ] **ASERT-Q Difficulty Filter**
+  Embed Bitcoin-style exponential ASERT with λ=0.12:
 
-- [ ] **Parameter evolution functions**
-  - Qubit count: +1 every 6 months (12,500 blocks)
-  - T-gate depth: Gradual increase for hardness
-  - Puzzle count: Occasional bumps for security
-  - Block time: Adaptive to quantum execution time
+  * `newTarget = oldTarget × 2^((t_actual–12 s)/150 s)`
+  * ±10 % per‐block clamp
+  * Integrate into block‐validation logic
 
-### 3.2 Implementation
-- [ ] **Epoch calculation engine**
-  - Height-based epoch determination
-  - Parameter interpolation between epochs
-  - Smooth transitions to avoid network disruption
+* [ ] **Halving & Fee Model Implementation**
+  Implement reward schedule:
 
-- [ ] **Backward compatibility**
-  - Support for multiple epoch formats
-  - Migration mechanisms for parameter changes
-  - Graceful degradation for older clients
+  * Start subsidy = 50 QGCoins; at each epoch (600 000 blocks), subsidy := subsidy/2
+  * Track current subsidy via block height
+  * Sum all transaction fees in block; award `Subsidy + Fees` to coinbase
 
-- [ ] **Quantum circuit adaptation**
-  - Dynamic circuit generation based on epoch
-  - Scaling quantum solver for variable parameters
-  - Performance optimization for larger circuits
+* [ ] **Block Validation Pipeline**
+  Extend full‐node verify path to:
 
-### 3.3 Testing and Validation
-- [ ] **Long-term simulation**
-  - Model 5+ years of network evolution
-  - Validate security properties at each epoch
-  - Performance impact analysis
+  1. RLP‐decode classical header + quantum blob
+  2. Canonical‐compile & GateHash check
+  3. Nova proof verify (Tier-B)
+  4. Dilithium signature verify
+  5. PoW target test via ASERT-Q
+  6. EVM execution & state transition
 
-- [ ] **Migration testing**
-  - Test epoch transitions under load
-  - Validate chain continuity across epochs
-  - Stress test with rapid parameter changes
+* [ ] **Audit-Guard Rail Enforcement**
+  On startup, verify embedded `ProofSystemHash` and `TemplateAuditRoot_v2`:
 
-**Deliverables**: v0.5.0 with dynamic epochic parameter scaling
+  * Fetch audit artifacts, validate Merkle roots
+  * Refuse to operate if any root mismatches
+
+* [ ] **P2P & Sync Adjustments**
+  Ensure peers propagate full quantum blob + proofs:
+
+  * Update block gossip protocols to include tail and proofs
+  * Implement length/index/CID framing for proof chunks with timeout
+
+* [ ] **CLI & RPC Exposure**
+  Expose status endpoints for miners:
+
+  * Current block substrate (QBits, TCount, difficulty, subsidy)
+  * Mining progress: puzzles/sec, nonce, proof sizes
+  * RPC methods for generating block templates and submitting blocks
+
+* [ ] **Metrics & Instrumentation**
+  Integrate Prometheus metrics:
+
+  * Puzzle‐generation latency, proof‐generation time
+  * Dilithium sign/verify duration
+  * ASERT adjustment deviations
+  * Subsidy and fee‐distribution stats
+
+* [ ] **Comprehensive End-to-End Validation**
+  Execute a full chain run in a single process to:
+
+  * Mine and validate >100 blocks in sequence
+  * Verify halving events occur precisely at epoch boundaries
+  * Stress‐test under concurrent mining agents
+
+* [ ] **Documentation & Reference Release**
+  Publish:
+
+  * Developer guide for each module (canonical compile, proof, attestation)
+  * API reference for mining RPCs and backend adapters
+  * On-chain RLP tail schema specification
 
 ---
 
-## Phase 4: Branch-Serial Templates
-**Goal**: Implement true quantum puzzle dependencies
-
-### 4.1 Serial Dependency Architecture
-- [ ] **Design puzzle chaining system**
-  ```go
-  type SerialPuzzleChain struct {
-      Seeds     []common.Hash  // Seed₀, Seed₁, ..., Seed₄₇
-      Outcomes  [][]byte       // Outcome₀, Outcome₁, ..., Outcome₄₇
-      Circuits  []QuantumCircuit // Compiled circuits
-  }
-  
-  // Critical: Seed_{i+1} = H(Seed_i || Outcome_i)
-  ```
-
-- [ ] **Template system**
-  - Predefined circuit templates for each puzzle type
-  - Branch selection based on previous outcomes
-  - Deterministic but unpredictable circuit evolution
-
-### 4.2 Implementation
-- [ ] **Serial execution engine**
-  - Enforce puzzle-by-puzzle execution
-  - Prevent parallelization attacks
-  - Maintain mining performance
-
-- [ ] **Circuit template library**
-  - Comprehensive template database
-  - Cryptographically secure template selection
-  - Regular template updates via governance
-
-- [ ] **Verification system**
-  - Validate complete puzzle chains
-  - Detect and reject parallel mining attempts
-  - Efficient chain verification algorithms
-
-### 4.3 Security Analysis
-- [ ] **Cryptographic review**
-  - Formal security proofs for serial dependencies
-  - Analysis of potential attack vectors
-  - Quantum advantage preservation
-
-- [ ] **Performance impact study**
-  - Mining time increase due to serialization
-  - Network verification overhead
-  - Optimization strategies
-
-**Deliverables**: v0.6.0 with branch-serial quantum puzzle dependencies
-
----
-
-## Phase 5: Canonical-Compile Binding
-**Goal**: Implement verifiable quantum circuit compilation
-
-### 5.1 Canonical Compiler Design
-- [ ] **Deterministic compilation system**
-  ```go
-  type CanonicalCompiler struct {
-      OptimizationLevel uint8    // Fixed optimization level
-      GateSet          []string  // Standardized gate set
-      Topology         string    // Fixed qubit topology
-  }
-  
-  func (c *CanonicalCompiler) CompileCircuit(
-      template QuantumTemplate,
-      seed common.Hash,
-  ) (CompiledCircuit, common.Hash) // Returns circuit + GateHash
-  ```
-
-- [ ] **GateHash verification**
-  - Cryptographic hash of exact gate sequence
-  - Prevent transpiler optimization attacks
-  - Enable reproducible circuit compilation
-
-### 5.2 Implementation
-- [ ] **Compiler integration**
-  - Integrate with Qiskit transpiler
-  - Lock optimization levels and passes
-  - Standardize gate decompositions
-
-- [ ] **Verification system**
-  - Real-time GateHash validation
-  - Circuit equivalence checking
-  - Performance-optimized verification
-
-- [ ] **Cross-platform compatibility**
-  - Ensure identical compilation across platforms
-  - Handle floating-point precision issues
-  - Standardize random number generation
-
-### 5.3 Testing and Validation
-- [ ] **Determinism testing**
-  - Verify identical compilation across systems
-  - Test with various quantum backends
-  - Validate GateHash consistency
-
-- [ ] **Security testing**
-  - Attempt optimization-based attacks
-  - Verify compiler tamper resistance
-  - Performance impact assessment
-
-**Deliverables**: v0.7.0 with canonical quantum circuit compilation
-
----
-
-## Phase 6: Post-Quantum Attestation
-**Goal**: Implement Dilithium self-attestation system
-
-### 6.1 Dilithium Integration
-- [ ] **Dilithium implementation**
-  ```go
-  type DilithiumAttestation struct {
-      PublicKey   []byte    // Miner's Dilithium public key
-      Signature   []byte    // Deterministic signature
-      Message     []byte    // Attestation message
-      Timestamp   uint64    // Block timestamp
-  }
-  ```
-
-- [ ] **Key management system**
-  - Secure key generation and storage
-  - Key rotation mechanisms
-  - Hardware security module integration
-
-### 6.2 Attestation Protocol
-- [ ] **Deterministic signature system**
-  - Reproducible signature generation
-  - Prevent signature malleability
-  - Integrate with quantum proof validation
-
-- [ ] **Verification system**
-  - Fast Dilithium signature verification
-  - Batch verification optimizations
-  - Post-quantum security guarantees
-
-### 6.3 Integration and Testing
-- [ ] **Consensus integration**
-  - Embed attestations in block headers
-  - Validation during block verification
-  - Network protocol updates
-
-- [ ] **Security analysis**
-  - Post-quantum security review
-  - Performance benchmarking
-  - Attack vector analysis
-
-**Deliverables**: v0.8.0 with Dilithium post-quantum attestation
-
----
-
-### 7.1 Implementation
-- [ ] **Lightweight verification client**
-  - Minimal memory footprint
-  - Streamlined verification logic
-  - Battery-efficient algorithms
-
-- [ ] **Proof compression**
-  - Advanced compression for quantum proofs
-  - Streaming verification protocols
-  - Incremental validation
-
-- [ ] **Benchmarking**
-  - Sub-10ms verification targets
-  - <2MB memory usage validation
-  - Network efficiency metrics
-
-**Deliverables**: v0.8.5
-
----
-
-## Phase 8: Advanced Systems Integration
-**Goal**: Complete remaining v0.9-rc4 components
-
-### 8.1 Nova Proof System
-- [ ] **Nova proof implementation**
-  - Research Nova folding schemes
-  - Implement Tier-B proof batching
-  - Integrate with quantum verification
-
-- [ ] **Proof aggregation**
-  - Efficient proof combination
-  - Merkle tree optimization
-  - Batch verification protocols
-
-### 8.2 Advanced Economic Model
-- [ ] **Sophisticated reward system**
-  - Anti-spam mechanisms
-  - Empty block penalties
-  - Dynamic reward adjustment
-
-- [ ] **Economic security analysis**
-  - Game-theoretic modeling
-  - Attack cost analysis
-  - Incentive alignment verification
-
-### 8.3 Governance System
-- [ ] **On-chain parameter updates**
-  - Voting mechanisms for parameter changes
-  - Gradual rollout systems
-  - Emergency update procedures
-
-- [ ] **Governance integration**
-  - Proposal submission system
-  - Voting weight calculation
-  - Execution automation
-
-**Deliverables**: v0.9.0 with advanced systems
-
----
-
-## Phase 9: Audit and Security Hardening
-**Goal**: Comprehensive security audit and hardening
-
-### 9.1 Security Audit Infrastructure
-- [ ] **QROM audit system**
-  - Quantum Random Oracle Model validation
-  - Security proof verification
-  - Automated security testing
-
-- [ ] **Template iso-hardness audit**
-  - Verify equal difficulty across templates
-  - Prevent template-specific advantages
-  - Continuous hardness monitoring
-
-### 9.2 External Security Review
-- [ ] **Third-party security audit**
-  - Engage quantum cryptography experts
-  - Comprehensive code review
-  - Penetration testing
-
-- [ ] **Formal verification**
-  - Mathematical proofs of security properties
-  - Automated theorem proving
-  - Verification of critical algorithms
-
-### 9.3 Production Hardening
-- [ ] **Performance optimization**
-  - Final performance tuning
-  - Memory leak detection and fixing
-  - Network protocol optimization
-
-- [ ] **Reliability improvements**
-  - Fault tolerance mechanisms
-  - Graceful degradation systems
-  - Comprehensive error handling
-
-**Deliverables**: v0.9-rc1 with security audit completion
-
-
----
-
-## 🎯 Success Metrics
-
-### Technical Compliance
-- [ ] **100% specification alignment** - All v0.9-rc4 features implemented
-- [ ] **Security validation** - External audit with no critical issues
-- [ ] **Stability demonstration** - 30+ days continuous operation
-
-### Community Adoption
-- [ ] **Developer engagement** - 10+ external contributors
-- [ ] **Network participation** - 100+ active mining nodes
-- [ ] **Academic recognition** - 3+ peer-reviewed publications
-- [ ] **Industry validation** - 2+ enterprise partnerships
-
----
-
-## 🚨 Risk Mitigation
-
-### Technical Risks
-- **Quantum hardware limitations**: Maintain classical simulation fallbacks
-- **Performance bottlenecks**: Continuous profiling and optimization
-- **Security vulnerabilities**: Regular security reviews and audits
-- **Specification changes**: Flexible architecture for adaptability
-
-### Resource Risks
-- **Development capacity**: Prioritize core features, defer nice-to-haves
-- **Funding constraints**: Seek grants and partnerships
-- **Implementation complexity**: Build in buffer for complex components
-- **Technical debt**: Regular refactoring and code quality maintenance
-
-### Market Risks
-- **Quantum computing evolution**: Stay current with hardware advances
-- **Regulatory changes**: Monitor quantum computing regulations
-- **Competition**: Focus on unique quantum advantages
-- **Adoption challenges**: Invest in documentation and developer tools
-
----
-
-## 🤝 Resource Requirements
-### Infrastructure
-- **Quantum Computing Access** - IBM Quantum, AWS Braket, or similar
-- **Testing Infrastructure** - Automated CI/CD with quantum simulation
-- **Security Tools** - Static analysis, fuzzing, formal verification
-- **Documentation Platform** - Comprehensive technical documentation
-- **Community Platform** - Developer engagement and support
-
-### Budget Estimation
-- **Personnel**: $2.5M - $4M depending on team size and duration
-- **Infrastructure**: $200K - $500K for quantum computing and testing
-- **Security Audit**: $100K - $300K for external security review
-- **Contingency**: 20% buffer for unexpected challenges
-
-**Total Estimated Budget**: $3.5M - $5.8M
-
----
-
-## 🎉 Conclusion
-
-This roadmap represents a comprehensive step-by-step path to transform our current Quantum-Geth v0.3-alpha into a fully compliant v0.9-rc4 implementation. Each phase builds upon the previous one, requiring significant investment in both technical development and security validation, but the result will be the world's first production-ready quantum blockchain consensus system.
-
-Our current implementation has already proven the fundamental concept works. Now we must build the sophisticated infrastructure required for a production quantum blockchain that can serve as the foundation for the next generation of quantum-secured distributed systems.
-
-The quantum future of blockchain starts here. 🚀⚛️
-
----
-
-*Last Updated: January 2025*  
-*Next Review: Updated as phases are completed* 
+*When all boxes are checked, you will have a fully working, governance-free quantum PoW blockchain with Bitcoin-style halving and full fee incentives, matching the v0.9–BareBones+Halving specification.*
