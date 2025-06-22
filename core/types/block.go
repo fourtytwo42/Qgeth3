@@ -18,6 +18,7 @@
 package types
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -28,6 +29,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 )
 
@@ -104,7 +106,9 @@ func (n *QuantumNonce) DecodeRLP(s *rlp.Stream) error {
 }
 
 //go:generate go run github.com/fjl/gencodec -type Header -field-override headerMarshaling -out gen_header_json.go
-//go:generate go run ../../rlp/rlpgen -type Header -out gen_header_rlp.go
+
+// Quantum-Geth v0.9-rc3-hw0 Header Structure
+// Implements the unified, branch-serial quantum proof-of-work specification
 
 // Header represents a block header in the Ethereum blockchain.
 type Header struct {
@@ -139,86 +143,43 @@ type Header struct {
 	// ParentBeaconRoot was added by EIP-4788 and is ignored in legacy headers.
 	ParentBeaconRoot *common.Hash `json:"parentBeaconBlockRoot" rlp:"optional"`
 
-	// Quantum micro-puzzle fields for QMPoW consensus
-	QBits    *uint8       `json:"qBits" rlp:"optional"`    // qubits per puzzle
-	TCount   *uint16      `json:"tCount" rlp:"optional"`   // T gates per puzzle
-	LUsed    *uint16      `json:"lUsed" rlp:"optional"`    // L_net when block was mined (fixed at 48)
-	QNonce   QuantumNonce `json:"qNonce" rlp:"optional"`   // quantum nonce for Bitcoin-style mining (fixed-size like Bitcoin)
-	QOutcome []byte       `json:"qOutcome" rlp:"optional"` // concatenated y₀…y_L-1
-	QProof   []byte       `json:"qProof" rlp:"optional"`   // aggregate Mahadev proof blob
+	// Quantum-Geth v0.9-rc3-hw0 "Quantum Blob" (Tier-2 fields)
+	// Single opaque byte slice for all quantum fields - maintains backward compatibility
+	QBlob []byte `json:"qBlob" rlp:"optional"`
+
+	// Virtual fields for accessing quantum data (not serialized)
+	// These are populated by UnmarshalQuantumBlob() and used by consensus
+	Epoch         *uint32      `json:"epoch" rlp:"-"`         // ⌊Height / 50,000⌋
+	QBits         *uint16      `json:"qBits" rlp:"-"`         // qubits per puzzle
+	TCount        *uint32      `json:"tCount" rlp:"-"`        // T-gates per puzzle (const 4096)
+	LNet          *uint16      `json:"lNet" rlp:"-"`          // puzzle count (const 48)
+	QNonce64      *uint64      `json:"qNonce64" rlp:"-"`      // primary nonce (Bitcoin-style)
+	ExtraNonce32  []byte       `json:"extraNonce32" rlp:"-"`  // 32-byte entropy
+	OutcomeRoot   *common.Hash `json:"outcomeRoot" rlp:"-"`   // Merkle root of outcomes
+	BranchNibbles []byte       `json:"branchNibbles" rlp:"-"` // 48 nibbles for template selection
+	GateHash      *common.Hash `json:"gateHash" rlp:"-"`      // canonical compiler gate hash
+	ProofRoot     *common.Hash `json:"proofRoot" rlp:"-"`     // Nova proof Merkle root
+	AttestMode    *uint8       `json:"attestMode" rlp:"-"`    // attestation mode
+
+	// Note: Dilithium signature & proofs are stored in block body, not header
 }
 
-// DecodeRLP implements rlp.Decoder for Header to properly handle QuantumNonce.
-func (h *Header) DecodeRLP(s *rlp.Stream) error {
-	type headerRLP struct {
-		ParentHash       common.Hash
-		UncleHash        common.Hash
-		Coinbase         common.Address
-		Root             common.Hash
-		TxHash           common.Hash
-		ReceiptHash      common.Hash
-		Bloom            Bloom
-		Difficulty       *big.Int
-		Number           *big.Int
-		GasLimit         uint64
-		GasUsed          uint64
-		Time             uint64
-		Extra            []byte
-		MixDigest        common.Hash
-		Nonce            BlockNonce
-		BaseFee          *big.Int     `rlp:"optional"`
-		WithdrawalsHash  *common.Hash `rlp:"optional"`
-		BlobGasUsed      *uint64      `rlp:"optional"`
-		ExcessBlobGas    *uint64      `rlp:"optional"`
-		ParentBeaconRoot *common.Hash `rlp:"optional"`
-		QBits            *uint8       `rlp:"optional"`
-		TCount           *uint16      `rlp:"optional"`
-		LUsed            *uint16      `rlp:"optional"`
-		QNonce           []byte       `rlp:"optional"`
-		QOutcome         []byte       `rlp:"optional"`
-		QProof           []byte       `rlp:"optional"`
+// EncodeRLP implements rlp.Encoder for Header to properly handle all fields.
+// RuntimeAssertHeaderSize adds a paranoid check to ensure header encoding is correct
+func (h *Header) RuntimeAssertHeaderSize() {
+	// Marshal quantum blob before encoding
+	h.MarshalQuantumBlob()
+
+	// Encode header to check size
+	enc, err := rlp.EncodeToBytes(h)
+	if err != nil {
+		log.Crit("Header RLP encoding failed", "err", err)
 	}
 
-	var dec headerRLP
-	if err := s.Decode(&dec); err != nil {
-		return err
+	// Minimum size check for quantum headers (~580 bytes as per spec)
+	if IsQuantumActive(h.Number) && len(enc) < 500 {
+		log.Crit("Quantum header too small, struct mismatch", "got", len(enc), "expected", ">500")
 	}
-
-	h.ParentHash = dec.ParentHash
-	h.UncleHash = dec.UncleHash
-	h.Coinbase = dec.Coinbase
-	h.Root = dec.Root
-	h.TxHash = dec.TxHash
-	h.ReceiptHash = dec.ReceiptHash
-	h.Bloom = dec.Bloom
-	h.Difficulty = dec.Difficulty
-	h.Number = dec.Number
-	h.GasLimit = dec.GasLimit
-	h.GasUsed = dec.GasUsed
-	h.Time = dec.Time
-	h.Extra = dec.Extra
-	h.MixDigest = dec.MixDigest
-	h.Nonce = dec.Nonce
-	h.BaseFee = dec.BaseFee
-	h.WithdrawalsHash = dec.WithdrawalsHash
-	h.BlobGasUsed = dec.BlobGasUsed
-	h.ExcessBlobGas = dec.ExcessBlobGas
-	h.ParentBeaconRoot = dec.ParentBeaconRoot
-	h.QBits = dec.QBits
-	h.TCount = dec.TCount
-	h.LUsed = dec.LUsed
-
-	// Handle QNonce specially
-	if len(dec.QNonce) == 8 {
-		copy(h.QNonce[:], dec.QNonce)
-	} else if len(dec.QNonce) > 0 {
-		return fmt.Errorf("invalid QNonce length: got %d, want 8", len(dec.QNonce))
-	}
-
-	h.QOutcome = dec.QOutcome
-	h.QProof = dec.QProof
-
-	return nil
 }
 
 // field type overrides for gencodec
@@ -233,7 +194,17 @@ type headerMarshaling struct {
 	Hash          common.Hash `json:"hash"` // adds call to Hash() in MarshalJSON
 	BlobGasUsed   *hexutil.Uint64
 	ExcessBlobGas *hexutil.Uint64
-	QNonce        QuantumNonce // force QNonce to be treated as fixed-size array, not pointer
+
+	// Quantum-Geth v0.9-rc3-hw0 field marshaling
+	// Types must exactly match header field types for gencodec
+	Epoch         hexutil.Uint64 // *uint32 marshaled as hexutil.Uint64
+	QBits         hexutil.Uint64 // *uint16 marshaled as hexutil.Uint64
+	TCount        hexutil.Uint64 // *uint32 marshaled as hexutil.Uint64
+	LNet          hexutil.Uint64 // *uint16 marshaled as hexutil.Uint64
+	QNonce64      hexutil.Uint64 // *uint64 marshaled as hexutil.Uint64
+	ExtraNonce32  hexutil.Bytes  // []byte marshaled as hexutil.Bytes
+	BranchNibbles hexutil.Bytes  // []byte marshaled as hexutil.Bytes
+	AttestMode    hexutil.Uint64 // *uint8 marshaled as hexutil.Uint64
 }
 
 // Hash returns the block hash of the header, which is simply the keccak256 hash of its
@@ -432,27 +403,49 @@ func CopyHeader(h *Header) *Header {
 		*cpy.ParentBeaconRoot = *h.ParentBeaconRoot
 	}
 	// Deep copy quantum fields
+	if h.Epoch != nil {
+		cpy.Epoch = new(uint32)
+		*cpy.Epoch = *h.Epoch
+	}
 	if h.QBits != nil {
-		cpy.QBits = new(uint8)
+		cpy.QBits = new(uint16)
 		*cpy.QBits = *h.QBits
 	}
 	if h.TCount != nil {
-		cpy.TCount = new(uint16)
+		cpy.TCount = new(uint32)
 		*cpy.TCount = *h.TCount
 	}
-	if h.LUsed != nil {
-		cpy.LUsed = new(uint16)
-		*cpy.LUsed = *h.LUsed
+	if h.LNet != nil {
+		cpy.LNet = new(uint16)
+		*cpy.LNet = *h.LNet
 	}
-	// QNonce is now a fixed-size array like BlockNonce, so we copy it directly
-	cpy.QNonce = h.QNonce
-	if h.QOutcome != nil {
-		cpy.QOutcome = make([]byte, len(h.QOutcome))
-		copy(cpy.QOutcome, h.QOutcome)
+	if h.QNonce64 != nil {
+		cpy.QNonce64 = new(uint64)
+		*cpy.QNonce64 = *h.QNonce64
 	}
-	if h.QProof != nil {
-		cpy.QProof = make([]byte, len(h.QProof))
-		copy(cpy.QProof, h.QProof)
+	if h.ExtraNonce32 != nil {
+		cpy.ExtraNonce32 = make([]byte, len(h.ExtraNonce32))
+		copy(cpy.ExtraNonce32, h.ExtraNonce32)
+	}
+	if h.OutcomeRoot != nil {
+		cpy.OutcomeRoot = new(common.Hash)
+		*cpy.OutcomeRoot = *h.OutcomeRoot
+	}
+	if h.BranchNibbles != nil {
+		cpy.BranchNibbles = make([]byte, len(h.BranchNibbles))
+		copy(cpy.BranchNibbles, h.BranchNibbles)
+	}
+	if h.GateHash != nil {
+		cpy.GateHash = new(common.Hash)
+		*cpy.GateHash = *h.GateHash
+	}
+	if h.ProofRoot != nil {
+		cpy.ProofRoot = new(common.Hash)
+		*cpy.ProofRoot = *h.ProofRoot
+	}
+	if h.AttestMode != nil {
+		cpy.AttestMode = new(uint8)
+		*cpy.AttestMode = *h.AttestMode
 	}
 	return &cpy
 }
@@ -466,11 +459,20 @@ func (b *Block) DecodeRLP(s *rlp.Stream) error {
 	}
 	b.header, b.uncles, b.transactions, b.withdrawals = eb.Header, eb.Uncles, eb.Txs, eb.Withdrawals
 	b.size.Store(rlp.ListSize(size))
+
+	// Unmarshal quantum blob to populate virtual quantum fields
+	if err := b.header.UnmarshalQuantumBlob(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
 // EncodeRLP serializes a block as RLP.
 func (b *Block) EncodeRLP(w io.Writer) error {
+	// Marshal quantum fields into QBlob before encoding
+	b.header.MarshalQuantumBlob()
+
 	return rlp.Encode(w, &extblock{
 		Header:      b.header,
 		Txs:         b.transactions,
@@ -517,7 +519,7 @@ func (b *Block) Time() uint64         { return b.header.Time }
 func (b *Block) NumberU64() uint64        { return b.header.Number.Uint64() }
 func (b *Block) MixDigest() common.Hash   { return b.header.MixDigest }
 func (b *Block) Nonce() uint64            { return binary.BigEndian.Uint64(b.header.Nonce[:]) }
-func (b *Block) QNonce() uint64           { return b.header.QNonce.Uint64() }
+func (b *Block) QNonce64() uint64         { return *b.header.QNonce64 }
 func (b *Block) Bloom() Bloom             { return b.header.Bloom }
 func (b *Block) Coinbase() common.Address { return b.header.Coinbase }
 func (b *Block) Root() common.Hash        { return b.header.Root }
@@ -662,4 +664,225 @@ func HeaderParentHashFromRLP(header []byte) common.Hash {
 		return common.Hash{}
 	}
 	return common.BytesToHash(parentHash)
+}
+
+// IsQuantumActive returns true if quantum consensus is active at the given block number
+func IsQuantumActive(num *big.Int) bool {
+	// For development, quantum is always active (fork block = 0)
+	// In production, this would check against params.QuantumForkBlock
+	return true
+}
+
+// MarshalQuantumBlob encodes quantum fields into the QBlob byte slice
+func (h *Header) MarshalQuantumBlob() {
+	if !IsQuantumActive(h.Number) {
+		h.QBlob = nil
+		return
+	}
+
+	// Only marshal if we have quantum fields
+	if h.Epoch == nil && h.QBits == nil && h.TCount == nil && h.LNet == nil &&
+		h.QNonce64 == nil && len(h.ExtraNonce32) == 0 && h.OutcomeRoot == nil &&
+		len(h.BranchNibbles) == 0 && h.GateHash == nil && h.ProofRoot == nil && h.AttestMode == nil {
+		h.QBlob = nil
+		return
+	}
+
+	var buf bytes.Buffer
+
+	// Helper function to ensure 32-byte padding for hashes
+	pad32 := func(hash *common.Hash) {
+		if hash != nil {
+			buf.Write(hash[:])
+		} else {
+			buf.Write(make([]byte, 32)) // zero hash
+		}
+	}
+
+	// Encode fields in fixed order (following v0.9-rc3-hw0 spec)
+	// 16.1 Epoch (4 bytes)
+	if h.Epoch != nil {
+		binary.Write(&buf, binary.LittleEndian, *h.Epoch)
+	} else {
+		binary.Write(&buf, binary.LittleEndian, uint32(0))
+	}
+
+	// 16.2 QBits (2 bytes)
+	if h.QBits != nil {
+		binary.Write(&buf, binary.LittleEndian, *h.QBits)
+	} else {
+		binary.Write(&buf, binary.LittleEndian, uint16(0))
+	}
+
+	// 16.3 TCount (4 bytes)
+	if h.TCount != nil {
+		binary.Write(&buf, binary.LittleEndian, *h.TCount)
+	} else {
+		binary.Write(&buf, binary.LittleEndian, uint32(0))
+	}
+
+	// 16.4 LNet (2 bytes)
+	if h.LNet != nil {
+		binary.Write(&buf, binary.LittleEndian, *h.LNet)
+	} else {
+		binary.Write(&buf, binary.LittleEndian, uint16(0))
+	}
+
+	// 16.5 QNonce64 (8 bytes)
+	if h.QNonce64 != nil {
+		binary.Write(&buf, binary.LittleEndian, *h.QNonce64)
+	} else {
+		binary.Write(&buf, binary.LittleEndian, uint64(0))
+	}
+
+	// 16.6 ExtraNonce32 (32 bytes)
+	if len(h.ExtraNonce32) >= 32 {
+		buf.Write(h.ExtraNonce32[:32])
+	} else {
+		buf.Write(h.ExtraNonce32)
+		buf.Write(make([]byte, 32-len(h.ExtraNonce32))) // zero pad
+	}
+
+	// 16.7 OutcomeRoot (32 bytes)
+	pad32(h.OutcomeRoot)
+
+	// 16.8 BranchNibbles (48 bytes)
+	if len(h.BranchNibbles) >= 48 {
+		buf.Write(h.BranchNibbles[:48])
+	} else {
+		buf.Write(h.BranchNibbles)
+		buf.Write(make([]byte, 48-len(h.BranchNibbles))) // zero pad
+	}
+
+	// 16.9 GateHash (32 bytes)
+	pad32(h.GateHash)
+
+	// 16.10 ProofRoot (32 bytes)
+	pad32(h.ProofRoot)
+
+	// 16.11 AttestMode (1 byte)
+	if h.AttestMode != nil {
+		buf.WriteByte(*h.AttestMode)
+	} else {
+		buf.WriteByte(0)
+	}
+
+	h.QBlob = buf.Bytes()
+}
+
+// UnmarshalQuantumBlob decodes quantum fields from the QBlob byte slice
+func (h *Header) UnmarshalQuantumBlob() error {
+	if !IsQuantumActive(h.Number) || len(h.QBlob) == 0 {
+		// Clear all quantum fields for non-quantum blocks
+		h.Epoch = nil
+		h.QBits = nil
+		h.TCount = nil
+		h.LNet = nil
+		h.QNonce64 = nil
+		h.ExtraNonce32 = nil
+		h.OutcomeRoot = nil
+		h.BranchNibbles = nil
+		h.GateHash = nil
+		h.ProofRoot = nil
+		h.AttestMode = nil
+		return nil
+	}
+
+	// Minimum size check (should be exactly 197 bytes for v0.9-rc3-hw0)
+	expectedSize := 4 + 2 + 4 + 2 + 8 + 32 + 32 + 48 + 32 + 32 + 1 // 197 bytes
+	if len(h.QBlob) < expectedSize {
+		return fmt.Errorf("quantum blob too short: got %d bytes, expected %d", len(h.QBlob), expectedSize)
+	}
+
+	buf := bytes.NewReader(h.QBlob)
+
+	// Helper function to read 32-byte hashes
+	readHash := func() (*common.Hash, error) {
+		hashBytes := make([]byte, 32)
+		if _, err := buf.Read(hashBytes); err != nil {
+			return nil, err
+		}
+		// Convert zero hash to nil pointer
+		hash := common.BytesToHash(hashBytes)
+		if hash == (common.Hash{}) {
+			return nil, nil
+		}
+		return &hash, nil
+	}
+
+	// Decode fields in the same order as encoding
+	// 16.1 Epoch (4 bytes)
+	var epoch uint32
+	if err := binary.Read(buf, binary.LittleEndian, &epoch); err != nil {
+		return err
+	}
+	h.Epoch = &epoch
+
+	// 16.2 QBits (2 bytes)
+	var qbits uint16
+	if err := binary.Read(buf, binary.LittleEndian, &qbits); err != nil {
+		return err
+	}
+	h.QBits = &qbits
+
+	// 16.3 TCount (4 bytes)
+	var tcount uint32
+	if err := binary.Read(buf, binary.LittleEndian, &tcount); err != nil {
+		return err
+	}
+	h.TCount = &tcount
+
+	// 16.4 LNet (2 bytes)
+	var lnet uint16
+	if err := binary.Read(buf, binary.LittleEndian, &lnet); err != nil {
+		return err
+	}
+	h.LNet = &lnet
+
+	// 16.5 QNonce64 (8 bytes)
+	var qnonce uint64
+	if err := binary.Read(buf, binary.LittleEndian, &qnonce); err != nil {
+		return err
+	}
+	h.QNonce64 = &qnonce
+
+	// 16.6 ExtraNonce32 (32 bytes)
+	h.ExtraNonce32 = make([]byte, 32)
+	if _, err := buf.Read(h.ExtraNonce32); err != nil {
+		return err
+	}
+
+	// 16.7 OutcomeRoot (32 bytes)
+	var err error
+	h.OutcomeRoot, err = readHash()
+	if err != nil {
+		return err
+	}
+
+	// 16.8 BranchNibbles (48 bytes)
+	h.BranchNibbles = make([]byte, 48)
+	if _, err := buf.Read(h.BranchNibbles); err != nil {
+		return err
+	}
+
+	// 16.9 GateHash (32 bytes)
+	h.GateHash, err = readHash()
+	if err != nil {
+		return err
+	}
+
+	// 16.10 ProofRoot (32 bytes)
+	h.ProofRoot, err = readHash()
+	if err != nil {
+		return err
+	}
+
+	// 16.11 AttestMode (1 byte)
+	var attestMode uint8
+	if err := binary.Read(buf, binary.LittleEndian, &attestMode); err != nil {
+		return err
+	}
+	h.AttestMode = &attestMode
+
+	return nil
 }

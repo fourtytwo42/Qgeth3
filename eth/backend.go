@@ -230,6 +230,24 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 		}
 	}
 
+	// FALLBACK: Force QMPoW for Quantum-Geth networks (networkId 73428)
+	if qmpowConfig == nil && config.NetworkId == 73428 {
+		log.Warn("🚀 FALLBACK: Forcing QMPoW for Quantum-Geth network (networkId 73428)")
+		qmpowConfig = &ctypes.QMPoWConfig{
+			QBits:    12,
+			TCount:   4096,
+			LNet:     48,
+			EpochLen: 100,
+			TestMode: false, // ENABLE REAL QUANTUM MINING
+		}
+		log.Info("🔬 DEBUG: Fallback QMPoW config created",
+			"qbits", qmpowConfig.QBits,
+			"tcount", qmpowConfig.TCount,
+			"lnet", qmpowConfig.LNet,
+			"epochLen", qmpowConfig.EpochLen,
+			"testMode", qmpowConfig.TestMode)
+	}
+
 	engine := ethconfig.CreateConsensusEngine(stack, &ethashConfig, cliqueConfig, lyra2Config, qmpowConfig, config.Miner.Notify, config.Miner.Noverify, chainDb)
 
 	chainConfig, err := core.LoadChainConfig(chainDb, config.Genesis)

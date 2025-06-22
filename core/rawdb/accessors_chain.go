@@ -369,12 +369,22 @@ func ReadHeader(db ethdb.Reader, hash common.Hash, number uint64) *types.Header 
 		return nil
 	}
 	header := new(types.Header)
-	// Use custom DecodeRLP method to properly handle QuantumNonce
-	stream := rlp.NewStream(bytes.NewReader(data), 0)
-	if err := header.DecodeRLP(stream); err != nil {
+	log.Debug("🔍 Reading header RLP", "hash", hash.Hex()[:8], "number", number, "dataSize", len(data))
+
+	// Use standard RLP decoding (no custom DecodeRLP needed with rlp:"tail")
+	if err := rlp.DecodeBytes(data, header); err != nil {
 		log.Error("Invalid block header RLP", "hash", hash, "err", err)
 		return nil
 	}
+	log.Debug("🔍 Header RLP decoded successfully", "hash", hash.Hex()[:8])
+
+	// Unmarshal quantum blob to populate virtual quantum fields
+	if err := header.UnmarshalQuantumBlob(); err != nil {
+		log.Error("Failed to unmarshal quantum blob", "hash", hash, "err", err)
+		return nil
+	}
+	log.Debug("🔍 Quantum blob unmarshaled successfully", "hash", hash.Hex()[:8])
+
 	return header
 }
 
@@ -387,6 +397,9 @@ func WriteHeader(db ethdb.KeyValueWriter, header *types.Header) {
 	)
 	// Write the hash -> number mapping
 	WriteHeaderNumber(db, hash, number)
+
+	// Marshal quantum fields into QBlob before encoding
+	header.MarshalQuantumBlob()
 
 	// Write the encoded header
 	data, err := rlp.EncodeToBytes(header)

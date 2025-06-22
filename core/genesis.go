@@ -489,34 +489,83 @@ func GenesisToBlock(g *genesisT.Genesis, db ethdb.Database) *types.Block {
 		}
 	}
 	var withdrawals []*types.Withdrawal
+
+	// Always initialize EIP fields to prevent RLP decoding issues
+	// Even if EIPs are not enabled, we need proper values for RLP compatibility
+	head.WithdrawalsHash = &types.EmptyWithdrawalsHash
+	head.ExcessBlobGas = new(uint64)
+	head.BlobGasUsed = new(uint64)
+	head.ParentBeaconRoot = new(common.Hash)
+	withdrawals = make([]*types.Withdrawal, 0)
+
+	// Override with genesis values if provided
+	if g.ExcessBlobGas != nil {
+		head.ExcessBlobGas = g.ExcessBlobGas
+	}
+	if g.BlobGasUsed != nil {
+		head.BlobGasUsed = g.BlobGasUsed
+	}
+
 	if conf := g.Config; conf != nil {
 		// EIP4895 defines the withdwrawals tx type, implemented on ETH in the Shanghai fork.
 		isEIP4895 := conf.IsEnabledByTime(g.Config.GetEIP4895TransitionTime, &g.Timestamp) || g.Config.IsEnabled(g.Config.GetEIP4895Transition, new(big.Int).SetUint64(g.Number))
 		if isEIP4895 {
-			head.WithdrawalsHash = &types.EmptyWithdrawalsHash
-			withdrawals = make([]*types.Withdrawal, 0)
+			// EIP4895 is enabled, keep the default empty withdrawals hash
 		}
 		// EIP4844 and EIP4788 are Cancun features.
 		isEIP4844 := conf.IsEnabledByTime(g.Config.GetEIP4844TransitionTime, &g.Timestamp) || conf.IsEnabled(conf.GetEIP4844Transition, new(big.Int).SetUint64(g.Number))
 		if isEIP4844 {
-			// EIP-4844 fields
-			head.ExcessBlobGas = g.ExcessBlobGas
-			head.BlobGasUsed = g.BlobGasUsed
-			if head.ExcessBlobGas == nil {
-				head.ExcessBlobGas = new(uint64)
-			}
-			if head.BlobGasUsed == nil {
-				head.BlobGasUsed = new(uint64)
-			}
+			// EIP-4844 fields already initialized above
 		}
 		isEIP4788 := conf.IsEnabledByTime(g.Config.GetEIP4788TransitionTime, &g.Timestamp) || conf.IsEnabled(g.Config.GetEIP4788Transition, new(big.Int).SetUint64(g.Number))
 		if isEIP4788 {
-			// EIP-4788: The parentBeaconBlockRoot of the genesis block is always
-			// the zero hash. This is because the genesis block does not have a parent
-			// by definition.
-			head.ParentBeaconRoot = new(common.Hash)
+			// EIP-4788 field already initialized above
 		}
 	}
+
+	// Initialize quantum fields for quantum-enabled chains (genesis block)
+	if types.IsQuantumActive(head.Number) {
+		log.Info("🌱 Initializing quantum fields for genesis block")
+
+		// Initialize quantum fields for genesis block (block 0)
+		epoch := uint32(0)     // Genesis is always epoch 0
+		qbits := uint16(12)    // Starting qubits per v0.9-rc3-hw0 spec
+		tcount := uint32(4096) // Fixed T-count
+		lnet := uint16(48)     // Fixed puzzle count
+		qnonce := uint64(0)    // Genesis nonce
+		attestMode := uint8(0) // Dilithium mode
+
+		head.Epoch = &epoch
+		head.QBits = &qbits
+		head.TCount = &tcount
+		head.LNet = &lnet
+		head.QNonce64 = &qnonce
+		head.AttestMode = &attestMode
+
+		// Initialize byte arrays
+		head.ExtraNonce32 = make([]byte, 32)
+		head.BranchNibbles = make([]byte, 48)
+
+		// Initialize hash fields as zero hashes (genesis has no quantum computation)
+		zeroHash := common.Hash{}
+		head.OutcomeRoot = &zeroHash
+		head.GateHash = &zeroHash
+		head.ProofRoot = &zeroHash
+
+		// Marshal quantum fields into QBlob for proper RLP encoding
+		log.Info("🌱 Marshaling quantum blob for genesis")
+		head.MarshalQuantumBlob()
+		log.Info("🌱 Genesis quantum blob marshaled", "blobSize", len(head.QBlob))
+
+		log.Info("🌱 Genesis quantum fields initialized",
+			"blockNumber", head.Number.Uint64(),
+			"epoch", *head.Epoch,
+			"qbits", *head.QBits,
+			"puzzles", *head.LNet)
+	} else {
+		log.Info("🌱 Genesis block is not quantum-enabled")
+	}
+
 	return types.NewBlock(head, nil, nil, nil, trie.NewStackTrie(nil)).WithWithdrawals(withdrawals)
 }
 

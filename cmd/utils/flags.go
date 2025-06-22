@@ -639,6 +639,14 @@ var (
 		Category: flags.MinerCategory,
 	}
 
+	// Quantum PoW settings
+	QuantumSolverFlag = &cli.StringFlag{
+		Name:     "quantum.solver",
+		Usage:    "Path to quantum solver executable (for QMPoW consensus)",
+		Value:    "./qiskit_solver.py",
+		Category: flags.MinerCategory,
+	}
+
 	// Account settings
 	UnlockedAccountFlag = &cli.StringFlag{
 		Name:     "unlock",
@@ -1870,6 +1878,12 @@ func setMiner(ctx *cli.Context, cfg *miner.Config) {
 	}
 	if ctx.IsSet(MinerNewPayloadTimeout.Name) {
 		cfg.NewPayloadTimeout = ctx.Duration(MinerNewPayloadTimeout.Name)
+	}
+	// Set quantum solver path for QMPoW consensus
+	if ctx.IsSet(QuantumSolverFlag.Name) {
+		// Store the quantum solver path in a way that can be accessed by QMPoW
+		// This will be handled when creating the consensus engine
+		log.Info("Quantum solver path set", "path", ctx.String(QuantumSolverFlag.Name))
 	}
 }
 

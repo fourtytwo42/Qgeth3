@@ -247,8 +247,8 @@ func CreateConsensusEngine(stack *node.Node, ethashConfig *ethash.Config, clique
 			"epochLen", qmpowConfig.EpochLen)
 
 		config := qmpow.Config{
-			PowMode:  qmpow.ModeFake,
-			TestMode: true,
+			PowMode:  qmpow.ModeNormal,     // ENABLE REAL QUANTUM MINING
+			TestMode: qmpowConfig.TestMode, // Use config from genesis/fallback
 		}
 		log.Info("🔬 DEBUG: Creating QMPoW engine", "powMode", config.PowMode, "testMode", config.TestMode)
 

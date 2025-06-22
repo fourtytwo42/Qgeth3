@@ -168,9 +168,7 @@ func CalculateNextDifficulty(currentDifficulty *big.Int, actualTime, targetTime 
 	// Using fixed-point arithmetic to preserve fractional precision
 	newDifficulty := new(big.Int).Set(currentDifficulty)
 	newDifficulty.Mul(newDifficulty, big.NewInt(int64(targetTime)))
-	newDifficulty.Mul(newDifficulty, big.NewInt(DifficultyPrecision))
 	newDifficulty.Div(newDifficulty, big.NewInt(int64(actualTime)))
-	newDifficulty.Div(newDifficulty, big.NewInt(DifficultyPrecision))
 
 	// Limit adjustment to 4x up or down (like Bitcoin)
 	maxAdjustment := new(big.Int).Mul(currentDifficulty, big.NewInt(TargetAdjustmentFactor))
@@ -185,11 +183,12 @@ func CalculateNextDifficulty(currentDifficulty *big.Int, actualTime, targetTime 
 		log.Info("🔽 Difficulty capped at minimum adjustment", "newDifficulty", FormatDifficulty(newDifficulty))
 	}
 
-	// Allow very low difficulty for testing - comment out minimum enforcement
-	// minDiff := big.NewInt(DifficultyPrecision)
-	// if newDifficulty.Cmp(minDiff) < 0 {
-	//	newDifficulty.Set(minDiff)
-	// }
+	// Enforce minimum difficulty to prevent difficulty from going to 0
+	minDiff := big.NewInt(DifficultyPrecision) // Minimum 1.0 difficulty
+	if newDifficulty.Cmp(minDiff) < 0 {
+		newDifficulty.Set(minDiff)
+		log.Info("🔒 Difficulty clamped to minimum", "newDifficulty", FormatDifficulty(newDifficulty))
+	}
 
 	ratio := float64(targetTime) / float64(actualTime)
 	log.Info("✅ Bitcoin-style difficulty adjusted",

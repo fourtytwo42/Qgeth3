@@ -1,7 +1,7 @@
 // Copyright 2025 Quantum-Geth Authors
 // This file is part of the quantum-geth library.
 
-// Package qmpow implements the quantum micro-puzzle proof-of-work consensus engine.
+// Package qmpow implements the Quantum-Geth v0.9-rc3-hw0 quantum proof-of-work consensus engine.
 package qmpow
 
 import (
@@ -10,84 +10,71 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 )
 
-// Default quantum proof of work parameters
+// Quantum-Geth v0.9-rc3-hw0 Parameters
 const (
-	DefaultQBits    uint8  = 12   // 4,096 quantum states per puzzle
-	DefaultTCount   uint16 = 4096 // Maximum T-gate complexity for high security
-	DefaultLNet     uint16 = 48   // Static puzzle count for 1,152-bit security (Bitcoin-style)
-	DefaultEpochLen uint64 = 100  // difficulty retarget period in blocks (every ~20 minutes at 12s blocks)
-	TargetBlockTime uint64 = 12   // target block time in seconds
+	// Epochic glide schedule
+	DefaultStartingQBits uint16 = 12   // Start n = 12 at epoch 0
+	DefaultTCount        uint32 = 4096 // Constant 4,096 T-gates per puzzle
+	DefaultLNet          uint16 = 48   // Fixed 48 puzzles providing 1,152-bit security
+	DefaultEpochLen      uint64 = 100  // Difficulty retarget period in blocks
+	TargetBlockTime      uint64 = 12   // Target block time in seconds
 
-	// Difficulty adjustment parameters - now controls nonce difficulty, not puzzle count
-	DifficultyAdjustmentThreshold = 0.15 // 15% threshold for adjustment (more tolerant)
-	DifficultyStepSmall           = 1    // Small adjustment step
-	DifficultyStepLarge           = 4    // Large adjustment step for big deviations
-	MinLNet                       = 48   // Fixed puzzle count - no longer variable
-	MaxLNet                       = 48   // Fixed puzzle count - Bitcoin-style static work
+	// Glide parameters
+	GlideInterval = 12500 // Add +1.0 qubit every 12,500 blocks (≈ 2 days)
+	EpochInterval = 50000 // Epoch = ⌊Height / 50,000⌋
 
-	// Mining complexity parameters
-	BaseComplexityMs      = 100 // base time per puzzle in milliseconds
-	ComplexityScaleFactor = 1.5 // how much complexity increases per puzzle
+	// Mining complexity parameters (for simulation)
+	BaseComplexityMs      = 100 // Base time per puzzle in milliseconds
+	ComplexityScaleFactor = 1.5 // How much complexity increases per puzzle
 )
 
-// QMPoWParams represents the configuration parameters for quantum proof of work
+// QMPoWParams represents the configuration parameters for Quantum-Geth v0.9-rc3-hw0
 type QMPoWParams struct {
-	QBits    uint8  // qubits per puzzle
-	TCount   uint16 // T gates per puzzle
-	LNet     uint16 // puzzles per block (current difficulty)
-	EpochLen uint64 // blocks per epoch for difficulty adjustment
+	Epoch    uint32 // Current epoch
+	QBits    uint16 // Qubits per puzzle (from glide schedule)
+	TCount   uint32 // T gates per puzzle (constant 4096)
+	LNet     uint16 // Puzzles per block (constant 48)
+	EpochLen uint64 // Blocks per epoch for difficulty adjustment
 }
 
-// DefaultParams returns the default quantum proof of work parameters
-func DefaultParams() *QMPoWParams {
-	return &QMPoWParams{
-		QBits:    DefaultQBits,
+// DefaultParams returns the default quantum proof of work parameters for a given height
+func DefaultParams(height uint64) QMPoWParams {
+	return QMPoWParams{
+		Epoch:    uint32(height / EpochInterval),
+		QBits:    CalculateQBitsForHeight(height),
 		TCount:   DefaultTCount,
 		LNet:     DefaultLNet,
 		EpochLen: DefaultEpochLen,
 	}
 }
 
-// ParamsForHeight returns the quantum proof of work parameters for a given block height
-func (q *QMPoW) ParamsForHeight(height uint64) *QMPoWParams {
-	if height == 0 {
-		return DefaultParams()
-	}
+// CalculateQBitsForHeight implements the epochic n-qubit glide schedule
+// Start n = 12 at epoch 0, add +1.0 qubit every 12,500 blocks (≈ 2 days)
+func CalculateQBitsForHeight(height uint64) uint16 {
+	// Calculate how many glide intervals have passed
+	glideSteps := height / GlideInterval
 
-	// Calculate difficulty based on block timing
-	params := DefaultParams()
-	params.LNet = q.calculateDifficultyForHeight(height)
+	// Start at 12 qubits, add 1 per glide step
+	qbits := DefaultStartingQBits + uint16(glideSteps)
 
-	return params
+	log.Debug("🧮 Calculating QBits for height",
+		"height", height,
+		"glideSteps", glideSteps,
+		"qbits", qbits)
+
+	return qbits
 }
 
-// calculateDifficultyForHeight implements the difficulty adjustment algorithm
-// NOTE: With Bitcoin-style mining, puzzle count is fixed at 48
-// Difficulty now adjusts through nonce target, not puzzle count
-func (q *QMPoW) calculateDifficultyForHeight(height uint64) uint16 {
-	// Always return fixed puzzle count - difficulty adjusts through nonce target
-	return DefaultLNet
+// ParamsForHeight returns quantum parameters for a specific block height
+func (q *QMPoW) ParamsForHeight(height uint64) QMPoWParams {
+	return DefaultParams(height)
 }
 
-// RetargetDifficulty adjusts the difficulty based on block timing
-// NOTE: With Bitcoin-style mining, this now affects nonce difficulty target
-// The puzzle count remains fixed at 48 for consistent 1,152-bit security
-func RetargetDifficulty(currentTime, parentTime uint64, currentLNet uint16) uint16 {
-	// Always return fixed puzzle count
-	// Real difficulty adjustment happens in nonce target calculation
-	log.Info("🎯 Bitcoin-style difficulty (fixed puzzles)",
-		"puzzles", DefaultLNet,
-		"security", "1,152-bit",
-		"style", "nonce-based")
-
-	return DefaultLNet
-}
-
-// EstimateNextDifficulty estimates what the next block's difficulty should be
-// NOTE: With Bitcoin-style mining, puzzle count is always fixed
+// EstimateNextDifficulty estimates the difficulty for the next block
+// In v0.9-rc3-hw0, difficulty is handled via nonce targeting, not puzzle count changes
 func (q *QMPoW) EstimateNextDifficulty(chain consensus.ChainHeaderReader, header *types.Header) uint16 {
-	// Always return fixed puzzle count for Bitcoin-style mining
-	log.Info("🔗 Fixed puzzle difficulty (Bitcoin-style)",
+	// Always return fixed puzzle count for v0.9-rc3-hw0
+	log.Info("🔗 Fixed puzzle difficulty (v0.9-rc3-hw0)",
 		"blockNumber", header.Number.Uint64(),
 		"puzzles", DefaultLNet,
 		"security", "1,152-bit")

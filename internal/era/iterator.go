@@ -68,7 +68,12 @@ func (it *Iterator) Block() (*types.Block, error) {
 		header types.Header
 		body   types.Body
 	)
+	// Use standard RLP decoding (no custom DecodeRLP needed with rlp:"tail")
 	if err := rlp.Decode(it.inner.Header, &header); err != nil {
+		return nil, err
+	}
+	// Unmarshal quantum blob to populate virtual quantum fields
+	if err := header.UnmarshalQuantumBlob(); err != nil {
 		return nil, err
 	}
 	if err := rlp.Decode(it.inner.Body, &body); err != nil {

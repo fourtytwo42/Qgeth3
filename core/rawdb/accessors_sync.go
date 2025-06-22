@@ -17,8 +17,6 @@
 package rawdb
 
 import (
-	"bytes"
-
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
@@ -46,17 +44,21 @@ func DeleteSkeletonSyncStatus(db ethdb.KeyValueWriter) {
 	}
 }
 
-// ReadSkeletonHeader retrieves a block header from the skeleton sync store,
+// ReadSkeletonHeader retrieves a block header from the skeleton sync store.
 func ReadSkeletonHeader(db ethdb.KeyValueReader, number uint64) *types.Header {
 	data, _ := db.Get(skeletonHeaderKey(number))
 	if len(data) == 0 {
 		return nil
 	}
 	header := new(types.Header)
-	// Use custom DecodeRLP method to properly handle QuantumNonce
-	stream := rlp.NewStream(bytes.NewReader(data), 0)
-	if err := header.DecodeRLP(stream); err != nil {
+	// Use standard RLP decoding (no custom DecodeRLP needed with rlp:"tail")
+	if err := rlp.DecodeBytes(data, header); err != nil {
 		log.Error("Invalid skeleton header RLP", "number", number, "err", err)
+		return nil
+	}
+	// Unmarshal quantum blob to populate virtual quantum fields
+	if err := header.UnmarshalQuantumBlob(); err != nil {
+		log.Error("Failed to unmarshal quantum blob", "number", number, "err", err)
 		return nil
 	}
 	return header
@@ -64,6 +66,9 @@ func ReadSkeletonHeader(db ethdb.KeyValueReader, number uint64) *types.Header {
 
 // WriteSkeletonHeader stores a block header into the skeleton sync store.
 func WriteSkeletonHeader(db ethdb.KeyValueWriter, header *types.Header) {
+	// Marshal quantum fields into QBlob before encoding
+	header.MarshalQuantumBlob()
+
 	data, err := rlp.EncodeToBytes(header)
 	if err != nil {
 		log.Crit("Failed to RLP encode header", "err", err)

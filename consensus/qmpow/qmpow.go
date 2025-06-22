@@ -1,16 +1,15 @@
 // Copyright 2025 Quantum-Geth Authors
 // This file is part of the quantum-geth library.
 
-// Package qmpow implements the quantum micro-puzzle proof-of-work consensus engine.
+// Package qmpow implements the Quantum-Geth v0.9-rc3-hw0 quantum proof-of-work consensus engine.
+// Unified, Branch-Serial Quantum Proof-of-Work — Canonical-Compile Edition
 package qmpow
 
 import (
 	"crypto/sha256"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"math/big"
-	"runtime"
 	"sync"
 	"time"
 
@@ -25,6 +24,28 @@ import (
 	"github.com/holiman/uint256"
 )
 
+// Quantum-Geth v0.9-rc3-hw0 Constants
+const (
+	// Epochic glide parameters
+	EpochBlocks   = 50000 // Epoch = ⌊Height / 50,000⌋
+	GlideBlocks   = 12500 // Add +1.0 qubit every 12,500 blocks (≈ 2 days)
+	StartingQBits = 12    // Start n = 12 at epoch 0
+
+	// Fixed circuit parameters
+	FixedTCount = 4096 // Constant 4,096 T-gates per puzzle
+	FixedLNet   = 48   // Fixed 48 puzzles providing 1,152-bit security
+
+	// Proof system sizes
+	OutcomeRootSize   = 32 // Merkle root of outcomes
+	BranchNibblesSize = 48 // One high-nibble per puzzle
+	GateHashSize      = 32 // SHA-256 of gate streams
+	ProofRootSize     = 32 // Merkle root of Nova proofs
+	ExtraNonce32Size  = 32 // Entropy field size
+
+	// Attestation modes
+	AttestModeDilithium = 0x00 // Deterministic Dilithium attestation
+)
+
 var (
 	// ErrInvalidQuantumProof is returned when quantum proof verification fails
 	ErrInvalidQuantumProof = errors.New("invalid quantum proof")
@@ -37,9 +58,21 @@ var (
 
 	// ErrInvalidOutcomeLength is returned when quantum outcome length is wrong
 	ErrInvalidOutcomeLength = errors.New("invalid quantum outcome length")
+
+	// ErrInvalidEpoch is returned when epoch calculation is wrong
+	ErrInvalidEpoch = errors.New("invalid epoch value")
+
+	// ErrInvalidQBits is returned when qubits don't match glide schedule
+	ErrInvalidQBits = errors.New("invalid qubits for height")
+
+	// ErrInvalidGateHash is returned when gate hash verification fails
+	ErrInvalidGateHash = errors.New("invalid gate hash")
+
+	// ErrInvalidBranchNibbles is returned when branch nibbles are invalid
+	ErrInvalidBranchNibbles = errors.New("invalid branch nibbles")
 )
 
-// QMPoW is the quantum micro-puzzle proof-of-work consensus engine
+// QMPoW is the v0.9-rc3-hw0 quantum mining engine
 type QMPoW struct {
 	config   Config
 	threads  int
@@ -74,7 +107,7 @@ func New(config Config) *QMPoW {
 
 	qmpow := &QMPoW{
 		config:  config,
-		threads: runtime.NumCPU(),
+		threads: 1,
 		update:  make(chan struct{}),
 	}
 
@@ -90,31 +123,40 @@ func (q *QMPoW) Author(header *types.Header) (common.Address, error) {
 // VerifyHeader checks whether a header conforms to the consensus rules
 func (q *QMPoW) VerifyHeader(chain consensus.ChainHeaderReader, header *types.Header, seal bool) error {
 	// Check that the header has quantum fields
-	if header.QBits == nil || header.TCount == nil || header.LUsed == nil {
+	if header.Epoch == nil || header.QBits == nil || header.TCount == nil || header.LNet == nil {
 		return ErrMissingQuantumFields
 	}
 
-	// Get expected parameters for this height
-	params := q.ParamsForHeight(header.Number.Uint64())
-
-	// Verify quantum parameters match expected values (fixed for Bitcoin-style)
-	if *header.QBits != params.QBits {
-		return fmt.Errorf("invalid QBits: got %d, expected %d", *header.QBits, params.QBits)
+	// Verify epoch calculation: Epoch = ⌊Height / 50,000⌋
+	expectedEpoch := uint32(header.Number.Uint64() / EpochBlocks)
+	if *header.Epoch != expectedEpoch {
+		return fmt.Errorf("%w: got %d, expected %d", ErrInvalidEpoch, *header.Epoch, expectedEpoch)
 	}
 
-	if *header.TCount != params.TCount {
-		return fmt.Errorf("invalid TCount: got %d, expected %d", *header.TCount, params.TCount)
+	// Verify QBits according to glide schedule
+	expectedQBits := CalculateQBitsForHeight(header.Number.Uint64())
+	if *header.QBits != expectedQBits {
+		return fmt.Errorf("%w: got %d, expected %d", ErrInvalidQBits, *header.QBits, expectedQBits)
 	}
 
-	// Bitcoin-style mining always uses exactly 48 puzzles
-	if *header.LUsed != DefaultLNet {
-		return fmt.Errorf("invalid LUsed: got %d, expected %d (Bitcoin-style fixed)", *header.LUsed, DefaultLNet)
+	// Verify fixed parameters
+	if *header.TCount != FixedTCount {
+		return fmt.Errorf("invalid TCount: got %d, expected %d", *header.TCount, FixedTCount)
 	}
 
-	// Verify outcome length
-	expectedOutcomeLen := int(*header.LUsed) * int((*header.QBits+7)/8)
-	if len(header.QOutcome) != expectedOutcomeLen {
-		return ErrInvalidOutcomeLength
+	if *header.LNet != FixedLNet {
+		return fmt.Errorf("invalid LNet: got %d, expected %d", *header.LNet, FixedLNet)
+	}
+
+	// Verify field sizes
+	if len(header.ExtraNonce32) != ExtraNonce32Size {
+		return fmt.Errorf("invalid ExtraNonce32 size: got %d, expected %d",
+			len(header.ExtraNonce32), ExtraNonce32Size)
+	}
+
+	if len(header.BranchNibbles) != BranchNibblesSize {
+		return fmt.Errorf("invalid BranchNibbles size: got %d, expected %d",
+			len(header.BranchNibbles), BranchNibblesSize)
 	}
 
 	// If we're not verifying the seal, skip proof verification
@@ -122,13 +164,55 @@ func (q *QMPoW) VerifyHeader(chain consensus.ChainHeaderReader, header *types.He
 		return nil
 	}
 
-	// Bitcoin-style quantum proof verification
-	log.Debug("🔍 Bitcoin-style quantum proof verification",
+	// Verify quantum proof according to v0.9-rc3-hw0 specification
+	log.Debug("🔍 Quantum-Geth v0.9-rc3-hw0 proof verification",
 		"blockNumber", header.Number.Uint64(),
+		"epoch", *header.Epoch,
+		"qbits", *header.QBits,
 		"difficulty", header.Difficulty)
 
-	// Use Bitcoin-style validation
-	return ValidateQuantumProof(header)
+	return q.verifyQuantumProofMain(header)
+}
+
+// verifyQuantumProofMain verifies quantum proof according to specification
+func (q *QMPoW) verifyQuantumProofMain(header *types.Header) error {
+	// TODO: Implement full quantum verification
+	// For now, use simplified verification for development
+	if q.config.TestMode || q.config.PowMode == ModeFake {
+		log.Info("🧪 Using simplified verification (test mode)")
+		return q.verifyQuantumProofStructureMain(header)
+	}
+
+	// Full verification would include:
+	// 1. Seed chain validation
+	// 2. Branch-dependent template selection
+	// 3. Canonical compiler verification
+	// 4. Tier-A/B/C proof stack validation
+	// 5. Dilithium attestation verification
+
+	log.Warn("⚠️ Full quantum verification not yet implemented - using simplified mode")
+	return q.verifyQuantumProofStructureMain(header)
+}
+
+// verifyQuantumProofStructureMain verifies structure according to quantum specification
+func (q *QMPoW) verifyQuantumProofStructureMain(header *types.Header) error {
+	// Verify required fields are present
+	if header.OutcomeRoot == nil {
+		return fmt.Errorf("missing OutcomeRoot")
+	}
+	if header.GateHash == nil {
+		return fmt.Errorf("missing GateHash")
+	}
+	if header.ProofRoot == nil {
+		return fmt.Errorf("missing ProofRoot")
+	}
+
+	log.Debug("✅ Quantum structure verification passed",
+		"blockNumber", header.Number.Uint64(),
+		"epoch", *header.Epoch,
+		"qbits", *header.QBits)
+
+	return nil
 }
 
 // VerifyHeaders is similar to VerifyHeader, but verifies a batch of headers
@@ -172,20 +256,34 @@ func (q *QMPoW) VerifyUncles(chain consensus.ChainReader, block *types.Block) er
 
 // Prepare initializes the consensus fields of a block header
 func (q *QMPoW) Prepare(chain consensus.ChainHeaderReader, header *types.Header) error {
-	log.Info("🎯 QMPoW Prepare called (Bitcoin-style)", "blockNumber", header.Number.Uint64(), "parentHash", header.ParentHash.Hex())
+	log.Info("🎯 QMPoW Prepare called (v0.9-rc3-hw0)", "blockNumber", header.Number.Uint64(), "parentHash", header.ParentHash.Hex())
 
 	params := q.ParamsForHeight(header.Number.Uint64())
 
-	// Set quantum parameters - FIXED puzzle count for Bitcoin-style mining
+	// Set quantum parameters according to v0.9-rc3-hw0 specification
+	header.Epoch = &params.Epoch
 	header.QBits = &params.QBits
 	header.TCount = &params.TCount
-	header.LUsed = &params.LNet // Always 48 puzzles for 1,152-bit security
+	header.LNet = &params.LNet // Always 48 puzzles for 1,152-bit security
 
-	// Bitcoin-style mining uses nonce iteration internally (no QNonce field needed)
+	// Initialize quantum nonce
+	var qnonce64 uint64 = 0
+	header.QNonce64 = &qnonce64
+
+	// Initialize entropy field
+	header.ExtraNonce32 = make([]byte, ExtraNonce32Size)
+
+	// Initialize branch nibbles
+	header.BranchNibbles = make([]byte, BranchNibblesSize)
+
+	// Set attestation mode
+	var attestMode uint8 = AttestModeDilithium
+	header.AttestMode = &attestMode
 
 	// Clear quantum fields that will be filled during sealing
-	header.QOutcome = nil
-	header.QProof = nil
+	header.OutcomeRoot = nil
+	header.GateHash = nil
+	header.ProofRoot = nil
 
 	// Set difficulty using Bitcoin-style calculation
 	if header.Number.Uint64() > 0 {
@@ -213,7 +311,7 @@ func (q *QMPoW) Prepare(chain consensus.ChainHeaderReader, header *types.Header)
 		}
 	} else {
 		// Genesis block - start with reasonable difficulty for competitive Bitcoin-style mining
-		header.Difficulty = big.NewInt(100000) // Much higher difficulty for competitive mining
+		header.Difficulty = big.NewInt(1000) // Match genesis.json difficulty
 		log.Info("🌱 Genesis block difficulty set (Bitcoin-style)",
 			"difficulty", header.Difficulty,
 			"fixedPuzzles", params.LNet,
@@ -222,6 +320,9 @@ func (q *QMPoW) Prepare(chain consensus.ChainHeaderReader, header *types.Header)
 
 	// Initialize optional fields to prevent RLP encoding issues
 	q.initializeOptionalFields(header)
+
+	// Marshal quantum fields into QBlob for proper RLP encoding
+	header.MarshalQuantumBlob()
 
 	return nil
 }
@@ -254,139 +355,104 @@ func (q *QMPoW) Seal(chain consensus.ChainHeaderReader, block *types.Block, resu
 	return nil
 }
 
-// seal is the Bitcoin-style quantum mining function
-// This implements true Bitcoin-style mining with nonce iteration and target validation
+// seal is the v0.9-rc3-hw0 quantum mining function
+// This implements the unified, branch-serial quantum proof-of-work
 func (q *QMPoW) seal(chain consensus.ChainHeaderReader, block *types.Block, results chan<- *types.Block, stop <-chan struct{}) {
 	header := types.CopyHeader(block.Header())
 
-	// Initialize QNonce to zero (like Bitcoin starts at nonce 0)
-	header.QNonce = types.EncodeQuantumNonce(0)
+	// Initialize quantum fields
+	q.initializeQuantumFields(header)
 
-	// Calculate quantum target from difficulty (Bitcoin-style)
-	target := CalculateQuantumTarget(header.Difficulty)
-
-	log.Info("🎯 Starting Bitcoin-style quantum mining",
+	log.Info("🔬 Starting quantum mining",
 		"number", header.Number.Uint64(),
-		"difficulty", header.Difficulty,
-		"target", fmt.Sprintf("0x%x", target),
-		"puzzles", *header.LUsed,
-		"security", "1,152-bit")
+		"epoch", *header.Epoch,
+		"qbits", *header.QBits,
+		"puzzles", *header.LNet,
+		"difficulty", header.Difficulty)
 
 	start := time.Now()
 
-	// Bitcoin-style nonce iteration (internal tracking)
-	qnonceVar := uint64(0)
-
-	for qnonceVar <= MaxNonceAttempts {
+	// Bitcoin-style nonce iteration
+	for qnonce := uint64(0); qnonce <= MaxNonceAttempts; qnonce++ {
 		// Check if we should stop
 		select {
 		case <-stop:
-			log.Info("🛑 Bitcoin-style quantum mining stopped", "attempts", qnonceVar)
+			log.Info("🛑 Quantum mining stopped", "attempts", qnonce)
 			return
 		default:
 		}
 
-		// Set QNonce for this attempt (Bitcoin-style)
-		header.QNonce = types.EncodeQuantumNonce(qnonceVar)
-		log.Debug("QNonce before sealing", "qnonce", qnonceVar)
+		// Set QNonce64 for this attempt
+		*header.QNonce64 = qnonce
 
-		// Generate seed with nonce variation (Bitcoin-style)
-		seed := q.SealHashWithNonce(header)
-
-		// Solve exactly 48 quantum puzzles (fixed work like Bitcoin's SHA-256)
-		outcomes, aggregateProof, err := q.solveQuantumPuzzles(seed.Bytes(), *header.QBits, *header.TCount, *header.LUsed)
+		// Solve quantum puzzles
+		err := q.SolveQuantumPuzzles(header)
 		if err != nil {
-			log.Error("❌ Failed to solve quantum puzzles", "qnonce", qnonceVar, "err", err)
-			qnonceVar++
+			log.Error("❌ Failed to solve quantum puzzles", "qnonce", qnonce, "err", err)
 			continue
 		}
 
-		// Check if proof meets target (Bitcoin-style validation)
-		if CheckQuantumProofTarget(outcomes, aggregateProof, qnonceVar, target) {
-			// SUCCESS! Found valid quantum proof (like finding Bitcoin block)
-			header.QOutcome = outcomes
-			header.QProof = aggregateProof
-
-			// Initialize optional fields to prevent RLP issues
-			q.initializeOptionalFields(header)
-
+		// Check if proof meets target
+		if q.checkQuantumTarget(header) {
+			// SUCCESS! Found valid quantum proof
 			miningTime := time.Since(start)
-			hashrate := float64(qnonceVar+1) / miningTime.Seconds()
+			hashrate := float64(qnonce+1) / miningTime.Seconds()
 
-			log.Info("🎉 Bitcoin-style quantum block mined!",
+			log.Info("🎉 Quantum block mined!",
 				"number", header.Number.Uint64(),
-				"qnonce", header.QNonce.Uint64(),
-				"attempts", qnonceVar+1,
+				"epoch", *header.Epoch,
+				"qnonce", qnonce,
+				"attempts", qnonce+1,
 				"miningTime", miningTime,
 				"hashrate", fmt.Sprintf("%.2f attempts/sec", hashrate),
-				"difficulty", header.Difficulty,
-				"target", fmt.Sprintf("0x%x", target),
-				"puzzles", *header.LUsed,
-				"security", "1,152-bit")
+				"qbits", *header.QBits,
+				"puzzles", *header.LNet)
 
-			// Update hashrate (attempts per second, not puzzles per second)
+			// Update hashrate
 			q.lock.Lock()
 			q.hashrate = uint64(hashrate)
 			q.lock.Unlock()
 
 			// Send successful block
 			sealedBlock := block.WithSeal(header)
-
-			log.Info("📦 Sending Bitcoin-style quantum block")
 			select {
 			case results <- sealedBlock:
-				log.Info("✅ Bitcoin-style quantum block sent successfully")
+				log.Info("✅ Quantum block sent successfully")
 			case <-stop:
 				log.Info("🛑 Stopped while sending block")
 			}
 			return
 		}
 
-		// Try next nonce (Bitcoin-style iteration)
-		qnonceVar++
-
-		// Log progress every 1000 attempts (like Bitcoin mining pools)
-		if qnonceVar%ProgressLogInterval == 0 {
+		// Log progress every 1000 attempts
+		if qnonce%1000 == 0 && qnonce > 0 {
 			elapsed := time.Since(start)
-			rate := float64(qnonceVar) / elapsed.Seconds()
-			log.Info("⛏️  Bitcoin-style quantum mining progress",
-				"attempts", qnonceVar,
+			rate := float64(qnonce) / elapsed.Seconds()
+			log.Info("⛏️  Quantum mining progress",
+				"attempts", qnonce,
 				"rate", fmt.Sprintf("%.2f attempts/sec", rate),
-				"elapsed", elapsed,
-				"target", fmt.Sprintf("0x%x", target))
+				"elapsed", elapsed)
 		}
 	}
 
-	// Exhausted all nonces - this should be extremely rare with proper difficulty
+	// Exhausted all nonces
 	log.Warn("⚠️  Exhausted all nonces without finding valid quantum proof",
 		"maxAttempts", MaxNonceAttempts,
-		"difficulty", header.Difficulty,
-		"target", fmt.Sprintf("0x%x", target),
-		"note", "Difficulty may be too high - network should retarget")
+		"difficulty", header.Difficulty)
 }
 
-// SealHashWithNonce returns hash including nonce (Bitcoin-style seed generation)
+// SealHashWithNonce returns hash including nonce (v0.9-rc3-hw0 seed generation)
 func (q *QMPoW) SealHashWithNonce(header *types.Header) common.Hash {
-	// Create header copy without quantum fields
+	// Create header copy for seed generation
 	headerCopy := types.CopyHeader(header)
-	headerCopy.QOutcome = nil
-	headerCopy.QProof = nil
 
-	// Add nonce variation to the seed by modifying the Extra field
-	// This creates unique seeds for each nonce attempt (Bitcoin-style)
-	qnonce := header.QNonce.Uint64()
-	nonceBytes := make([]byte, 8)
-	binary.BigEndian.PutUint64(nonceBytes, qnonce)
+	// Clear quantum proof fields that will be calculated
+	headerCopy.OutcomeRoot = nil
+	headerCopy.GateHash = nil
+	headerCopy.ProofRoot = nil
 
-	// Combine original extra data with nonce
-	originalExtra := headerCopy.Extra
-	headerCopy.Extra = append(originalExtra, nonceBytes...)
-
+	// Include nonce in the seed calculation
 	hash := rlpHash(headerCopy)
-
-	// Restore original extra data
-	headerCopy.Extra = originalExtra
-
 	return hash
 }
 
@@ -418,10 +484,11 @@ func (q *QMPoW) initializeOptionalFields(header *types.Header) {
 
 // SealHash returns the hash of a block prior to it being sealed
 func (q *QMPoW) SealHash(header *types.Header) common.Hash {
-	// Create a copy of the header without quantum fields
+	// Create a copy of the header without quantum proof fields
 	headerCopy := types.CopyHeader(header)
-	headerCopy.QOutcome = nil
-	headerCopy.QProof = nil
+	headerCopy.OutcomeRoot = nil
+	headerCopy.GateHash = nil
+	headerCopy.ProofRoot = nil
 
 	return rlpHash(headerCopy)
 }
@@ -466,6 +533,8 @@ func (q *QMPoW) CalcDifficulty(chain consensus.ChainHeaderReader, time uint64, p
 		log.Info("📊 Bitcoin-style retarget analysis",
 			"retargetStart", retargetStart,
 			"blockNumber", blockNumber,
+			"currentTime", time,
+			"startHeaderTime", startHeader.Time,
 			"actualTime", actualTime,
 			"targetTime", targetTime,
 			"ratio", float64(actualTime)/float64(targetTime))
@@ -525,59 +594,22 @@ func (q *QMPoW) SetThreads(threads int) {
 }
 
 // verifyQuantumProof verifies the quantum proof in a block header
+// verifyQuantumProof is deprecated - use verifyQuantumProofMain instead
 func (q *QMPoW) verifyQuantumProof(chain consensus.ChainHeaderReader, header *types.Header) error {
-	if q.config.TestMode || q.config.PowMode == ModeFake {
-		// In test mode or fake mode, just verify the structure instantly
-		log.Info("🧪 Using INSTANT verification (test/fake mode)")
-		return q.verifyQuantumProofStructure(header)
-	}
-
-	// Generate the seed
-	seed := q.SealHash(header)
-
-	// Deserialize the aggregate proof
-	aggregateProof, err := proof.DeserializeAggregateProof(header.QProof)
-	if err != nil {
-		return fmt.Errorf("failed to deserialize quantum proof: %v", err)
-	}
-
-	// Verify the aggregate proof
-	if err := proof.VerifyAggregate(aggregateProof, seed.Bytes(), header.ParentHash); err != nil {
-		return fmt.Errorf("quantum proof verification failed: %v", err)
-	}
-
-	// Verify outcome consistency
-	if !bytesEqual(header.QOutcome, aggregateProof.Outcomes) {
-		return fmt.Errorf("quantum outcome mismatch")
-	}
-
-	return nil
+	// Redirect to main quantum verification
+	return q.verifyQuantumProofMain(header)
 }
 
-// verifyQuantumProofStructure verifies just the structure of quantum fields (for testing)
+// verifyQuantumProofStructure is deprecated - use ValidateQuantumHeader instead
 func (q *QMPoW) verifyQuantumProofStructure(header *types.Header) error {
-	// Verify outcome length
-	expectedOutcomeLen := int(*header.LUsed) * int((*header.QBits+7)/8)
-	if len(header.QOutcome) != expectedOutcomeLen {
-		return ErrInvalidOutcomeLength
-	}
-
-	// Verify proof is not empty
-	if len(header.QProof) == 0 {
-		return ErrInvalidQuantumProof
-	}
-
-	return nil
+	// Redirect to quantum validation
+	return ValidateQuantumHeader(header)
 }
 
-// solveQuantumPuzzles generates quantum puzzle solutions with realistic timing
+// solveQuantumPuzzles is deprecated - use SolveQuantumPuzzles instead
 func (q *QMPoW) solveQuantumPuzzles(seed []byte, qbits uint8, tcount uint16, lnet uint16) ([]byte, []byte, error) {
-	log.Info("🔬 Starting realistic quantum puzzle solving",
-		"qbits", qbits, "tcount", tcount, "lnet", lnet,
-		"estimatedTime", fmt.Sprintf("%.2fs", EstimateBlockTime(lnet)))
-
-	// Use simulation mode for realistic quantum mining
-	return q.simulateQuantumSolver(seed, qbits, tcount, lnet)
+	log.Warn("⚠️ solveQuantumPuzzles is deprecated - use SolveQuantumPuzzles instead")
+	return nil, nil, fmt.Errorf("deprecated function - use quantum implementation")
 }
 
 // simulateQuantumSolver simulates quantum puzzle solving with realistic timing

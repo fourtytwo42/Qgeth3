@@ -139,7 +139,12 @@ func (e *Era) GetBlockByNumber(num uint64) (*types.Block, error) {
 		return nil, err
 	}
 	var header types.Header
+	// Use standard RLP decoding (no custom DecodeRLP needed with rlp:"tail")
 	if err := rlp.Decode(r, &header); err != nil {
+		return nil, err
+	}
+	// Unmarshal quantum blob to populate virtual quantum fields
+	if err := header.UnmarshalQuantumBlob(); err != nil {
 		return nil, err
 	}
 	off += n
@@ -182,7 +187,12 @@ func (e *Era) InitialTD() (*big.Int, error) {
 	if r, n, err = newSnappyReader(e.s, TypeCompressedHeader, off); err != nil {
 		return nil, err
 	}
+	// Use standard RLP decoding (no custom DecodeRLP needed with rlp:"tail")
 	if err := rlp.Decode(r, &header); err != nil {
+		return nil, err
+	}
+	// Unmarshal quantum blob to populate virtual quantum fields
+	if err := header.UnmarshalQuantumBlob(); err != nil {
 		return nil, err
 	}
 	off += n
