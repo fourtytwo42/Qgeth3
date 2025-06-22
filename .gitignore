@@ -149,4 +149,9 @@ quantum-geth/build/
 __pycache__/
 *.pyc
 
+# Force include scripts (override other ignore patterns)
+!scripts/
+!scripts/*.sh
+!scripts/*.md
+
 # Existing entries below...
