@@ -32,7 +32,7 @@ Below is a **step-by-step implementation roadmap** for Quantum-Geth v0.9–BareB
   * Implement Keccak-based PRP to fill rotation angles/CX mapping from low‐bits
   * Validate depth/T-count invariants for all templates
 
-* [ ] **Puzzle Orchestrator & Seed-Chain**
+* [x] **Puzzle Orchestrator & Seed-Chain**
   Implement mining loop that for each `QNonce64` / `ExtraNonce32` does:
 
   * Compute `Seed0`; for i in \[0…47]: compile branch\_i, execute, record `Outcome_i`, chain to `Seed_{i+1}`
