@@ -58,6 +58,51 @@ func (n *BlockNonce) UnmarshalText(input []byte) error {
 	return hexutil.UnmarshalFixedText("BlockNonce", input, n[:])
 }
 
+// A QuantumNonce is a 64-bit nonce which proves (combined with the
+// quantum proof) that a sufficient amount of quantum computation has been carried
+// out on a block. This works exactly like Bitcoin's nonce field.
+type QuantumNonce [8]byte
+
+// EncodeQuantumNonce converts the given integer to a quantum nonce.
+func EncodeQuantumNonce(i uint64) QuantumNonce {
+	var n QuantumNonce
+	binary.BigEndian.PutUint64(n[:], i)
+	return n
+}
+
+// Uint64 returns the integer value of a quantum nonce.
+func (n QuantumNonce) Uint64() uint64 {
+	return binary.BigEndian.Uint64(n[:])
+}
+
+// MarshalText encodes n as a hex string with 0x prefix.
+func (n QuantumNonce) MarshalText() ([]byte, error) {
+	return hexutil.Bytes(n[:]).MarshalText()
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (n *QuantumNonce) UnmarshalText(input []byte) error {
+	return hexutil.UnmarshalFixedText("QuantumNonce", input, n[:])
+}
+
+// EncodeRLP implements rlp.Encoder.
+func (n QuantumNonce) EncodeRLP(w io.Writer) error {
+	return rlp.Encode(w, n[:])
+}
+
+// DecodeRLP implements rlp.Decoder.
+func (n *QuantumNonce) DecodeRLP(s *rlp.Stream) error {
+	var b []byte
+	if err := s.Decode(&b); err != nil {
+		return err
+	}
+	if len(b) != 8 {
+		return fmt.Errorf("invalid QuantumNonce length: got %d, want 8", len(b))
+	}
+	copy(n[:], b)
+	return nil
+}
+
 //go:generate go run github.com/fjl/gencodec -type Header -field-override headerMarshaling -out gen_header_json.go
 //go:generate go run ../../rlp/rlpgen -type Header -out gen_header_rlp.go
 
@@ -95,12 +140,85 @@ type Header struct {
 	ParentBeaconRoot *common.Hash `json:"parentBeaconBlockRoot" rlp:"optional"`
 
 	// Quantum micro-puzzle fields for QMPoW consensus
-	QBits    *uint8  `json:"qBits" rlp:"optional"`    // qubits per puzzle
-	TCount   *uint16 `json:"tCount" rlp:"optional"`   // T gates per puzzle
-	LUsed    *uint16 `json:"lUsed" rlp:"optional"`    // L_net when block was mined (fixed at 48)
-	QNonce   *uint64 `json:"qNonce" rlp:"optional"`   // quantum nonce for Bitcoin-style mining
-	QOutcome []byte  `json:"qOutcome" rlp:"optional"` // concatenated y₀…y_L-1
-	QProof   []byte  `json:"qProof" rlp:"optional"`   // aggregate Mahadev proof blob
+	QBits    *uint8       `json:"qBits" rlp:"optional"`    // qubits per puzzle
+	TCount   *uint16      `json:"tCount" rlp:"optional"`   // T gates per puzzle
+	LUsed    *uint16      `json:"lUsed" rlp:"optional"`    // L_net when block was mined (fixed at 48)
+	QNonce   QuantumNonce `json:"qNonce" rlp:"optional"`   // quantum nonce for Bitcoin-style mining (fixed-size like Bitcoin)
+	QOutcome []byte       `json:"qOutcome" rlp:"optional"` // concatenated y₀…y_L-1
+	QProof   []byte       `json:"qProof" rlp:"optional"`   // aggregate Mahadev proof blob
+}
+
+// DecodeRLP implements rlp.Decoder for Header to properly handle QuantumNonce.
+func (h *Header) DecodeRLP(s *rlp.Stream) error {
+	type headerRLP struct {
+		ParentHash       common.Hash
+		UncleHash        common.Hash
+		Coinbase         common.Address
+		Root             common.Hash
+		TxHash           common.Hash
+		ReceiptHash      common.Hash
+		Bloom            Bloom
+		Difficulty       *big.Int
+		Number           *big.Int
+		GasLimit         uint64
+		GasUsed          uint64
+		Time             uint64
+		Extra            []byte
+		MixDigest        common.Hash
+		Nonce            BlockNonce
+		BaseFee          *big.Int     `rlp:"optional"`
+		WithdrawalsHash  *common.Hash `rlp:"optional"`
+		BlobGasUsed      *uint64      `rlp:"optional"`
+		ExcessBlobGas    *uint64      `rlp:"optional"`
+		ParentBeaconRoot *common.Hash `rlp:"optional"`
+		QBits            *uint8       `rlp:"optional"`
+		TCount           *uint16      `rlp:"optional"`
+		LUsed            *uint16      `rlp:"optional"`
+		QNonce           []byte       `rlp:"optional"`
+		QOutcome         []byte       `rlp:"optional"`
+		QProof           []byte       `rlp:"optional"`
+	}
+
+	var dec headerRLP
+	if err := s.Decode(&dec); err != nil {
+		return err
+	}
+
+	h.ParentHash = dec.ParentHash
+	h.UncleHash = dec.UncleHash
+	h.Coinbase = dec.Coinbase
+	h.Root = dec.Root
+	h.TxHash = dec.TxHash
+	h.ReceiptHash = dec.ReceiptHash
+	h.Bloom = dec.Bloom
+	h.Difficulty = dec.Difficulty
+	h.Number = dec.Number
+	h.GasLimit = dec.GasLimit
+	h.GasUsed = dec.GasUsed
+	h.Time = dec.Time
+	h.Extra = dec.Extra
+	h.MixDigest = dec.MixDigest
+	h.Nonce = dec.Nonce
+	h.BaseFee = dec.BaseFee
+	h.WithdrawalsHash = dec.WithdrawalsHash
+	h.BlobGasUsed = dec.BlobGasUsed
+	h.ExcessBlobGas = dec.ExcessBlobGas
+	h.ParentBeaconRoot = dec.ParentBeaconRoot
+	h.QBits = dec.QBits
+	h.TCount = dec.TCount
+	h.LUsed = dec.LUsed
+
+	// Handle QNonce specially
+	if len(dec.QNonce) == 8 {
+		copy(h.QNonce[:], dec.QNonce)
+	} else if len(dec.QNonce) > 0 {
+		return fmt.Errorf("invalid QNonce length: got %d, want 8", len(dec.QNonce))
+	}
+
+	h.QOutcome = dec.QOutcome
+	h.QProof = dec.QProof
+
+	return nil
 }
 
 // field type overrides for gencodec
@@ -115,6 +233,7 @@ type headerMarshaling struct {
 	Hash          common.Hash `json:"hash"` // adds call to Hash() in MarshalJSON
 	BlobGasUsed   *hexutil.Uint64
 	ExcessBlobGas *hexutil.Uint64
+	QNonce        QuantumNonce // force QNonce to be treated as fixed-size array, not pointer
 }
 
 // Hash returns the block hash of the header, which is simply the keccak256 hash of its
@@ -312,6 +431,29 @@ func CopyHeader(h *Header) *Header {
 		cpy.ParentBeaconRoot = new(common.Hash)
 		*cpy.ParentBeaconRoot = *h.ParentBeaconRoot
 	}
+	// Deep copy quantum fields
+	if h.QBits != nil {
+		cpy.QBits = new(uint8)
+		*cpy.QBits = *h.QBits
+	}
+	if h.TCount != nil {
+		cpy.TCount = new(uint16)
+		*cpy.TCount = *h.TCount
+	}
+	if h.LUsed != nil {
+		cpy.LUsed = new(uint16)
+		*cpy.LUsed = *h.LUsed
+	}
+	// QNonce is now a fixed-size array like BlockNonce, so we copy it directly
+	cpy.QNonce = h.QNonce
+	if h.QOutcome != nil {
+		cpy.QOutcome = make([]byte, len(h.QOutcome))
+		copy(cpy.QOutcome, h.QOutcome)
+	}
+	if h.QProof != nil {
+		cpy.QProof = make([]byte, len(h.QProof))
+		copy(cpy.QProof, h.QProof)
+	}
 	return &cpy
 }
 
@@ -375,6 +517,7 @@ func (b *Block) Time() uint64         { return b.header.Time }
 func (b *Block) NumberU64() uint64        { return b.header.Number.Uint64() }
 func (b *Block) MixDigest() common.Hash   { return b.header.MixDigest }
 func (b *Block) Nonce() uint64            { return binary.BigEndian.Uint64(b.header.Nonce[:]) }
+func (b *Block) QNonce() uint64           { return b.header.QNonce.Uint64() }
 func (b *Block) Bloom() Bloom             { return b.header.Bloom }
 func (b *Block) Coinbase() common.Address { return b.header.Coinbase }
 func (b *Block) Root() common.Hash        { return b.header.Root }

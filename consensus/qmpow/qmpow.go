@@ -6,6 +6,7 @@ package qmpow
 
 import (
 	"crypto/sha256"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"math/big"
@@ -96,13 +97,18 @@ func (q *QMPoW) VerifyHeader(chain consensus.ChainHeaderReader, header *types.He
 	// Get expected parameters for this height
 	params := q.ParamsForHeight(header.Number.Uint64())
 
-	// Verify quantum parameters match expected values
+	// Verify quantum parameters match expected values (fixed for Bitcoin-style)
 	if *header.QBits != params.QBits {
 		return fmt.Errorf("invalid QBits: got %d, expected %d", *header.QBits, params.QBits)
 	}
 
 	if *header.TCount != params.TCount {
 		return fmt.Errorf("invalid TCount: got %d, expected %d", *header.TCount, params.TCount)
+	}
+
+	// Bitcoin-style mining always uses exactly 48 puzzles
+	if *header.LUsed != DefaultLNet {
+		return fmt.Errorf("invalid LUsed: got %d, expected %d (Bitcoin-style fixed)", *header.LUsed, DefaultLNet)
 	}
 
 	// Verify outcome length
@@ -116,8 +122,13 @@ func (q *QMPoW) VerifyHeader(chain consensus.ChainHeaderReader, header *types.He
 		return nil
 	}
 
-	// Verify the quantum proof
-	return q.verifyQuantumProof(chain, header)
+	// Bitcoin-style quantum proof verification
+	log.Debug("🔍 Bitcoin-style quantum proof verification",
+		"blockNumber", header.Number.Uint64(),
+		"difficulty", header.Difficulty)
+
+	// Use Bitcoin-style validation
+	return ValidateQuantumProof(header)
 }
 
 // VerifyHeaders is similar to VerifyHeader, but verifies a batch of headers
@@ -161,7 +172,7 @@ func (q *QMPoW) VerifyUncles(chain consensus.ChainReader, block *types.Block) er
 
 // Prepare initializes the consensus fields of a block header
 func (q *QMPoW) Prepare(chain consensus.ChainHeaderReader, header *types.Header) error {
-	log.Info("🔥 QMPoW Prepare called (Bitcoin-style)", "blockNumber", header.Number.Uint64(), "parentHash", header.ParentHash.Hex())
+	log.Info("🎯 QMPoW Prepare called (Bitcoin-style)", "blockNumber", header.Number.Uint64(), "parentHash", header.ParentHash.Hex())
 
 	params := q.ParamsForHeight(header.Number.Uint64())
 
@@ -170,17 +181,18 @@ func (q *QMPoW) Prepare(chain consensus.ChainHeaderReader, header *types.Header)
 	header.TCount = &params.TCount
 	header.LUsed = &params.LNet // Always 48 puzzles for 1,152-bit security
 
+	// Bitcoin-style mining uses nonce iteration internally (no QNonce field needed)
+
 	// Clear quantum fields that will be filled during sealing
 	header.QOutcome = nil
 	header.QProof = nil
 
-	// Set difficulty - for Bitcoin-style mining, this represents the nonce target
-	// The puzzle count is always fixed at 48
+	// Set difficulty using Bitcoin-style calculation
 	if header.Number.Uint64() > 0 {
 		// Get the parent header to calculate difficulty properly
 		parent := chain.GetHeader(header.ParentHash, header.Number.Uint64()-1)
 		if parent != nil {
-			// Use proper difficulty calculation for nonce target
+			// Use Bitcoin-style difficulty calculation
 			calculatedDifficulty := q.CalcDifficulty(chain, header.Time, parent)
 			header.Difficulty = calculatedDifficulty
 
@@ -190,7 +202,7 @@ func (q *QMPoW) Prepare(chain consensus.ChainHeaderReader, header *types.Header)
 				"newDifficulty", header.Difficulty,
 				"fixedPuzzles", params.LNet,
 				"security", "1,152-bit",
-				"style", "nonce-based")
+				"style", "Bitcoin-nonce-target")
 		} else {
 			// Fallback if parent not found
 			header.Difficulty = big.NewInt(int64(params.LNet))
@@ -200,35 +212,16 @@ func (q *QMPoW) Prepare(chain consensus.ChainHeaderReader, header *types.Header)
 				"fixedPuzzles", params.LNet)
 		}
 	} else {
-		// Genesis block
-		header.Difficulty = big.NewInt(int64(params.LNet))
+		// Genesis block - start with reasonable difficulty for competitive Bitcoin-style mining
+		header.Difficulty = big.NewInt(100000) // Much higher difficulty for competitive mining
 		log.Info("🌱 Genesis block difficulty set (Bitcoin-style)",
 			"difficulty", header.Difficulty,
 			"fixedPuzzles", params.LNet,
 			"security", "1,152-bit")
 	}
 
-	// CRITICAL FIX: Initialize all optional fields to prevent RLP encoding issues
-	// Set WithdrawalsHash to EmptyWithdrawalsHash
-	emptyWithdrawalsHash := common.HexToHash("0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421")
-	header.WithdrawalsHash = &emptyWithdrawalsHash
-
-	// Initialize other optional fields if they're nil
-	if header.BlobGasUsed == nil {
-		var zero uint64 = 0
-		header.BlobGasUsed = &zero
-	}
-	if header.ExcessBlobGas == nil {
-		var zero uint64 = 0
-		header.ExcessBlobGas = &zero
-	}
-	if header.BaseFee == nil {
-		header.BaseFee = big.NewInt(0)
-	}
-	if header.ParentBeaconRoot == nil {
-		emptyHash := common.Hash{}
-		header.ParentBeaconRoot = &emptyHash
-	}
+	// Initialize optional fields to prevent RLP encoding issues
+	q.initializeOptionalFields(header)
 
 	return nil
 }
@@ -261,45 +254,144 @@ func (q *QMPoW) Seal(chain consensus.ChainHeaderReader, block *types.Block, resu
 	return nil
 }
 
-// seal is the actual sealing function that runs the quantum proof of work
+// seal is the Bitcoin-style quantum mining function
+// This implements true Bitcoin-style mining with nonce iteration and target validation
 func (q *QMPoW) seal(chain consensus.ChainHeaderReader, block *types.Block, results chan<- *types.Block, stop <-chan struct{}) {
 	header := types.CopyHeader(block.Header())
 
-	// Generate the seed for quantum puzzles
-	seed := q.SealHash(header)
+	// Initialize QNonce to zero (like Bitcoin starts at nonce 0)
+	header.QNonce = types.EncodeQuantumNonce(0)
 
-	log.Info("🔬 Starting quantum proof of work",
+	// Calculate quantum target from difficulty (Bitcoin-style)
+	target := CalculateQuantumTarget(header.Difficulty)
+
+	log.Info("🎯 Starting Bitcoin-style quantum mining",
 		"number", header.Number.Uint64(),
-		"qbits", *header.QBits,
-		"tcount", *header.TCount,
-		"lused", *header.LUsed,
 		"difficulty", header.Difficulty,
-		"seed", fmt.Sprintf("%x", seed.Bytes()[:8]))
+		"target", fmt.Sprintf("0x%x", target),
+		"puzzles", *header.LUsed,
+		"security", "1,152-bit")
 
 	start := time.Now()
 
-	// Generate quantum proofs
-	log.Info("🔬 Calling solveQuantumPuzzles...")
-	outcomes, aggregateProof, err := q.solveQuantumPuzzles(seed.Bytes(), *header.QBits, *header.TCount, *header.LUsed)
-	if err != nil {
-		log.Error("❌ Failed to solve quantum puzzles", "err", err)
-		return
+	// Bitcoin-style nonce iteration (internal tracking)
+	qnonceVar := uint64(0)
+
+	for qnonceVar <= MaxNonceAttempts {
+		// Check if we should stop
+		select {
+		case <-stop:
+			log.Info("🛑 Bitcoin-style quantum mining stopped", "attempts", qnonceVar)
+			return
+		default:
+		}
+
+		// Set QNonce for this attempt (Bitcoin-style)
+		header.QNonce = types.EncodeQuantumNonce(qnonceVar)
+		log.Debug("QNonce before sealing", "qnonce", qnonceVar)
+
+		// Generate seed with nonce variation (Bitcoin-style)
+		seed := q.SealHashWithNonce(header)
+
+		// Solve exactly 48 quantum puzzles (fixed work like Bitcoin's SHA-256)
+		outcomes, aggregateProof, err := q.solveQuantumPuzzles(seed.Bytes(), *header.QBits, *header.TCount, *header.LUsed)
+		if err != nil {
+			log.Error("❌ Failed to solve quantum puzzles", "qnonce", qnonceVar, "err", err)
+			qnonceVar++
+			continue
+		}
+
+		// Check if proof meets target (Bitcoin-style validation)
+		if CheckQuantumProofTarget(outcomes, aggregateProof, qnonceVar, target) {
+			// SUCCESS! Found valid quantum proof (like finding Bitcoin block)
+			header.QOutcome = outcomes
+			header.QProof = aggregateProof
+
+			// Initialize optional fields to prevent RLP issues
+			q.initializeOptionalFields(header)
+
+			miningTime := time.Since(start)
+			hashrate := float64(qnonceVar+1) / miningTime.Seconds()
+
+			log.Info("🎉 Bitcoin-style quantum block mined!",
+				"number", header.Number.Uint64(),
+				"qnonce", header.QNonce.Uint64(),
+				"attempts", qnonceVar+1,
+				"miningTime", miningTime,
+				"hashrate", fmt.Sprintf("%.2f attempts/sec", hashrate),
+				"difficulty", header.Difficulty,
+				"target", fmt.Sprintf("0x%x", target),
+				"puzzles", *header.LUsed,
+				"security", "1,152-bit")
+
+			// Update hashrate (attempts per second, not puzzles per second)
+			q.lock.Lock()
+			q.hashrate = uint64(hashrate)
+			q.lock.Unlock()
+
+			// Send successful block
+			sealedBlock := block.WithSeal(header)
+
+			log.Info("📦 Sending Bitcoin-style quantum block")
+			select {
+			case results <- sealedBlock:
+				log.Info("✅ Bitcoin-style quantum block sent successfully")
+			case <-stop:
+				log.Info("🛑 Stopped while sending block")
+			}
+			return
+		}
+
+		// Try next nonce (Bitcoin-style iteration)
+		qnonceVar++
+
+		// Log progress every 1000 attempts (like Bitcoin mining pools)
+		if qnonceVar%ProgressLogInterval == 0 {
+			elapsed := time.Since(start)
+			rate := float64(qnonceVar) / elapsed.Seconds()
+			log.Info("⛏️  Bitcoin-style quantum mining progress",
+				"attempts", qnonceVar,
+				"rate", fmt.Sprintf("%.2f attempts/sec", rate),
+				"elapsed", elapsed,
+				"target", fmt.Sprintf("0x%x", target))
+		}
 	}
-	log.Info("✅ Quantum puzzles solved successfully", "outcomes_len", len(outcomes), "proof_len", len(aggregateProof))
 
-	// Check if we were stopped
-	select {
-	case <-stop:
-		log.Info("🛑 Sealing stopped")
-		return
-	default:
-	}
+	// Exhausted all nonces - this should be extremely rare with proper difficulty
+	log.Warn("⚠️  Exhausted all nonces without finding valid quantum proof",
+		"maxAttempts", MaxNonceAttempts,
+		"difficulty", header.Difficulty,
+		"target", fmt.Sprintf("0x%x", target),
+		"note", "Difficulty may be too high - network should retarget")
+}
 
-	// Fill quantum fields in header
-	header.QOutcome = outcomes
-	header.QProof = aggregateProof
+// SealHashWithNonce returns hash including nonce (Bitcoin-style seed generation)
+func (q *QMPoW) SealHashWithNonce(header *types.Header) common.Hash {
+	// Create header copy without quantum fields
+	headerCopy := types.CopyHeader(header)
+	headerCopy.QOutcome = nil
+	headerCopy.QProof = nil
 
-	// CRITICAL FIX: Initialize all optional fields to prevent RLP encoding issues
+	// Add nonce variation to the seed by modifying the Extra field
+	// This creates unique seeds for each nonce attempt (Bitcoin-style)
+	qnonce := header.QNonce.Uint64()
+	nonceBytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(nonceBytes, qnonce)
+
+	// Combine original extra data with nonce
+	originalExtra := headerCopy.Extra
+	headerCopy.Extra = append(originalExtra, nonceBytes...)
+
+	hash := rlpHash(headerCopy)
+
+	// Restore original extra data
+	headerCopy.Extra = originalExtra
+
+	return hash
+}
+
+// initializeOptionalFields prevents RLP encoding issues
+func (q *QMPoW) initializeOptionalFields(header *types.Header) {
 	// Set WithdrawalsHash to EmptyWithdrawalsHash if it's nil
 	if header.WithdrawalsHash == nil {
 		emptyWithdrawalsHash := common.HexToHash("0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421")
@@ -322,35 +414,6 @@ func (q *QMPoW) seal(chain consensus.ChainHeaderReader, block *types.Block, resu
 		emptyHash := common.Hash{}
 		header.ParentBeaconRoot = &emptyHash
 	}
-
-	sealTime := time.Since(start)
-
-	// Update hashrate (puzzles per second)
-	puzzlesPerSecond := float64(*header.LUsed) / sealTime.Seconds()
-	q.lock.Lock()
-	q.hashrate = uint64(puzzlesPerSecond)
-	q.lock.Unlock()
-
-	log.Info("🎯 Quantum proof of work completed",
-		"number", header.Number.Uint64(),
-		"puzzles", *header.LUsed,
-		"difficulty", header.Difficulty,
-		"time", sealTime,
-		"hashrate", fmt.Sprintf("%.2f puzzles/sec", puzzlesPerSecond),
-		"proof_size", len(aggregateProof),
-		"targetTime", "12s",
-		"actualVsTarget", fmt.Sprintf("%.2fx", sealTime.Seconds()/12.0))
-
-	// Create and send the sealed block
-	sealedBlock := block.WithSeal(header)
-
-	log.Info("📦 Sending sealed block to results channel")
-	select {
-	case results <- sealedBlock:
-		log.Info("✅ Sealed block sent successfully")
-	case <-stop:
-		log.Info("🛑 Sealing stopped while sending block")
-	}
 }
 
 // SealHash returns the hash of a block prior to it being sealed
@@ -363,26 +426,70 @@ func (q *QMPoW) SealHash(header *types.Header) common.Hash {
 	return rlpHash(headerCopy)
 }
 
-// CalcDifficulty is the difficulty adjustment algorithm
+// CalcDifficulty is the Bitcoin-style difficulty adjustment algorithm
 func (q *QMPoW) CalcDifficulty(chain consensus.ChainHeaderReader, time uint64, parent *types.Header) *big.Int {
-	// For quantum PoW, difficulty is represented as a big integer equivalent of L_net
-	// This maintains compatibility with existing difficulty-based code
+	// For Bitcoin-style quantum mining, we implement proper difficulty retargeting
 
-	log.Info("🔗 DEBUG: CalcDifficulty called", "parentNumber", parent.Number.Uint64(), "parentDifficulty", parent.Difficulty, "parentLUsed", parent.LUsed)
+	blockNumber := new(big.Int).Add(parent.Number, big.NewInt(1)).Uint64()
 
-	if parent.LUsed == nil {
-		log.Info("🔗 DEBUG: CalcDifficulty - parent.LUsed is nil, returning DefaultLNet+1", "parentNumber", parent.Number.Uint64())
-		return big.NewInt(int64(DefaultLNet + 1)) // Increment to ensure progression
+	log.Info("🔗 Bitcoin-style difficulty calculation",
+		"blockNumber", blockNumber,
+		"parentNumber", parent.Number.Uint64(),
+		"parentDifficulty", parent.Difficulty)
+
+	// Check if it's time for difficulty retargeting (every 100 blocks like our Bitcoin)
+	if ShouldRetargetDifficulty(blockNumber) {
+		log.Info("🎯 Bitcoin-style difficulty retarget triggered", "blockNumber", blockNumber)
+
+		// Get the start of the current retarget period
+		retargetStart := GetRetargetPeriodStart(blockNumber)
+
+		// Get the header from the start of the retarget period
+		var startHeader *types.Header
+		if retargetStart == 0 {
+			// Genesis block
+			startHeader = chain.GetHeaderByNumber(0)
+		} else {
+			startHeader = chain.GetHeaderByNumber(retargetStart)
+		}
+
+		if startHeader == nil {
+			log.Warn("⚠️  Could not find retarget start header, using parent difficulty",
+				"retargetStart", retargetStart)
+			return parent.Difficulty
+		}
+
+		// Calculate actual time taken for the retarget period
+		actualTime := time - startHeader.Time
+		targetTime := RetargetBlocks * TargetBlockTime // 100 blocks * 12 seconds
+
+		log.Info("📊 Bitcoin-style retarget analysis",
+			"retargetStart", retargetStart,
+			"blockNumber", blockNumber,
+			"actualTime", actualTime,
+			"targetTime", targetTime,
+			"ratio", float64(actualTime)/float64(targetTime))
+
+		// Use Bitcoin-style difficulty adjustment
+		newDifficulty := CalculateNextDifficulty(parent.Difficulty, actualTime, targetTime)
+
+		log.Info("✅ Bitcoin-style difficulty retargeted",
+			"oldDifficulty", parent.Difficulty,
+			"newDifficulty", newDifficulty,
+			"blocks", RetargetBlocks,
+			"actualTime", actualTime,
+			"targetTime", targetTime)
+
+		return newDifficulty
 	}
 
-	nextLNet := q.EstimateNextDifficulty(chain, &types.Header{
-		ParentHash: parent.Hash(),
-		Number:     new(big.Int).Add(parent.Number, big.NewInt(1)),
-		Time:       time,
-	})
+	// Not a retarget block - keep current difficulty (like Bitcoin)
+	log.Info("➡️  Bitcoin-style difficulty maintained",
+		"blockNumber", blockNumber,
+		"difficulty", parent.Difficulty,
+		"nextRetarget", ((blockNumber/RetargetBlocks)+1)*RetargetBlocks)
 
-	log.Info("🔗 DEBUG: CalcDifficulty result", "nextLNet", nextLNet, "parentNumber", parent.Number.Uint64())
-	return big.NewInt(int64(nextLNet))
+	return parent.Difficulty
 }
 
 // APIs returns the RPC APIs this consensus engine provides

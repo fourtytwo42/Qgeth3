@@ -39,6 +39,7 @@ func (h Header) MarshalJSON() ([]byte, error) {
 		QBits            *uint8          `json:"qBits" rlp:"optional"`
 		TCount           *uint16         `json:"tCount" rlp:"optional"`
 		LUsed            *uint16         `json:"lUsed" rlp:"optional"`
+		QNonce           QuantumNonce    `json:"qNonce" rlp:"optional"`
 		QOutcome         []byte          `json:"qOutcome" rlp:"optional"`
 		QProof           []byte          `json:"qProof" rlp:"optional"`
 		Hash             common.Hash     `json:"hash"`
@@ -67,6 +68,7 @@ func (h Header) MarshalJSON() ([]byte, error) {
 	enc.QBits = h.QBits
 	enc.TCount = h.TCount
 	enc.LUsed = h.LUsed
+	enc.QNonce = h.QNonce
 	enc.QOutcome = h.QOutcome
 	enc.QProof = h.QProof
 	enc.Hash = h.Hash()
@@ -99,6 +101,7 @@ func (h *Header) UnmarshalJSON(input []byte) error {
 		QBits            *uint8          `json:"qBits" rlp:"optional"`
 		TCount           *uint16         `json:"tCount" rlp:"optional"`
 		LUsed            *uint16         `json:"lUsed" rlp:"optional"`
+		QNonce           *QuantumNonce   `json:"qNonce" rlp:"optional"`
 		QOutcome         []byte          `json:"qOutcome" rlp:"optional"`
 		QProof           []byte          `json:"qProof" rlp:"optional"`
 	}
@@ -186,6 +189,9 @@ func (h *Header) UnmarshalJSON(input []byte) error {
 	}
 	if dec.LUsed != nil {
 		h.LUsed = dec.LUsed
+	}
+	if dec.QNonce != nil {
+		h.QNonce = *dec.QNonce
 	}
 	if dec.QOutcome != nil {
 		h.QOutcome = dec.QOutcome

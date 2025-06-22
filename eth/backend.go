@@ -170,22 +170,69 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 
 	var qmpowConfig *ctypes.QMPoWConfig
 
-	// Load chain config from database to get QMPoW configuration
-	chainConfig, err := core.LoadChainConfig(chainDb, config.Genesis)
-	if err == nil && chainConfig != nil {
-		engineType := chainConfig.GetConsensusEngineType()
+	// Check genesis config first for QMPoW configuration
+	log.Info("🔬 DEBUG: Checking genesis config for QMPoW",
+		"hasGenesis", config.Genesis != nil,
+		"hasConfig", config.Genesis != nil && config.Genesis.Config != nil)
+
+	if config.Genesis != nil && config.Genesis.Config != nil {
+		engineType := config.Genesis.Config.GetConsensusEngineType()
+		log.Info("🔬 DEBUG: Genesis consensus engine type", "type", engineType.String())
+
 		if engineType == ctypes.ConsensusEngineT_QMPoW {
-			if cg, ok := chainConfig.(*coregeth.CoreGethChainConfig); ok {
+			log.Info("🔬 DEBUG: Found QMPoW consensus engine in genesis")
+			if cg, ok := config.Genesis.Config.(*coregeth.CoreGethChainConfig); ok {
+				log.Info("🔬 DEBUG: Successfully cast to CoreGethChainConfig", "hasQMPoW", cg.QMPoW != nil)
 				if cg.QMPoW != nil {
 					qmpowConfig = cg.QMPoW
+					log.Info("🔬 DEBUG: QMPoW config loaded from genesis",
+						"qbits", qmpowConfig.QBits,
+						"tcount", qmpowConfig.TCount,
+						"lnet", qmpowConfig.LNet,
+						"epochLen", qmpowConfig.EpochLen)
+				}
+			} else {
+				log.Error("🔬 DEBUG: Failed to cast genesis config to CoreGethChainConfig")
+			}
+		}
+	}
+
+	// If not found in genesis, try loading from database
+	if qmpowConfig == nil {
+		log.Info("🔬 DEBUG: QMPoW config not found in genesis, trying database")
+		dbChainConfig, err := core.LoadChainConfig(chainDb, config.Genesis)
+		log.Info("🔬 DEBUG: LoadChainConfig result",
+			"err", err,
+			"hasConfig", dbChainConfig != nil)
+
+		if err == nil && dbChainConfig != nil {
+			engineType := dbChainConfig.GetConsensusEngineType()
+			log.Info("🔬 DEBUG: Database consensus engine type", "type", engineType.String())
+
+			if engineType == ctypes.ConsensusEngineT_QMPoW {
+				log.Info("🔬 DEBUG: Found QMPoW consensus engine in database")
+				if cg, ok := dbChainConfig.(*coregeth.CoreGethChainConfig); ok {
+					log.Info("🔬 DEBUG: Successfully cast database config to CoreGethChainConfig", "hasQMPoW", cg.QMPoW != nil)
+					if cg.QMPoW != nil {
+						qmpowConfig = cg.QMPoW
+						log.Info("🔬 DEBUG: QMPoW config loaded from database",
+							"qbits", qmpowConfig.QBits,
+							"tcount", qmpowConfig.TCount,
+							"lnet", qmpowConfig.LNet,
+							"epochLen", qmpowConfig.EpochLen)
+					}
+				} else {
+					log.Error("🔬 DEBUG: Failed to cast database config to CoreGethChainConfig")
 				}
 			}
+		} else if err != nil {
+			log.Error("🔬 DEBUG: Error loading chain config from database", "err", err)
 		}
 	}
 
 	engine := ethconfig.CreateConsensusEngine(stack, &ethashConfig, cliqueConfig, lyra2Config, qmpowConfig, config.Miner.Notify, config.Miner.Noverify, chainDb)
 
-	chainConfig, err = core.LoadChainConfig(chainDb, config.Genesis)
+	chainConfig, err := core.LoadChainConfig(chainDb, config.Genesis)
 	if err != nil {
 		return nil, err
 	}
