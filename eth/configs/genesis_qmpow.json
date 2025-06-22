@@ -16,7 +16,7 @@
       "epochLen": 50
     }
   },
-  "difficulty": "0x14",
+  "difficulty": "0x1",
   "gasLimit": "0x47b760",
   "alloc": {
     "0x8b61271473f14c80f2B1381Db9CB13b2d5306200": {

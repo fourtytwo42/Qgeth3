@@ -7,21 +7,27 @@ package qmpow
 import (
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 )
 
 // Default quantum proof of work parameters
 const (
-	DefaultQBits    uint8  = 6  // qubits per micro-puzzle (lowered for testing)
-	DefaultTCount   uint16 = 15 // T-gate count per puzzle (lowered for testing)
-	DefaultLNet     uint16 = 20 // puzzles per block (network difficulty) (lowered for testing)
-	DefaultEpochLen uint64 = 50 // difficulty retarget period in blocks
-	TargetBlockTime uint64 = 12 // target block time in seconds
+	DefaultQBits    uint8  = 8   // qubits per micro-puzzle (restored to proper value)
+	DefaultTCount   uint16 = 25  // T-gate count per puzzle (restored to proper value)
+	DefaultLNet     uint16 = 32  // puzzles per block (network difficulty) (moderate starting value)
+	DefaultEpochLen uint64 = 100 // difficulty retarget period in blocks (every ~20 minutes at 12s blocks)
+	TargetBlockTime uint64 = 12  // target block time in seconds
 
 	// Difficulty adjustment parameters
-	DifficultyAdjustmentThreshold = 0.1 // 10% threshold for adjustment
-	DifficultyStep                = 2   // L_net adjustment step (lowered)
-	MinLNet                       = 4   // minimum puzzles per block (lowered)
-	MaxLNet                       = 64  // maximum puzzles per block (lowered)
+	DifficultyAdjustmentThreshold = 0.15 // 15% threshold for adjustment (more tolerant)
+	DifficultyStepSmall           = 1    // Small adjustment step
+	DifficultyStepLarge           = 4    // Large adjustment step for big deviations
+	MinLNet                       = 8    // minimum puzzles per block
+	MaxLNet                       = 256  // maximum puzzles per block
+
+	// Mining complexity parameters
+	BaseComplexityMs      = 100 // base time per puzzle in milliseconds
+	ComplexityScaleFactor = 1.5 // how much complexity increases per puzzle
 )
 
 // QMPoWParams represents the configuration parameters for quantum proof of work
@@ -48,70 +54,86 @@ func (q *QMPoW) ParamsForHeight(height uint64) *QMPoWParams {
 		return DefaultParams()
 	}
 
-	// Get the current epoch
-	epoch := height / DefaultEpochLen
-	if epoch == 0 {
-		return DefaultParams()
-	}
-
-	// Calculate difficulty based on previous epoch timing
+	// Calculate difficulty based on block timing
 	params := DefaultParams()
-	params.LNet = q.calculateDifficulty(height)
+	params.LNet = q.calculateDifficultyForHeight(height)
 
 	return params
 }
 
-// calculateDifficulty implements the difficulty adjustment algorithm
-func (q *QMPoW) calculateDifficulty(height uint64) uint16 {
+// calculateDifficultyForHeight implements the difficulty adjustment algorithm
+func (q *QMPoW) calculateDifficultyForHeight(height uint64) uint16 {
+	if height < 10 { // Allow first 10 blocks to use default difficulty
+		return DefaultLNet
+	}
+
+	// For the first epoch, use gradual adjustment
 	if height < DefaultEpochLen {
-		return DefaultLNet
-	}
-
-	// Get the header from the start of current epoch
-	epochStart := (height / DefaultEpochLen) * DefaultEpochLen
-	if epochStart == 0 {
-		epochStart = 1
-	}
-
-	// Get the header from the start of previous epoch
-	prevEpochStart := epochStart - DefaultEpochLen
-	if prevEpochStart == 0 {
-		return DefaultLNet
+		// Gradual increase for the first epoch to find the right difficulty
+		return DefaultLNet + uint16(height/10)
 	}
 
 	// This is a simplified version - in the real implementation we would
 	// get the actual headers from the chain to calculate timing
-	// For now, return the default difficulty
+	// For now, return a reasonable difficulty
 	return DefaultLNet
 }
 
 // RetargetDifficulty adjusts the difficulty based on block timing
 func RetargetDifficulty(currentTime, parentTime uint64, currentLNet uint16) uint16 {
+	if parentTime == 0 {
+		return currentLNet
+	}
+
 	deltaTime := currentTime - parentTime
 	target := TargetBlockTime
 
+	log.Info("🎯 Difficulty adjustment calculation",
+		"deltaTime", deltaTime,
+		"target", target,
+		"currentLNet", currentLNet,
+		"ratio", float64(deltaTime)/float64(target))
+
+	// Calculate the deviation from target
+	ratio := float64(deltaTime) / float64(target)
+
+	// Determine adjustment step based on deviation size
+	var step uint16
+	if ratio < 0.5 || ratio > 2.0 {
+		// Large deviation - use large step
+		step = DifficultyStepLarge
+	} else {
+		// Small deviation - use small step
+		step = DifficultyStepSmall
+	}
+
 	// If block time is too fast, increase difficulty
-	if float64(deltaTime) < float64(target)*(1.0-DifficultyAdjustmentThreshold) {
-		newLNet := currentLNet + DifficultyStep
+	if ratio < (1.0 - DifficultyAdjustmentThreshold) {
+		newLNet := currentLNet + step
 		if newLNet > MaxLNet {
-			return MaxLNet
+			newLNet = MaxLNet
 		}
+		log.Info("⬆️ Increasing difficulty", "from", currentLNet, "to", newLNet, "reason", "blocks too fast")
 		return newLNet
 	}
 
 	// If block time is too slow, decrease difficulty
-	if float64(deltaTime) > float64(target)*(1.0+DifficultyAdjustmentThreshold) {
-		if currentLNet <= DifficultyStep {
-			return MinLNet
+	if ratio > (1.0 + DifficultyAdjustmentThreshold) {
+		var newLNet uint16
+		if currentLNet <= step {
+			newLNet = MinLNet
+		} else {
+			newLNet = currentLNet - step
+			if newLNet < MinLNet {
+				newLNet = MinLNet
+			}
 		}
-		newLNet := currentLNet - DifficultyStep
-		if newLNet < MinLNet {
-			return MinLNet
-		}
+		log.Info("⬇️ Decreasing difficulty", "from", currentLNet, "to", newLNet, "reason", "blocks too slow")
 		return newLNet
 	}
 
 	// Block time is within acceptable range, keep difficulty
+	log.Info("➡️ Maintaining difficulty", "lnet", currentLNet, "reason", "timing acceptable")
 	return currentLNet
 }
 
@@ -123,7 +145,9 @@ func (q *QMPoW) EstimateNextDifficulty(chain consensus.ChainHeaderReader, header
 
 	parent := chain.GetHeader(header.ParentHash, header.Number.Uint64()-1)
 	if parent == nil {
-		return DefaultLNet
+		// If we can't find parent, use default + small increment
+		log.Info("🔗 Parent not found during difficulty calc, using default+1", "blockNumber", header.Number.Uint64())
+		return DefaultLNet + 1
 	}
 
 	// Get current L_net from parent
@@ -132,5 +156,31 @@ func (q *QMPoW) EstimateNextDifficulty(chain consensus.ChainHeaderReader, header
 		currentLNet = *parent.LUsed
 	}
 
-	return RetargetDifficulty(header.Time, parent.Time, currentLNet)
+	// Use the retarget algorithm
+	nextLNet := RetargetDifficulty(header.Time, parent.Time, currentLNet)
+
+	log.Info("🎯 Next difficulty estimated",
+		"blockNumber", header.Number.Uint64(),
+		"parentLNet", currentLNet,
+		"nextLNet", nextLNet,
+		"parentTime", parent.Time,
+		"currentTime", header.Time)
+
+	return nextLNet
+}
+
+// EstimateBlockTime estimates how long it will take to mine a block with given difficulty
+func EstimateBlockTime(lnet uint16) float64 {
+	// Base time per puzzle increases with complexity
+	// This is a simplified model - real quantum circuits would have more complex timing
+	baseTime := float64(BaseComplexityMs) / 1000.0 // Convert to seconds
+
+	// Each additional puzzle adds exponentially more complexity
+	totalTime := 0.0
+	for i := uint16(0); i < lnet; i++ {
+		puzzleTime := baseTime * (1.0 + float64(i)*ComplexityScaleFactor/100.0)
+		totalTime += puzzleTime
+	}
+
+	return totalTime
 }

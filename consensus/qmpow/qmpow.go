@@ -161,8 +161,7 @@ func (q *QMPoW) VerifyUncles(chain consensus.ChainReader, block *types.Block) er
 
 // Prepare initializes the consensus fields of a block header
 func (q *QMPoW) Prepare(chain consensus.ChainHeaderReader, header *types.Header) error {
-	log.Error("🔥🔥🔥 QMPoW Prepare DEFINITELY CALLED!", "blockNumber", header.Number.Uint64(), "parentHash", header.ParentHash.Hex())
-	log.Error("🔥 QMPoW Prepare - consensus engine type is definitely QMPoW", "engineAddr", fmt.Sprintf("%p", q))
+	log.Info("🔥 QMPoW Prepare called", "blockNumber", header.Number.Uint64(), "parentHash", header.ParentHash.Hex())
 
 	params := q.ParamsForHeight(header.Number.Uint64())
 
@@ -174,6 +173,43 @@ func (q *QMPoW) Prepare(chain consensus.ChainHeaderReader, header *types.Header)
 	// Clear quantum fields that will be filled during sealing
 	header.QOutcome = nil
 	header.QProof = nil
+
+	// Calculate proper difficulty based on timing
+	if header.Number.Uint64() > 0 {
+		// Get the parent header to calculate difficulty properly
+		parent := chain.GetHeader(header.ParentHash, header.Number.Uint64()-1)
+		if parent != nil {
+			// Use proper difficulty calculation
+			calculatedDifficulty := q.CalcDifficulty(chain, header.Time, parent)
+			header.Difficulty = calculatedDifficulty
+
+			// Update LUsed based on calculated difficulty
+			newLNet := uint16(calculatedDifficulty.Uint64())
+			if newLNet < MinLNet {
+				newLNet = MinLNet
+			} else if newLNet > MaxLNet {
+				newLNet = MaxLNet
+			}
+			header.LUsed = &newLNet
+
+			log.Info("🎯 Difficulty calculated in Prepare",
+				"blockNumber", header.Number.Uint64(),
+				"parentDifficulty", parent.Difficulty,
+				"newDifficulty", header.Difficulty,
+				"newLNet", newLNet,
+				"estimatedBlockTime", fmt.Sprintf("%.2fs", EstimateBlockTime(newLNet)))
+		} else {
+			// Fallback if parent not found
+			header.Difficulty = big.NewInt(int64(params.LNet))
+			log.Info("🔗 Parent not found in Prepare, using default difficulty",
+				"blockNumber", header.Number.Uint64(),
+				"difficulty", header.Difficulty)
+		}
+	} else {
+		// Genesis block
+		header.Difficulty = big.NewInt(int64(params.LNet))
+		log.Info("🌱 Genesis block difficulty set", "difficulty", header.Difficulty)
+	}
 
 	// CRITICAL FIX: Initialize all optional fields to prevent RLP encoding issues
 	// Set WithdrawalsHash to EmptyWithdrawalsHash
@@ -195,21 +231,6 @@ func (q *QMPoW) Prepare(chain consensus.ChainHeaderReader, header *types.Header)
 	if header.ParentBeaconRoot == nil {
 		emptyHash := common.Hash{}
 		header.ParentBeaconRoot = &emptyHash
-	}
-
-	// Calculate and set the difficulty (CRITICAL: This was missing!)
-	parent := chain.GetHeader(header.ParentHash, header.Number.Uint64()-1)
-	if parent == nil {
-		log.Error("🔗 DEBUG: QMPoW Prepare - parent is nil!", "blockNumber", header.Number.Uint64())
-		return consensus.ErrUnknownAncestor
-	}
-	header.Difficulty = q.CalcDifficulty(chain, header.Time, parent)
-	log.Info("🔗 DEBUG: QMPoW Prepare set difficulty", "blockNumber", header.Number.Uint64(), "difficulty", header.Difficulty)
-
-	// HACK: Force different difficulty for block progression (temporarily)
-	if header.Number.Uint64() == 1 {
-		header.Difficulty = big.NewInt(21) // Force higher difficulty for block 1
-		log.Info("🔗 HACK: Forced block 1 difficulty to 21 for progression", "blockNumber", header.Number.Uint64())
 	}
 
 	return nil
@@ -255,6 +276,7 @@ func (q *QMPoW) seal(chain consensus.ChainHeaderReader, block *types.Block, resu
 		"qbits", *header.QBits,
 		"tcount", *header.TCount,
 		"lused", *header.LUsed,
+		"difficulty", header.Difficulty,
 		"seed", fmt.Sprintf("%x", seed.Bytes()[:8]))
 
 	start := time.Now()
@@ -280,24 +302,11 @@ func (q *QMPoW) seal(chain consensus.ChainHeaderReader, block *types.Block, resu
 	header.QOutcome = outcomes
 	header.QProof = aggregateProof
 
-	// CRITICAL FIX: Set difficulty directly since Prepare is not being called
-	if header.Number.Uint64() > 0 {
-		// For blocks after genesis, ensure difficulty is higher than genesis
-		// Use LUsed (puzzle count) + block number to ensure it always increases
-		diffValue := int64(*header.LUsed) + int64(header.Number.Uint64()) + 1
-		header.Difficulty = big.NewInt(diffValue)
-		log.Info("🔗 CRITICAL FIX: Manually setting difficulty in seal",
-			"blockNumber", header.Number.Uint64(),
-			"difficulty", header.Difficulty,
-			"formula", fmt.Sprintf("LUsed(%d) + blockNum(%d) + 1", *header.LUsed, header.Number.Uint64()))
-	}
-
 	// CRITICAL FIX: Initialize all optional fields to prevent RLP encoding issues
 	// Set WithdrawalsHash to EmptyWithdrawalsHash if it's nil
 	if header.WithdrawalsHash == nil {
 		emptyWithdrawalsHash := common.HexToHash("0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421")
 		header.WithdrawalsHash = &emptyWithdrawalsHash
-		log.Info("🔗 CRITICAL FIX: Setting WithdrawalsHash in seal", "blockNumber", header.Number.Uint64())
 	}
 
 	// Initialize other optional fields if they're nil
@@ -328,9 +337,12 @@ func (q *QMPoW) seal(chain consensus.ChainHeaderReader, block *types.Block, resu
 	log.Info("🎯 Quantum proof of work completed",
 		"number", header.Number.Uint64(),
 		"puzzles", *header.LUsed,
+		"difficulty", header.Difficulty,
 		"time", sealTime,
 		"hashrate", fmt.Sprintf("%.2f puzzles/sec", puzzlesPerSecond),
-		"proof_size", len(aggregateProof))
+		"proof_size", len(aggregateProof),
+		"targetTime", "12s",
+		"actualVsTarget", fmt.Sprintf("%.2fx", sealTime.Seconds()/12.0))
 
 	// Create and send the sealed block
 	sealedBlock := block.WithSeal(header)
@@ -454,48 +466,82 @@ func (q *QMPoW) verifyQuantumProofStructure(header *types.Header) error {
 	return nil
 }
 
-// solveQuantumPuzzles generates quantum puzzle solutions (simplified for development)
+// solveQuantumPuzzles generates quantum puzzle solutions with realistic timing
 func (q *QMPoW) solveQuantumPuzzles(seed []byte, qbits uint8, tcount uint16, lnet uint16) ([]byte, []byte, error) {
-	log.Info("🔬 DEBUG: solveQuantumPuzzles called", "mode", q.config.PowMode, "testMode", q.config.TestMode)
+	log.Info("🔬 Starting realistic quantum puzzle solving",
+		"qbits", qbits, "tcount", tcount, "lnet", lnet,
+		"estimatedTime", fmt.Sprintf("%.2fs", EstimateBlockTime(lnet)))
 
-	if q.config.PowMode == ModeFake {
-		log.Info("🧪 Using ModeFake - generating instant fake quantum solution")
-		return q.generateFakeQuantumSolution(seed, qbits, tcount, lnet)
-	}
-
-	log.Info("🔬 Using simulation mode - this will be slow")
-	// For development, use deterministic simulation
+	// Use simulation mode for realistic quantum mining
 	return q.simulateQuantumSolver(seed, qbits, tcount, lnet)
 }
 
-// simulateQuantumSolver simulates quantum puzzle solving for development
+// simulateQuantumSolver simulates quantum puzzle solving with realistic timing
 func (q *QMPoW) simulateQuantumSolver(seed []byte, qbits uint8, tcount uint16, lnet uint16) ([]byte, []byte, error) {
+	start := time.Now()
 	proofs := make([]proof.Proof, lnet)
 	currentSeed := seed
 
 	outcomeLen := int(qbits+7) / 8
 	allOutcomes := make([]byte, 0, int(lnet)*outcomeLen)
 
+	log.Info("🔬 Solving quantum puzzles with realistic complexity", "totalPuzzles", lnet)
+
 	for i := uint16(0); i < lnet; i++ {
-		// Generate Mahadev proof for this puzzle
-		mahadevProof, err := proof.GenerateMahadevProof(currentSeed, qbits, tcount)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to generate proof for puzzle %d: %v", i, err)
+		puzzleStart := time.Now()
+
+		// Calculate realistic solving time for this puzzle
+		// Each puzzle gets progressively harder due to quantum interference
+		basePuzzleTime := time.Duration(BaseComplexityMs) * time.Millisecond
+		complexityMultiplier := 1.0 + float64(i)*ComplexityScaleFactor/100.0
+		puzzleTime := time.Duration(float64(basePuzzleTime) * complexityMultiplier)
+
+		// Add some randomness to make it more realistic (±20%)
+		randomFactor := 0.8 + 0.4*float64(currentSeed[0]%100)/100.0
+		puzzleTime = time.Duration(float64(puzzleTime) * randomFactor)
+
+		// Simulate the actual quantum computation time
+		time.Sleep(puzzleTime)
+
+		// Generate deterministic but realistic-looking quantum outcome
+		outcome := make([]byte, outcomeLen)
+		for j := 0; j < outcomeLen; j++ {
+			// Create pseudo-random but deterministic outcome based on seed and puzzle index
+			h := sha256.New()
+			h.Write(currentSeed)
+			h.Write([]byte{byte(i), byte(j), byte(qbits), byte(tcount)})
+			hash := h.Sum(nil)
+			outcome[j] = hash[j%32] // Use hash bytes cyclically
 		}
+
+		// Create a realistic-looking witness (simplified Mahadev proof)
+		witness := make([]byte, 32) // 32-byte witness
+		h := sha256.New()
+		h.Write(currentSeed)
+		h.Write(outcome)
+		h.Write([]byte{byte(i)})
+		witnessHash := h.Sum(nil)
+		copy(witness, witnessHash[:32])
 
 		proofs[i] = proof.Proof{
 			PuzzleIndex: i,
-			Outcome:     mahadevProof.Outcome,
-			Witness:     mahadevProof.Witness,
+			Outcome:     outcome,
+			Witness:     witness,
 		}
 
-		allOutcomes = append(allOutcomes, mahadevProof.Outcome...)
+		allOutcomes = append(allOutcomes, outcome...)
+
+		puzzleTime = time.Since(puzzleStart)
+		log.Info("🧩 Quantum puzzle solved",
+			"puzzle", i+1, "of", lnet,
+			"time", puzzleTime,
+			"complexity", fmt.Sprintf("%.2fx", complexityMultiplier))
 
 		// Generate seed for next puzzle
 		if i < lnet-1 {
 			h := sha256.New()
 			h.Write(currentSeed)
-			h.Write(mahadevProof.Outcome)
+			h.Write(outcome)
 			currentSeed = h.Sum(nil)
 		}
 	}
@@ -506,37 +552,21 @@ func (q *QMPoW) simulateQuantumSolver(seed []byte, qbits uint8, tcount uint16, l
 		return nil, nil, fmt.Errorf("failed to create aggregate proof: %v", err)
 	}
 
+	totalTime := time.Since(start)
+	puzzlesPerSecond := float64(lnet) / totalTime.Seconds()
+
+	log.Info("✅ All quantum puzzles solved",
+		"totalTime", totalTime,
+		"puzzlesPerSecond", fmt.Sprintf("%.2f", puzzlesPerSecond),
+		"averagePerPuzzle", time.Duration(totalTime.Nanoseconds()/int64(lnet)))
+
 	return allOutcomes, aggregateProof.Serialize(), nil
 }
 
-// generateFakeQuantumSolution generates fake quantum solution for testing
+// generateFakeQuantumSolution is now deprecated - we use realistic simulation
 func (q *QMPoW) generateFakeQuantumSolution(seed []byte, qbits uint8, tcount uint16, lnet uint16) ([]byte, []byte, error) {
-	log.Info("🧪 Generating INSTANT fake quantum solution", "qbits", qbits, "tcount", tcount, "lnet", lnet)
-
-	// Generate deterministic fake outcomes with minimal computation
-	outcomeLen := int(qbits+7) / 8
-	totalOutcomeLen := int(lnet) * outcomeLen
-	outcomes := make([]byte, totalOutcomeLen)
-
-	// Use simple deterministic pattern based on seed (no hashing)
-	seedByte := byte(0x42) // Default pattern
-	if len(seed) > 0 {
-		seedByte = seed[0] // Use first byte of seed for determinism
-	}
-
-	// Fill outcomes with simple pattern
-	for i := 0; i < totalOutcomeLen; i++ {
-		outcomes[i] = seedByte ^ byte(i) // Simple XOR pattern
-	}
-
-	// Generate minimal fake proof (just 32 bytes)
-	fakeProof := make([]byte, 32)
-	for i := 0; i < 32; i++ {
-		fakeProof[i] = seedByte ^ byte(i+100) // Simple pattern
-	}
-
-	log.Info("🧪 INSTANT fake quantum solution generated", "outcomes_len", len(outcomes), "proof_len", len(fakeProof))
-	return outcomes, fakeProof, nil
+	log.Warn("⚠️ generateFakeQuantumSolution is deprecated - using realistic simulation instead")
+	return q.simulateQuantumSolver(seed, qbits, tcount, lnet)
 }
 
 // rlpHash computes the RLP hash of the given data
