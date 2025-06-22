@@ -161,54 +161,51 @@ func (q *QMPoW) VerifyUncles(chain consensus.ChainReader, block *types.Block) er
 
 // Prepare initializes the consensus fields of a block header
 func (q *QMPoW) Prepare(chain consensus.ChainHeaderReader, header *types.Header) error {
-	log.Info("🔥 QMPoW Prepare called", "blockNumber", header.Number.Uint64(), "parentHash", header.ParentHash.Hex())
+	log.Info("🔥 QMPoW Prepare called (Bitcoin-style)", "blockNumber", header.Number.Uint64(), "parentHash", header.ParentHash.Hex())
 
 	params := q.ParamsForHeight(header.Number.Uint64())
 
-	// Set quantum parameters
+	// Set quantum parameters - FIXED puzzle count for Bitcoin-style mining
 	header.QBits = &params.QBits
 	header.TCount = &params.TCount
-	header.LUsed = &params.LNet
+	header.LUsed = &params.LNet // Always 48 puzzles for 1,152-bit security
 
 	// Clear quantum fields that will be filled during sealing
 	header.QOutcome = nil
 	header.QProof = nil
 
-	// Calculate proper difficulty based on timing
+	// Set difficulty - for Bitcoin-style mining, this represents the nonce target
+	// The puzzle count is always fixed at 48
 	if header.Number.Uint64() > 0 {
 		// Get the parent header to calculate difficulty properly
 		parent := chain.GetHeader(header.ParentHash, header.Number.Uint64()-1)
 		if parent != nil {
-			// Use proper difficulty calculation
+			// Use proper difficulty calculation for nonce target
 			calculatedDifficulty := q.CalcDifficulty(chain, header.Time, parent)
 			header.Difficulty = calculatedDifficulty
 
-			// Update LUsed based on calculated difficulty
-			newLNet := uint16(calculatedDifficulty.Uint64())
-			if newLNet < MinLNet {
-				newLNet = MinLNet
-			} else if newLNet > MaxLNet {
-				newLNet = MaxLNet
-			}
-			header.LUsed = &newLNet
-
-			log.Info("🎯 Difficulty calculated in Prepare",
+			log.Info("🎯 Bitcoin-style difficulty set in Prepare",
 				"blockNumber", header.Number.Uint64(),
 				"parentDifficulty", parent.Difficulty,
 				"newDifficulty", header.Difficulty,
-				"newLNet", newLNet,
-				"estimatedBlockTime", fmt.Sprintf("%.2fs", EstimateBlockTime(newLNet)))
+				"fixedPuzzles", params.LNet,
+				"security", "1,152-bit",
+				"style", "nonce-based")
 		} else {
 			// Fallback if parent not found
 			header.Difficulty = big.NewInt(int64(params.LNet))
 			log.Info("🔗 Parent not found in Prepare, using default difficulty",
 				"blockNumber", header.Number.Uint64(),
-				"difficulty", header.Difficulty)
+				"difficulty", header.Difficulty,
+				"fixedPuzzles", params.LNet)
 		}
 	} else {
 		// Genesis block
 		header.Difficulty = big.NewInt(int64(params.LNet))
-		log.Info("🌱 Genesis block difficulty set", "difficulty", header.Difficulty)
+		log.Info("🌱 Genesis block difficulty set (Bitcoin-style)",
+			"difficulty", header.Difficulty,
+			"fixedPuzzles", params.LNet,
+			"security", "1,152-bit")
 	}
 
 	// CRITICAL FIX: Initialize all optional fields to prevent RLP encoding issues
