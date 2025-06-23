@@ -31,6 +31,7 @@ import (
 	"github.com/ethereum/go-ethereum/consensus/beacon"
 	"github.com/ethereum/go-ethereum/consensus/clique"
 	"github.com/ethereum/go-ethereum/consensus/lyra2"
+	"github.com/ethereum/go-ethereum/consensus/qmpow"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/bloombits"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -321,6 +322,13 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 	if err != nil {
 		return nil, err
 	}
+	
+	// Set blockchain reference for QMPoW remote mining
+	if qmpowEngine, ok := eth.engine.(*qmpow.QMPoW); ok {
+		qmpowEngine.SetChain(eth.blockchain)
+		log.Info("✅ QMPoW remote mining enabled - external miners can connect")
+	}
+	
 	eth.bloomIndexer.Start(eth.blockchain)
 	// Handle artificial finality config override cases.
 	if n := config.OverrideECBP1100; n != nil {

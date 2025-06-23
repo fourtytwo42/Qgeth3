@@ -1,24 +1,26 @@
 # Start Geth (No Mining) - Quantum-Geth v0.9 BareBones+Halving
-# Starts the quantum geth node without mining enabled
+# Starts the quantum geth node without mining enabled - serves work to external miners
 
 param(
-    [string]$datadir = "qdata_quantum",
+    [string]$datadir = "qdata",
     [int]$networkid = 73428,
     [int]$port = 30303,
     [int]$httpport = 8545,
     [int]$authrpcport = 8551,
+    [string]$etherbase = "0x1234567890123456789012345678901234567890",
     [int]$verbosity = 3
 )
 
-Write-Host "*** STARTING QUANTUM-GETH v0.9 BareBones+Halving NODE (NO MINING) ***" -ForegroundColor Cyan
+Write-Host "*** STARTING QUANTUM-GETH v0.9 BareBones+Halving NODE (EXTERNAL MINING) ***" -ForegroundColor Cyan
 Write-Host "Configuration:" -ForegroundColor Green
 Write-Host "  * Data Directory: $datadir" -ForegroundColor Yellow
 Write-Host "  * Network ID: $networkid" -ForegroundColor Yellow
 Write-Host "  * Port: $port" -ForegroundColor Yellow
 Write-Host "  * HTTP Port: $httpport" -ForegroundColor Yellow
 Write-Host "  * Auth RPC Port: $authrpcport" -ForegroundColor Yellow
+Write-Host "  * Etherbase: $etherbase" -ForegroundColor Yellow
 Write-Host "  * Verbosity: $verbosity" -ForegroundColor Yellow
-Write-Host "  * Mining: DISABLED" -ForegroundColor Red
+Write-Host "  * Mining: EXTERNAL MINERS ONLY (0 internal threads)" -ForegroundColor Green
 Write-Host ""
 
 Write-Host "Quantum-Geth v0.9 BareBones+Halving Features:" -ForegroundColor Magenta
@@ -45,11 +47,12 @@ if (-not (Test-Path $datadir)) {
     exit 1
 }
 
-Write-Host "Starting v0.9 BareBones+Halving geth node..." -ForegroundColor Magenta
+Write-Host "Starting v0.9 BareBones+Halving geth node for external miners..." -ForegroundColor Magenta
+Write-Host "This node enables mining infrastructure with 0 threads for external miners." -ForegroundColor Green
 Write-Host "Press Ctrl+C to stop the node." -ForegroundColor Yellow
 Write-Host ""
 
-# Start geth without mining
+# Start geth WITH mining enabled but NO mining threads (for external miners)
 & .\geth.exe `
     --datadir $datadir `
     --networkid $networkid `
@@ -60,11 +63,15 @@ Write-Host ""
     --http.api "eth,net,web3,personal,miner,qmpow,admin,debug,trace" `
     --http.corsdomain "*" `
     --http.vhosts "*" `
+    --mine `
+    --miner.threads 0 `
+    --miner.etherbase $etherbase `
     --authrpc.port $authrpcport `
     --nodiscover `
     --maxpeers 0 `
     --verbosity $verbosity `
-    --log.vmodule "rpc=1"
+    --log.vmodule "rpc=1" `
+    --allow-insecure-unlock
 
 Write-Host ""
 Write-Host "v0.9 BareBones+Halving geth node stopped." -ForegroundColor Green 

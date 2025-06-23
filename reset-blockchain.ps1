@@ -1,10 +1,10 @@
 # Reset Blockchain - Quantum-Geth v0.9 BareBones+Halving
 # Cleans the blockchain data, builds latest binary, and creates a new genesis block
-# Usage: .\reset-blockchain-clean.ps1 -difficulty 1 -datadir "qdata_quantum"
+# Usage: .\reset-blockchain.ps1 -difficulty 1 -force
 
 param(
     [float]$difficulty = 0.0005,  # Starting difficulty (quantum-optimized: 0.0005 based on real testing)
-    [string]$datadir = "qdata_quantum",
+    [string]$datadir = "qdata",
     [int]$networkid = 73428,
     [int]$chainid = 73428,
     [string]$etherbase = "0x8b61271473f14c80f2B1381Db9CB13b2d5306200",
@@ -13,8 +13,8 @@ param(
     [switch]$nobuild = $false    # Skip building geth binary
 )
 
-Write-Host "*** QUANTUM-GETH v0.9 BareBones+Halving BLOCKCHAIN RESET ***" -ForegroundColor Yellow
-Write-Host "This will COMPLETELY WIPE the existing blockchain and rebuild geth!" -ForegroundColor Red
+Write-Host "*** QUANTUM-GETH v0.9 BareBones+Halving COMPLETE RESET ***" -ForegroundColor Yellow
+Write-Host "This will COMPLETELY WIPE the existing blockchain and rebuild both geth and quantum-miner!" -ForegroundColor Red
 Write-Host ""
 Write-Host "Configuration:" -ForegroundColor Cyan
 Write-Host "  Data Directory: $datadir"
@@ -22,7 +22,7 @@ Write-Host "  Starting Difficulty: $difficulty (quantum-optimized for ~0.25 H/s)
 Write-Host "  Network ID: $networkid"
 Write-Host "  Etherbase: $etherbase"
 Write-Host "  Balance: $balance wei - 300000 QGC" -ForegroundColor Yellow
-Write-Host "  Build Binary: $(if ($nobuild) { 'NO' } else { 'YES' })" -ForegroundColor $(if ($nobuild) { 'Yellow' } else { 'Green' })
+Write-Host "  Build Binaries: $(if ($nobuild) { 'NO' } else { 'YES' })" -ForegroundColor $(if ($nobuild) { 'Yellow' } else { 'Green' })
 Write-Host ""
 Write-Host "v0.9 BareBones+Halving Features:" -ForegroundColor Magenta
 Write-Host "  * Initial Subsidy: 50 QGC per block" -ForegroundColor Gray
@@ -52,9 +52,9 @@ try {
     Write-Host "  No running geth processes found" -ForegroundColor Gray
 }
 
-# Build latest Quantum-Geth binary (unless skipped)
+# Build latest binaries (unless skipped)
 if (-not $nobuild) {
-    Write-Host "Building latest Quantum-Geth v0.9 BareBones+Halving binary..." -ForegroundColor Cyan
+    Write-Host "Building latest Quantum-Geth v0.9 BareBones+Halving binaries..." -ForegroundColor Cyan
     
     # Check if Go is available
     try {
@@ -67,7 +67,7 @@ if (-not $nobuild) {
         exit 1
     }
     
-    # Build in quantum-geth directory
+    # Build geth binary in quantum-geth directory
     if (-not (Test-Path "quantum-geth")) {
         Write-Host "  ERROR: quantum-geth directory not found!" -ForegroundColor Red
         exit 1
@@ -79,16 +79,7 @@ if (-not $nobuild) {
         $buildResult = & go build -o ..\geth.exe ./cmd/geth 2>&1
         
         if ($LASTEXITCODE -eq 0) {
-            Write-Host "  Geth binary built successfully" -ForegroundColor Green
-            
-            # Verify the binary has quantum features
-            Pop-Location
-            $helpOutput = & .\geth.exe --help 2>&1 | Out-String
-            if ($helpOutput -match "quantum\.solver") {
-                Write-Host "  Quantum features detected in binary" -ForegroundColor Green
-            } else {
-                Write-Host "  Warning: Quantum features not detected in binary" -ForegroundColor Yellow
-            }
+            Write-Host "  ✅ Geth binary built successfully" -ForegroundColor Green
         } else {
             Write-Host "  Failed to build geth binary:" -ForegroundColor Red
             Write-Host $buildResult -ForegroundColor Red
@@ -100,12 +91,50 @@ if (-not $nobuild) {
         Pop-Location
         exit 1
     }
+    Pop-Location
+    
+    # Build quantum-miner binary
+    if (Test-Path "quantum-miner") {
+        Push-Location "quantum-miner"
+        try {
+            Write-Host "  Building quantum-miner binary..." -ForegroundColor Yellow
+            $buildResult = & go build -o ..\quantum-miner.exe . 2>&1
+            
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "  ✅ Quantum-miner binary built successfully" -ForegroundColor Green
+            } else {
+                Write-Host "  Failed to build quantum-miner binary:" -ForegroundColor Red
+                Write-Host $buildResult -ForegroundColor Red
+                Pop-Location
+                exit 1
+            }
+        } catch {
+            Write-Host "  Build error: $_" -ForegroundColor Red
+            Pop-Location
+            exit 1
+        }
+        Pop-Location
+    } else {
+        Write-Host "  Warning: quantum-miner directory not found, skipping miner build" -ForegroundColor Yellow
+    }
+    
+    # Verify the geth binary has quantum features
+    $helpOutput = & .\geth.exe --help 2>&1 | Out-String
+    if ($helpOutput -match "quantum\.solver") {
+        Write-Host "  ✅ Quantum features detected in geth binary" -ForegroundColor Green
+    } else {
+        Write-Host "  ⚠️  Warning: Quantum features not detected in binary" -ForegroundColor Yellow
+    }
+    
 } else {
-    Write-Host "Skipping binary build (using existing geth.exe)..." -ForegroundColor Yellow
+    Write-Host "Skipping binary build (using existing executables)..." -ForegroundColor Yellow
     if (-not (Test-Path "geth.exe")) {
         Write-Host "  ERROR: geth.exe not found in current directory!" -ForegroundColor Red
         Write-Host "  Remove -nobuild flag to build the binary" -ForegroundColor Yellow
         exit 1
+    }
+    if (-not (Test-Path "quantum-miner.exe")) {
+        Write-Host "  Warning: quantum-miner.exe not found in current directory!" -ForegroundColor Yellow
     }
 }
 
