@@ -7,7 +7,7 @@ param(
     [int]$port = 30303,
     [int]$httpport = 8545,
     [int]$authrpcport = 8551,
-    [int]$verbosity = 4
+    [int]$verbosity = 3
 )
 
 Write-Host "*** STARTING QUANTUM-GETH v0.9 BareBones+Halving NODE (NO MINING) ***" -ForegroundColor Cyan
@@ -55,14 +55,16 @@ Write-Host ""
     --networkid $networkid `
     --port $port `
     --http `
-    --http.addr 127.0.0.1 `
+    --http.addr 0.0.0.0 `
     --http.port $httpport `
-    --http.api "eth,net,web3,personal,miner,qmpow,admin" `
+    --http.api "eth,net,web3,personal,miner,qmpow,admin,debug,trace" `
     --http.corsdomain "*" `
+    --http.vhosts "*" `
     --authrpc.port $authrpcport `
     --nodiscover `
     --maxpeers 0 `
-    --verbosity $verbosity
+    --verbosity $verbosity `
+    --log.vmodule "rpc=1"
 
 Write-Host ""
 Write-Host "v0.9 BareBones+Halving geth node stopped." -ForegroundColor Green 
