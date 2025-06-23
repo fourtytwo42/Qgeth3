@@ -39,7 +39,7 @@ Below is a **step-by-step implementation roadmap** for Quantum-Geth v0.9–BareB
   * Build `OutcomeRoot` (Merkle of outcomes) and `BranchNibbles`
   * Compute `GateHash` across compiled streams
 
-* [ ] **Quantum Backend Abstraction**
+* [x] **Quantum Backend Abstraction**
   Define an interface allowing interchangeable backends:
 
   * Qiskit AerSimulator (state-vector / tensor)
@@ -47,22 +47,22 @@ Below is a **step-by-step implementation roadmap** for Quantum-Geth v0.9–BareB
   * Vendor shim API (QASM-lite in → bitstring out)
   * Inject noise-model toggles for future testing
 
-* [ ] **Mahadev Trace & CAPSS Integration**
-  Wire in Urmila Mahadev’s witnessing code to produce 48 interactive traces;
+* [x] **Mahadev Trace & CAPSS Integration**
+  Wire in Urmila Mahadev's witnessing code to produce 48 interactive traces;
   wrap each into a CAPSS SNARK:
 
   * Automate transcript capture
   * Generate 2.2 kB proofs per puzzle
   * Ensure end-to-end trace→proof correctness
 
-* [ ] **Nova-Lite Recursive Aggregation**
-  Batch the 48 CAPSS proofs into 3 Nova-Lite proofs (≤ 6 kB each):
+* [x] **Nova-Lite Recursive Aggregation**
+Batch the 48 CAPSS proofs into 3 Nova-Lite proofs (≤ 6 kB each):
 
   * Construct Merkle tree over CAPSS proofs, compute `ProofRoot`
   * Implement tier-B proof generation & streaming API
   * Unit-test recursive verification logic
 
-* [ ] **Dilithium-2 Self-Attestation Module**
+* [x] **Dilithium-2 Self-Attestation Module**
   Deterministic key derivation & signing:
 
   * `Seed_att = SHA256("ATTEST"‖Seed₀‖OutcomeRoot‖ChainIDHash‖BlockNumber)`
@@ -70,14 +70,14 @@ Below is a **step-by-step implementation roadmap** for Quantum-Geth v0.9–BareB
   * Sign `(Seed₀‖OutcomeRoot‖GateHash)`; enforce public-key norm guard
   * Verify round-trip keygen/sign/verify
 
-* [ ] **RLP Header Extension & Tail Handling**
-  Modify Geth’s `Header` struct to append a single `[]byte` RLP-tail:
+* [x] **RLP Header Extension & Tail Handling**
+  Modify Geth's `Header` struct to append a single `[]byte` RLP-tail:
 
   * Ensure first 15 fields unchanged
   * Encode quantum blob fields in one contiguous slice
   * Add runtime sanity check on header‐encode length
 
-* [ ] **Proof & Attestation Integration in Block Assembly**
+* [x] **Proof & Attestation Integration in Block Assembly**
   In miner code, integrate:
 
   * `QBits, TCount, LNet` fields from config
@@ -85,21 +85,21 @@ Below is a **step-by-step implementation roadmap** for Quantum-Geth v0.9–BareB
   * `pk+Sig` appended to block body
   * RLP‐encode and seal
 
-* [ ] **ASERT-Q Difficulty Filter**
+* [x] **ASERT-Q Difficulty Filter**
   Embed Bitcoin-style exponential ASERT with λ=0.12:
 
   * `newTarget = oldTarget × 2^((t_actual–12 s)/150 s)`
   * ±10 % per‐block clamp
   * Integrate into block‐validation logic
 
-* [ ] **Halving & Fee Model Implementation**
+* [x] **Halving & Fee Model Implementation**
   Implement reward schedule:
 
   * Start subsidy = 50 QGCoins; at each epoch (600 000 blocks), subsidy := subsidy/2
   * Track current subsidy via block height
   * Sum all transaction fees in block; award `Subsidy + Fees` to coinbase
 
-* [ ] **Block Validation Pipeline**
+* [x] **Block Validation Pipeline**
   Extend full‐node verify path to:
 
   1. RLP‐decode classical header + quantum blob
@@ -109,26 +109,26 @@ Below is a **step-by-step implementation roadmap** for Quantum-Geth v0.9–BareB
   5. PoW target test via ASERT-Q
   6. EVM execution & state transition
 
-* [ ] **Audit-Guard Rail Enforcement**
+* [x] **Audit-Guard Rail Enforcement**
   On startup, verify embedded `ProofSystemHash` and `TemplateAuditRoot_v2`:
 
   * Fetch audit artifacts, validate Merkle roots
   * Refuse to operate if any root mismatches
 
-* [ ] **P2P & Sync Adjustments**
+* [x] **P2P & Sync Adjustments**
   Ensure peers propagate full quantum blob + proofs:
 
   * Update block gossip protocols to include tail and proofs
   * Implement length/index/CID framing for proof chunks with timeout
 
-* [ ] **CLI & RPC Exposure**
+* [x] **CLI & RPC Exposure**
   Expose status endpoints for miners:
 
   * Current block substrate (QBits, TCount, difficulty, subsidy)
   * Mining progress: puzzles/sec, nonce, proof sizes
   * RPC methods for generating block templates and submitting blocks
 
-* [ ] **Metrics & Instrumentation**
+* [x] **Metrics & Instrumentation**
   Integrate Prometheus metrics:
 
   * Puzzle‐generation latency, proof‐generation time
@@ -136,14 +136,14 @@ Below is a **step-by-step implementation roadmap** for Quantum-Geth v0.9–BareB
   * ASERT adjustment deviations
   * Subsidy and fee‐distribution stats
 
-* [ ] **Comprehensive End-to-End Validation**
+* [x] **Comprehensive End-to-End Validation**
   Execute a full chain run in a single process to:
 
   * Mine and validate >100 blocks in sequence
   * Verify halving events occur precisely at epoch boundaries
   * Stress‐test under concurrent mining agents
 
-* [ ] **Documentation & Reference Release**
+* [x] **Documentation & Reference Release**
   Publish:
 
   * Developer guide for each module (canonical compile, proof, attestation)
