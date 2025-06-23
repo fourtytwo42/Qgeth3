@@ -10,7 +10,7 @@ param(
     [int]$httpport = 8545,
     [int]$authrpcport = 8551,
     [string]$etherbase = "0x8b61271473f14c80f2B1381Db9CB13b2d5306200",
-    [int]$verbosity = 4,
+    [int]$verbosity = 3,
     [string]$quantumSolver = ".\quantum-geth\tools\solver\qiskit_solver.py",
     [switch]$isolated = $true  # Run in isolated mode (no peers)
 )
@@ -68,12 +68,14 @@ $gethArgs = @(
     "--miner.etherbase", $etherbase
     "--quantum.solver", $quantumSolver
     "--http"
-    "--http.api", "admin,eth,miner,net,txpool,personal,web3,qmpow"
-    "--http.addr", "localhost"
+    "--http.api", "admin,eth,miner,net,txpool,personal,web3,qmpow,debug,trace"
+    "--http.addr", "0.0.0.0"
     "--http.port", $httpport
     "--http.corsdomain", "*"
+    "--http.vhosts", "*"
     "--allow-insecure-unlock"
     "--verbosity", $verbosity
+    "--log.vmodule", "rpc=1"
 )
 
 # Add isolation parameters if requested
@@ -101,9 +103,9 @@ Write-Host "Starting Quantum-Geth v0.9 mining..." -ForegroundColor Green
 Write-Host "   Use Ctrl+C to stop mining" -ForegroundColor Gray
 Write-Host ""
 
-# Start geth
+# Start geth with logging
 try {
-    & ".\geth.exe" @gethArgs
+    & ".\geth.exe" @gethArgs | Tee-Object -FilePath "$datadir\geth.log"
 } catch {
     Write-Host ""
     Write-Host "ERROR: Failed to start geth: $_" -ForegroundColor Red
