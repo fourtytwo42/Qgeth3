@@ -4,7 +4,7 @@
 
 param(
     [int]$threads = 1,
-    [string]$datadir = "qdata_quantum",
+    [string]$datadir = "qdata",
     [int]$networkid = 73428,
     [int]$port = 0,  # Disabled for isolated testing
     [int]$httpport = 8545,

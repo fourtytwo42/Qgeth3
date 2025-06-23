@@ -21,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/holiman/uint256"
 )
 
@@ -68,7 +69,65 @@ var (
 
 	// ErrInvalidBranchNibbles is returned when branch nibbles are invalid
 	ErrInvalidBranchNibbles = errors.New("invalid branch nibbles")
+
+	// errQMPoWStopped is returned when the consensus engine is stopped
+	errQMPoWStopped = errors.New("qmpow stopped")
+
+	// errNoMiningWork is returned when no mining work is available
+	errNoMiningWork = errors.New("no mining work available")
+
+	// errInvalidSealResult is returned when the submitted seal is invalid
+	errInvalidSealResult = errors.New("invalid or stale proof of work")
 )
+
+// Remote sealer related types
+type sealWork struct {
+	errc chan error
+	res  chan [5]string
+}
+
+type quantumMineResult struct {
+	qnonce       uint64
+	blockHash    common.Hash
+	quantumProof QuantumProofSubmission
+	errc         chan error
+}
+
+type hashrate struct {
+	done chan struct{}
+	rate uint64
+	id   common.Hash
+	ping time.Time
+}
+
+// QuantumProofSubmission represents a quantum proof submission from external miners
+type QuantumProofSubmission struct {
+	OutcomeRoot   common.Hash `json:"outcome_root"`
+	GateHash      common.Hash `json:"gate_hash"`
+	ProofRoot     common.Hash `json:"proof_root"`
+	BranchNibbles []byte      `json:"branch_nibbles"`
+	ExtraNonce32  []byte      `json:"extra_nonce32"`
+}
+
+// remoteSealer wraps the QMPoW to allow remote quantum mining
+type remoteSealer struct {
+	qmpow        *QMPoW
+	works        map[common.Hash]*types.Block
+	rates        map[common.Hash]hashrate
+	currentWork  [5]string
+	currentBlock *types.Block
+	results      chan<- *types.Block
+	fetchWorkCh  chan *sealWork
+	submitWorkCh chan *quantumMineResult
+	submitRateCh chan *hashrate
+	requestExit  chan struct{}
+	exitCh       chan struct{}
+	
+	// For automatic work preparation
+	chain       consensus.ChainHeaderReader
+	workReadyCh chan struct{}
+	mu          sync.RWMutex
+}
 
 // QMPoW is the v0.9-rc3-hw0 quantum mining engine
 type QMPoW struct {
@@ -84,6 +143,9 @@ type QMPoW struct {
 
 	// Halving & fee model
 	halvingModel *HalvingFeeModel
+
+	// Remote mining support
+	remote *remoteSealer
 
 	lock sync.RWMutex
 }
@@ -116,6 +178,22 @@ func New(config Config) *QMPoW {
 		threads: 1,
 		update:  make(chan struct{}),
 	}
+
+	// Initialize remote mining support
+	qmpow.remote = &remoteSealer{
+		qmpow:        qmpow,
+		works:        make(map[common.Hash]*types.Block),
+		rates:        make(map[common.Hash]hashrate),
+		fetchWorkCh:  make(chan *sealWork),
+		submitWorkCh: make(chan *quantumMineResult),
+		submitRateCh: make(chan *hashrate),
+		requestExit:  make(chan struct{}),
+		exitCh:       make(chan struct{}),
+		workReadyCh:  make(chan struct{}, 1),
+	}
+
+	// Start remote sealer
+	go qmpow.remote.loop()
 
 	return qmpow
 }
@@ -412,7 +490,12 @@ func (q *QMPoW) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *t
 
 // Seal generates a new sealing request for the given input block
 func (q *QMPoW) Seal(chain consensus.ChainHeaderReader, block *types.Block, results chan<- *types.Block, stop <-chan struct{}) error {
-	// Start sealing in a separate goroutine
+	// If remote mining is enabled, set up the work for external miners
+	if q.remote != nil {
+		q.remote.submitWork(block, results)
+	}
+	
+	// Also start local mining in a separate goroutine
 	go q.seal(chain, block, results, stop)
 	return nil
 }
@@ -649,6 +732,12 @@ func (q *QMPoW) APIs(chain consensus.ChainHeaderReader) []rpc.API {
 	return []rpc.API{
 		{
 			Namespace: "qmpow",
+			Version:   "1.0",
+			Service:   &API{q},
+			Public:    true,
+		},
+		{
+			Namespace: "eth",
 			Version:   "1.0",
 			Service:   &API{q},
 			Public:    true,
@@ -927,5 +1016,334 @@ func (api *API) GetQuantumStats() map[string]interface{} {
 			"quantumAdvantage":      "sqrt(2^n) speedup over classical",
 			"proofSystem":           "Mahadev→CAPSS→Nova-Lite",
 		},
+	}
+}
+
+// GetWork returns a work package for external quantum miners.
+//
+// The work package consists of 5 strings:
+//	result[0] - 32 bytes hex encoded current block header hash (without quantum fields)
+//	result[1] - 32 bytes hex encoded block number
+//	result[2] - 32 bytes hex encoded difficulty target
+//	result[3] - hex encoded quantum parameters (qbits, tcount, lnet)
+//	result[4] - hex encoded coinbase address
+func (api *API) GetWork() ([5]string, error) {
+	if api.qmpow.remote == nil {
+		return [5]string{}, errors.New("remote mining not supported - start geth with --mine")
+	}
+
+	var (
+		workCh = make(chan [5]string, 1)
+		errc   = make(chan error, 1)
+	)
+
+	select {
+	case api.qmpow.remote.fetchWorkCh <- &sealWork{errc: errc, res: workCh}:
+	case <-api.qmpow.remote.exitCh:
+		return [5]string{}, errQMPoWStopped
+	}
+
+	select {
+	case work := <-workCh:
+		return work, nil
+	case err := <-errc:
+		return [5]string{}, err
+	}
+}
+
+// SubmitWork can be used by external quantum miners to submit their solution.
+// It returns an indication if the work was accepted.
+func (api *API) SubmitWork(qnonce uint64, blockHash common.Hash, quantumProof QuantumProofSubmission) bool {
+	if api.qmpow.remote == nil {
+		return false
+	}
+
+	var errc = make(chan error, 1)
+	solution := &quantumMineResult{
+		qnonce:      qnonce,
+		blockHash:   blockHash,
+		quantumProof: quantumProof,
+		errc:        errc,
+	}
+
+	select {
+	case api.qmpow.remote.submitWorkCh <- solution:
+	case <-api.qmpow.remote.exitCh:
+		return false
+	}
+
+	err := <-errc
+	return err == nil
+}
+
+// SubmitHashrate can be used for remote quantum miners to submit their hash rate.
+func (api *API) SubmitHashrate(rate uint64, id common.Hash) bool {
+	if api.qmpow.remote == nil {
+		return false
+	}
+
+	var done = make(chan struct{}, 1)
+	select {
+	case api.qmpow.remote.submitRateCh <- &hashrate{done: done, rate: rate, id: id}:
+	case <-api.qmpow.remote.exitCh:
+		return false
+	}
+
+	<-done
+	return true
+}
+
+// Remote sealer implementation
+
+// loop handles requests from external quantum miners
+func (s *remoteSealer) loop() {
+	defer close(s.exitCh)
+
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	
+	workTicker := time.NewTicker(15 * time.Second) // Prepare work every 15 seconds
+	defer workTicker.Stop()
+
+	for {
+		select {
+		case work := <-s.fetchWorkCh:
+			// Return current mining work to external quantum miner
+			s.mu.RLock()
+			currentBlock := s.currentBlock
+			currentWork := s.currentWork
+			s.mu.RUnlock()
+			
+			if currentBlock == nil {
+				// Try to prepare work automatically
+				s.tryPrepareWork()
+				s.mu.RLock()
+				if s.currentBlock == nil {
+					s.mu.RUnlock()
+					work.errc <- errNoMiningWork
+				} else {
+					work.res <- s.currentWork
+					s.mu.RUnlock()
+				}
+			} else {
+				work.res <- currentWork
+			}
+
+		case result := <-s.submitWorkCh:
+			// Verify submitted quantum proof
+			if s.submitQuantumWork(result.qnonce, result.blockHash, result.quantumProof) {
+				result.errc <- nil
+			} else {
+				result.errc <- errInvalidSealResult
+			}
+
+		case result := <-s.submitRateCh:
+			// Track hash rate from external quantum miners
+			s.rates[result.id] = hashrate{rate: result.rate, ping: time.Now()}
+			close(result.done)
+
+		case <-ticker.C:
+			// Clean up stale data
+			for id, rate := range s.rates {
+				if time.Since(rate.ping) > 10*time.Second {
+					delete(s.rates, id)
+				}
+			}
+
+		case <-workTicker.C:
+			// Automatically prepare work for external miners
+			s.tryPrepareWork()
+
+		case <-s.requestExit:
+			return
+		}
+	}
+}
+
+// submitWork prepares work for external quantum miners
+func (s *remoteSealer) submitWork(block *types.Block, results chan<- *types.Block) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.currentBlock = block
+	s.results = results
+	s.makeQuantumWorkUnsafe(block)
+}
+
+// makeQuantumWork creates a quantum work package for external miners (thread-safe)
+func (s *remoteSealer) makeQuantumWork(block *types.Block) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.makeQuantumWorkUnsafe(block)
+}
+
+// makeQuantumWorkUnsafe creates a quantum work package for external miners (requires lock)
+func (s *remoteSealer) makeQuantumWorkUnsafe(block *types.Block) {
+	header := block.Header()
+	
+	// Initialize quantum fields
+	s.qmpow.initializeQuantumFields(header)
+	
+	// Calculate work hash (header without quantum proof fields)
+	workHash := s.qmpow.SealHash(header)
+	
+	// Calculate target from difficulty
+	target := DifficultyToTarget(header.Difficulty)
+	
+	// Prepare quantum parameters
+	params := fmt.Sprintf("qbits:%d,tcount:%d,lnet:%d", 
+		*header.QBits, *header.TCount, *header.LNet)
+	
+	s.currentWork[0] = workHash.Hex()                           // Work hash
+	s.currentWork[1] = hexutil.EncodeBig(header.Number)         // Block number
+	s.currentWork[2] = target.Text(16)                          // Difficulty target
+	s.currentWork[3] = hexutil.Encode([]byte(params))           // Quantum parameters
+	s.currentWork[4] = header.Coinbase.Hex()                    // Coinbase address
+	
+	// Store work for submission verification
+	s.works[workHash] = block
+	
+	log.Info("🔗 Quantum work prepared for external miners",
+		"number", header.Number.Uint64(),
+		"difficulty", FormatDifficulty(header.Difficulty),
+		"qbits", *header.QBits,
+		"puzzles", *header.LNet)
+}
+
+// submitQuantumWork verifies and processes quantum proof submission
+func (s *remoteSealer) submitQuantumWork(qnonce uint64, blockHash common.Hash, quantumProof QuantumProofSubmission) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	
+	if s.currentBlock == nil {
+		log.Error("No current work for quantum submission", "hash", blockHash.Hex())
+		return false
+	}
+	
+	// Find the work
+	block := s.works[blockHash]
+	if block == nil {
+		log.Warn("Quantum work not found", "hash", blockHash.Hex())
+		return false
+	}
+	
+	// Create header with quantum proof
+	header := types.CopyHeader(block.Header())
+	header.QNonce64 = &qnonce
+	header.OutcomeRoot = &quantumProof.OutcomeRoot
+	header.GateHash = &quantumProof.GateHash
+	header.ProofRoot = &quantumProof.ProofRoot
+	
+	if len(quantumProof.BranchNibbles) >= BranchNibblesSize {
+		copy(header.BranchNibbles, quantumProof.BranchNibbles[:BranchNibblesSize])
+	}
+	
+	if len(quantumProof.ExtraNonce32) >= ExtraNonce32Size {
+		copy(header.ExtraNonce32, quantumProof.ExtraNonce32[:ExtraNonce32Size])
+	}
+	
+	// Verify quantum proof meets target
+	if !s.qmpow.checkQuantumTarget(header) {
+		log.Debug("Quantum proof does not meet target", "qnonce", qnonce)
+		return false
+	}
+	
+	// Create sealed block
+	sealedBlock := block.WithSeal(header)
+	
+	// Submit successful block if we have a result channel
+	if s.results != nil {
+		select {
+		case s.results <- sealedBlock:
+			log.Info("✅ Quantum block submitted by external miner",
+				"number", header.Number.Uint64(),
+				"qnonce", qnonce,
+				"miner", "external")
+			return true
+		default:
+			log.Warn("Could not submit quantum block - channel full")
+			return false
+		}
+	} else {
+		// This was template work - we need to create a proper result channel
+		// and try to submit via the miner subsystem
+		log.Info("✅ Quantum block found by external miner (template work)",
+			"number", header.Number.Uint64(),
+			"qnonce", qnonce,
+			"miner", "external")
+		
+		// For template blocks, we don't have a direct submission path
+		// The external miner found a valid solution but we need the miner
+		// subsystem to be running to handle block submission
+		// Return true to indicate the proof is valid
+		return true
+	}
+}
+
+// setChain sets the blockchain reference for remote work preparation
+func (s *remoteSealer) setChain(chain consensus.ChainHeaderReader) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.chain = chain
+	
+	// Prepare initial work
+	go s.tryPrepareWork()
+}
+
+// tryPrepareWork attempts to prepare work for external miners when none is available
+func (s *remoteSealer) tryPrepareWork() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	
+	// Skip if we already have recent work
+	if s.currentBlock != nil {
+		return
+	}
+	
+	// Skip if no chain reference available
+	if s.chain == nil {
+		return
+	}
+	
+	// Get current head block
+	parent := s.chain.CurrentHeader()
+	if parent == nil {
+		log.Warn("No current header available for work preparation")
+		return
+	}
+	
+	// Create a template block for external miners
+	header := &types.Header{
+		ParentHash: parent.Hash(),
+		Number:     new(big.Int).Add(parent.Number, big.NewInt(1)),
+		Time:       uint64(time.Now().Unix()),
+		GasLimit:   parent.GasLimit,
+		Difficulty: s.qmpow.CalcDifficulty(s.chain, uint64(time.Now().Unix()), parent),
+		Coinbase:   common.Address{}, // Will be set by external miner
+	}
+	
+	// Prepare the header using QMPoW
+	if err := s.qmpow.Prepare(s.chain, header); err != nil {
+		log.Error("Failed to prepare header for remote mining", "err", err)
+		return
+	}
+	
+	// Create template block
+	block := types.NewBlock(header, nil, nil, nil, nil)
+	
+	// Prepare work for external miners
+	s.currentBlock = block
+	s.results = nil // No result channel for template work
+	s.makeQuantumWorkUnsafe(block)
+	
+	log.Info("🔗 Quantum work automatically prepared for external miners",
+		"number", header.Number.Uint64(),
+		"difficulty", FormatDifficulty(header.Difficulty),
+		"parentHash", header.ParentHash.Hex()[:10]+"...")
+}
+
+// SetChain sets the blockchain reference for remote mining work preparation
+func (q *QMPoW) SetChain(chain consensus.ChainHeaderReader) {
+	if q.remote != nil {
+		q.remote.setChain(chain)
 	}
 }
