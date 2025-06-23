@@ -24,16 +24,14 @@ import (
 	"github.com/holiman/uint256"
 )
 
-// Quantum-Geth v0.9-rc3-hw0 Constants
+// Quantum-Geth v0.9–BareBones+Halving Constants
 const (
-	// Epochic glide parameters
-	EpochBlocks   = 50000 // Epoch = ⌊Height / 50,000⌋
-	GlideBlocks   = 12500 // Add +1.0 qubit every 12,500 blocks (≈ 2 days)
-	StartingQBits = 12    // Start n = 12 at epoch 0
+	// Halving epoch parameters (Section 11)
+	EpochBlocks   = HalvingEpochLength // Epoch = ⌊Height / 600,000⌋
+	StartingQBits = 16                 // Start n = 16 at epoch 0 (126-bit security)
 
-	// Fixed circuit parameters
-	FixedTCount = 4096 // Constant 4,096 T-gates per puzzle
-	FixedLNet   = 48   // Fixed 48 puzzles providing 1,152-bit security
+	// Dynamic circuit parameters (follow glide schedule from params.go)
+	// These are now calculated dynamically based on height
 
 	// Proof system sizes
 	OutcomeRootSize   = 32 // Merkle root of outcomes
@@ -78,6 +76,14 @@ type QMPoW struct {
 	threads  int
 	update   chan struct{}
 	hashrate uint64
+
+	// Block assembly integration
+	blockAssembler *BlockAssembler
+	lastPublicKey  []byte
+	lastSignature  []byte
+
+	// Halving & fee model
+	halvingModel *HalvingFeeModel
 
 	lock sync.RWMutex
 }
@@ -134,18 +140,19 @@ func (q *QMPoW) VerifyHeader(chain consensus.ChainHeaderReader, header *types.He
 	}
 
 	// Verify QBits according to glide schedule
-	expectedQBits := CalculateQBitsForHeight(header.Number.Uint64())
+	expectedQBits, _, _ := CalculateQuantumParamsForHeight(header.Number.Uint64())
 	if *header.QBits != expectedQBits {
 		return fmt.Errorf("%w: got %d, expected %d", ErrInvalidQBits, *header.QBits, expectedQBits)
 	}
 
-	// Verify fixed parameters
-	if *header.TCount != FixedTCount {
-		return fmt.Errorf("invalid TCount: got %d, expected %d", *header.TCount, FixedTCount)
+	// Verify parameters according to glide schedule
+	_, expectedTCount, expectedLNet := CalculateQuantumParamsForHeight(header.Number.Uint64())
+	if *header.TCount != expectedTCount {
+		return fmt.Errorf("invalid TCount: got %d, expected %d", *header.TCount, expectedTCount)
 	}
 
-	if *header.LNet != FixedLNet {
-		return fmt.Errorf("invalid LNet: got %d, expected %d", *header.LNet, FixedLNet)
+	if *header.LNet != expectedLNet {
+		return fmt.Errorf("invalid LNet: got %d, expected %d", *header.LNet, expectedLNet)
 	}
 
 	// Verify field sizes
@@ -331,9 +338,64 @@ func (q *QMPoW) Prepare(chain consensus.ChainHeaderReader, header *types.Header)
 func (q *QMPoW) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB,
 	txs []*types.Transaction, uncles []*types.Header, withdrawals []*types.Withdrawal) {
 
-	// Apply block rewards (same as Ethash for now)
-	blockReward := uint256.NewInt(2e18) // 2 ETH per block
-	state.AddBalance(header.Coinbase, blockReward)
+	// Create halving fee model if not exists
+	if q.halvingModel == nil {
+		q.halvingModel = NewHalvingFeeModel(chain)
+	}
+
+	// For now, use simplified reward calculation without receipts
+	// In production, this would get receipts from the block processing
+	blockNumber := header.Number.Uint64()
+	epoch := uint32(blockNumber / HalvingEpochSize)
+	subsidyQGC := CalculateBlockSubsidy(epoch)
+	// Convert QGC to wei (1 QGC = 10^18 wei)
+	subsidyBig := new(big.Float).SetFloat64(subsidyQGC)
+	weiBig := new(big.Float).Mul(subsidyBig, big.NewFloat(1e18))
+	subsidyWei, _ := weiBig.Int(nil)
+
+	// Calculate transaction fees (simplified without receipts)
+	totalFees := big.NewInt(0)
+	for _, tx := range txs {
+		gasPrice := tx.GasPrice()
+		if gasPrice != nil {
+			// Estimate fee = gasPrice * gasLimit (simplified)
+			txFee := new(big.Int).Mul(gasPrice, big.NewInt(int64(tx.Gas())))
+			totalFees.Add(totalFees, txFee)
+		}
+	}
+
+	// Total reward = subsidy + fees
+	totalReward := new(big.Int).Add(subsidyWei, totalFees)
+
+	// Award total reward to coinbase
+	state.AddBalance(header.Coinbase, uint256.MustFromBig(totalReward))
+
+	// Handle uncle rewards (if any)
+	for _, uncle := range uncles {
+		// Uncle reward is 1/32 of block subsidy (following Ethereum tradition)
+		uncleReward := new(big.Int).Div(subsidyWei, big.NewInt(32))
+		state.AddBalance(uncle.Coinbase, uint256.MustFromBig(uncleReward))
+	}
+
+	// Log halving events
+	if blockNumber > 0 && blockNumber%HalvingEpochSize == 0 {
+		prevSubsidy := CalculateBlockSubsidy(epoch - 1)
+		log.Warn("🎉 HALVING EVENT!",
+			"blockNumber", blockNumber,
+			"epoch", epoch,
+			"previousSubsidy", prevSubsidy,
+			"newSubsidy", subsidyQGC,
+			"reductionFactor", "2x")
+	}
+
+	log.Info("💰 Block reward applied",
+		"blockNumber", blockNumber,
+		"epoch", epoch,
+		"subsidyQGC", subsidyQGC,
+		"subsidyWei", subsidyWei,
+		"transactionFees", totalFees,
+		"totalReward", totalReward,
+		"coinbase", header.Coinbase.Hex())
 }
 
 // FinalizeAndAssemble runs any post-transaction state modifications and assembles the final block
@@ -499,14 +561,17 @@ func (q *QMPoW) CalcDifficulty(chain consensus.ChainHeaderReader, time uint64, p
 
 	blockNumber := new(big.Int).Add(parent.Number, big.NewInt(1)).Uint64()
 
-	log.Info("🔗 Bitcoin-style difficulty calculation",
+	// Convert parent difficulty to quantum-optimized format if needed
+	convertedParentDifficulty := ConvertLegacyDifficulty(parent.Difficulty)
+
+	log.Info("🔗 Quantum-optimized difficulty calculation",
 		"blockNumber", blockNumber,
 		"parentNumber", parent.Number.Uint64(),
-		"parentDifficulty", parent.Difficulty)
+		"parentDifficulty", FormatDifficulty(convertedParentDifficulty))
 
 	// Check if it's time for difficulty retargeting (every 100 blocks like our Bitcoin)
 	if ShouldRetargetDifficulty(blockNumber) {
-		log.Info("🎯 Bitcoin-style difficulty retarget triggered", "blockNumber", blockNumber)
+		log.Info("🎯 Quantum-optimized difficulty retarget triggered", "blockNumber", blockNumber)
 
 		// Get the start of the current retarget period
 		retargetStart := GetRetargetPeriodStart(blockNumber)
@@ -523,42 +588,47 @@ func (q *QMPoW) CalcDifficulty(chain consensus.ChainHeaderReader, time uint64, p
 		if startHeader == nil {
 			log.Warn("⚠️  Could not find retarget start header, using parent difficulty",
 				"retargetStart", retargetStart)
-			return parent.Difficulty
+			return convertedParentDifficulty
 		}
+
+		// Convert start header difficulty as well
+		convertedStartDifficulty := ConvertLegacyDifficulty(startHeader.Difficulty)
 
 		// Calculate actual time taken for the retarget period
 		actualTime := time - startHeader.Time
 		targetTime := RetargetBlocks * TargetBlockTime // 100 blocks * 12 seconds
 
-		log.Info("📊 Bitcoin-style retarget analysis",
+		log.Info("📊 Quantum-optimized retarget analysis",
 			"retargetStart", retargetStart,
 			"blockNumber", blockNumber,
 			"currentTime", time,
 			"startHeaderTime", startHeader.Time,
 			"actualTime", actualTime,
 			"targetTime", targetTime,
-			"ratio", float64(actualTime)/float64(targetTime))
+			"ratio", float64(actualTime)/float64(targetTime),
+			"startDifficulty", FormatDifficulty(convertedStartDifficulty),
+			"parentDifficulty", FormatDifficulty(convertedParentDifficulty))
 
-		// Use Bitcoin-style difficulty adjustment
-		newDifficulty := CalculateNextDifficulty(parent.Difficulty, actualTime, targetTime)
+		// Use quantum-optimized difficulty adjustment
+		newDifficulty := CalculateNextDifficulty(convertedParentDifficulty, actualTime, targetTime)
 
-		log.Info("✅ Bitcoin-style difficulty retargeted",
-			"oldDifficulty", parent.Difficulty,
-			"newDifficulty", newDifficulty,
+		log.Info("✅ Quantum-optimized difficulty retargeted",
+			"oldDifficulty", FormatDifficulty(convertedParentDifficulty),
+			"newDifficulty", FormatDifficulty(newDifficulty),
 			"blocks", RetargetBlocks,
-			"actualTime", actualTime,
-			"targetTime", targetTime)
+			"actualMinutes", float64(actualTime)/60,
+			"targetMinutes", float64(targetTime)/60)
 
 		return newDifficulty
 	}
 
 	// Not a retarget block - keep current difficulty (like Bitcoin)
-	log.Info("➡️  Bitcoin-style difficulty maintained",
+	log.Info("➡️  Quantum-optimized difficulty maintained",
 		"blockNumber", blockNumber,
-		"difficulty", parent.Difficulty,
+		"difficulty", FormatDifficulty(convertedParentDifficulty),
 		"nextRetarget", ((blockNumber/RetargetBlocks)+1)*RetargetBlocks)
 
-	return parent.Difficulty
+	return convertedParentDifficulty
 }
 
 // APIs returns the RPC APIs this consensus engine provides
@@ -735,10 +805,11 @@ func (api *API) GetQuantumParams(blockNr rpc.BlockNumber) (map[string]interface{
 	params := api.qmpow.ParamsForHeight(uint64(blockNr))
 
 	return map[string]interface{}{
-		"qbits":    params.QBits,
-		"tcount":   params.TCount,
-		"lnet":     params.LNet,
-		"epochLen": params.EpochLen,
+		"qbits":        params.QBits,
+		"tcount":       params.TCount,
+		"lnet":         params.LNet,
+		"epoch":        params.Epoch,
+		"blockSubsidy": params.BlockSubsidy,
 	}, nil
 }
 
@@ -783,7 +854,7 @@ func (api *API) GetMiningStats() map[string]interface{} {
 			"tgatesPerPuzzle": params.TCount,
 			"totalComplexity": uint64(params.LNet) * uint64(params.QBits) * uint64(params.TCount),
 		},
-		"retargetPeriod":  params.EpochLen,
+		"halvingEpoch":    params.Epoch,
 		"targetBlockTime": TargetBlockTime,
 	}
 }
@@ -800,11 +871,48 @@ func (api *API) GetNetworkStats() map[string]interface{} {
 		"theoreticalHashrate": theoreticalHashrate,
 		"hashrateUnit":        "puzzles/second",
 		"targetBlockTime":     TargetBlockTime,
-		"retargetPeriod":      params.EpochLen,
+		"halvingEpoch":        params.Epoch,
 		"quantumComplexity": map[string]interface{}{
 			"qubits":     params.QBits,
 			"tgates":     params.TCount,
 			"stateSpace": uint64(1) << params.QBits, // 2^qubits
+		},
+	}
+}
+
+// GetQuantumStats returns comprehensive quantum mining statistics for monitoring
+func (api *API) GetQuantumStats() map[string]interface{} {
+	api.qmpow.lock.RLock()
+	defer api.qmpow.lock.RUnlock()
+
+	params := api.qmpow.ParamsForHeight(0)
+	hashrate := float64(api.qmpow.hashrate)
+
+	return map[string]interface{}{
+		"mining": map[string]interface{}{
+			"hashrate":     hashrate,
+			"hashrateUnit": "puzzles/second",
+			"threads":      api.qmpow.threads,
+			"isActive":     hashrate > 0,
+		},
+		"difficulty": map[string]interface{}{
+			"puzzlesPerBlock": params.LNet,
+			"qubitsPerPuzzle": params.QBits,
+			"tgatesPerPuzzle": params.TCount,
+			"totalComplexity": uint64(params.LNet) * uint64(params.QBits) * uint64(params.TCount),
+		},
+		"network": map[string]interface{}{
+			"targetBlockTime":     TargetBlockTime,
+			"currentEpoch":        params.Epoch,
+			"nextHalvingAt":       (params.Epoch + 1) * EpochBlocks,
+			"currentSubsidy":      params.BlockSubsidy,
+			"theoreticalHashrate": float64(params.LNet) / float64(TargetBlockTime),
+		},
+		"quantum": map[string]interface{}{
+			"effectiveSecurityBits": CalculateEffectiveSecurityBits(params.QBits, params.LNet),
+			"stateSpaceSize":        uint64(1) << params.QBits,
+			"quantumAdvantage":      "sqrt(2^n) speedup over classical",
+			"proofSystem":           "Mahadev→CAPSS→Nova-Lite",
 		},
 	}
 }

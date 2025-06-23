@@ -44,17 +44,15 @@ type QiskitResult struct {
 
 // initializeQuantumFields initializes all quantum proof-of-work fields
 func (q *QMPoW) initializeQuantumFields(header *types.Header) {
-	// Calculate epoch and qubits based on block height
+	// Calculate epoch and quantum parameters based on block height
 	blockHeight := header.Number.Uint64()
-	epoch := uint32(blockHeight / EpochBlocks)
-	qbits := CalculateQBitsForHeight(blockHeight)
+	params := DefaultParams(blockHeight)
+	qbits, tcount, lnet := CalculateQuantumParamsForHeight(blockHeight)
 
 	// Set quantum parameters
-	header.Epoch = &epoch
+	header.Epoch = &params.Epoch
 	header.QBits = &qbits
-	tcount := uint32(FixedTCount)
 	header.TCount = &tcount
-	lnet := uint16(FixedLNet)
 	header.LNet = &lnet
 
 	// Initialize nonce
@@ -114,7 +112,7 @@ func (q *QMPoW) initializeQuantumFields(header *types.Header) {
 
 	log.Debug("🔬 Quantum fields initialized",
 		"blockNumber", blockHeight,
-		"epoch", epoch,
+		"epoch", params.Epoch,
 		"qbits", qbits,
 		"puzzles", lnet)
 }
@@ -243,6 +241,9 @@ func CalculateOutcomeRootFromBytes(outcomesBytes []byte, lnet int, qbits int) co
 
 // checkQuantumTarget verifies if the quantum proof meets the target
 func (q *QMPoW) checkQuantumTarget(header *types.Header) bool {
+	// Convert difficulty to quantum-optimized format if needed
+	convertedDifficulty := ConvertLegacyDifficulty(header.Difficulty)
+
 	// Use Bitcoin-style quality calculation for true nonce-level difficulty
 	// This creates a uniform distribution based on the nonce and quantum data
 	quality := CalculateQuantumProofQuality(
@@ -250,16 +251,27 @@ func (q *QMPoW) checkQuantumTarget(header *types.Header) bool {
 		append(header.GateHash.Bytes(), header.ProofRoot.Bytes()...),
 		*header.QNonce64)
 
-	// Calculate target from difficulty
-	target := CalculateQuantumTarget(header.Difficulty)
+	// Calculate actual block time for ASERT-Q adjustment
+	blockNumber := header.Number.Uint64()
+	var actualBlockTime int64 = 12 // Default target time if no parent available
+
+	// For now, use a simple calculation based on block number progression
+	// In full implementation, this would come from mining context
+	if blockNumber > 10 {
+		// Estimate from recent mining history (this will be improved)
+		actualBlockTime = 15 + (int64(blockNumber-10) * 2) // Gradually increasing block time
+	}
+
+	// Calculate target using ASERT-Q with estimated block timing
+	target := CalculateQuantumTarget(convertedDifficulty, blockNumber, actualBlockTime)
 
 	// Check if quality meets target (Bitcoin-style: lower quality = better proof)
 	success := quality.Cmp(target) < 0
 
 	// Always log the comparison for debugging difficulty issues
-	log.Error("🎯 Quantum target check DETAILED",
+	log.Debug("🎯 Quantum target check DETAILED",
 		"qnonce", *header.QNonce64,
-		"difficulty", header.Difficulty.String(),
+		"difficulty", FormatDifficulty(convertedDifficulty),
 		"quality", quality.String(),
 		"target", target.String(),
 		"success", success,
@@ -267,8 +279,9 @@ func (q *QMPoW) checkQuantumTarget(header *types.Header) bool {
 		"targetHex", fmt.Sprintf("0x%064x", target))
 
 	if success {
-		log.Debug("🎯 Quantum target met",
+		log.Info("🎉 Quantum target met!",
 			"qnonce", *header.QNonce64,
+			"difficulty", FormatDifficulty(convertedDifficulty),
 			"quality", quality.String(),
 			"target", target.String())
 	}
@@ -324,17 +337,18 @@ func ValidateQuantumHeader(header *types.Header) error {
 		return fmt.Errorf("invalid epoch: got %d, expected %d", *header.Epoch, expectedEpoch)
 	}
 
-	expectedQBits := CalculateQBitsForHeight(header.Number.Uint64())
+	expectedQBits, _, _ := CalculateQuantumParamsForHeight(header.Number.Uint64())
 	if *header.QBits != expectedQBits {
 		return fmt.Errorf("invalid qbits: got %d, expected %d", *header.QBits, expectedQBits)
 	}
 
-	if *header.TCount != FixedTCount {
-		return fmt.Errorf("invalid tcount: got %d, expected %d", *header.TCount, FixedTCount)
+	_, expectedTCount, expectedLNet := CalculateQuantumParamsForHeight(header.Number.Uint64())
+	if *header.TCount != expectedTCount {
+		return fmt.Errorf("invalid tcount: got %d, expected %d", *header.TCount, expectedTCount)
 	}
 
-	if *header.LNet != FixedLNet {
-		return fmt.Errorf("invalid lnet: got %d, expected %d", *header.LNet, FixedLNet)
+	if *header.LNet != expectedLNet {
+		return fmt.Errorf("invalid lnet: got %d, expected %d", *header.LNet, expectedLNet)
 	}
 
 	if *header.AttestMode != AttestModeDilithium {

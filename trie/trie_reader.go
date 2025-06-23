@@ -36,7 +36,7 @@ type trieReader struct {
 func newTrieReader(stateRoot, owner common.Hash, db database.Database) (*trieReader, error) {
 	if stateRoot == (common.Hash{}) || stateRoot == types.EmptyRootHash {
 		if stateRoot == (common.Hash{}) {
-			log.Error("Zero state root hash!")
+			log.Debug("Zero state root hash!")
 		}
 		return &trieReader{owner: owner}, nil
 	}

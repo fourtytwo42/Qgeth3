@@ -492,14 +492,14 @@ func (w *worker) newWorkLoop(recommit time.Duration) {
 
 	// commit aborts in-flight transaction execution with given signal and resubmits a new one.
 	commit := func(noempty bool, s int32) {
-		log.Error("🔥🔥🔥 NEWWORKLOOP: commit function called", "noempty", noempty, "signal", s)
+		log.Debug("🔥🔥🔥 NEWWORKLOOP: commit function called", "noempty", noempty, "signal", s)
 		if interrupt != nil {
 			interrupt.Store(s)
 		}
 		interrupt = new(atomic.Int32)
 		select {
 		case w.newWorkCh <- &newWorkReq{interrupt: interrupt, noempty: noempty, timestamp: timestamp}:
-			log.Error("🔥🔥🔥 NEWWORKLOOP: Successfully sent to newWorkCh", "noempty", noempty)
+			log.Debug("🔥🔥🔥 NEWWORKLOOP: Successfully sent to newWorkCh", "noempty", noempty)
 		case <-w.exitCh:
 			log.Error("🚨 NEWWORKLOOP: Exit channel closed!")
 			return
@@ -598,7 +598,7 @@ func (w *worker) mainLoop() {
 	for {
 		select {
 		case req := <-w.newWorkCh:
-			log.Error("🔥🔥🔥 MAINLOOP: Received newWorkCh request", "noempty", req.noempty, "timestamp", req.timestamp)
+			log.Debug("🔥🔥🔥 MAINLOOP: Received newWorkCh request", "noempty", req.noempty, "timestamp", req.timestamp)
 			w.commitWork(req.interrupt, req.noempty, req.timestamp)
 
 		case req := <-w.getWorkCh:
@@ -1328,7 +1328,7 @@ func (w *worker) generateWork(params *generateParams) *newPayloadResult {
 // commitWork generates several new sealing tasks based on the parent block
 // and submit them to the sealer.
 func (w *worker) commitWork(interrupt *atomic.Int32, noempty bool, timestamp int64) {
-	log.Error("🔥🔥🔥 COMMITWORK CALLED!", "noempty", noempty, "timestamp", timestamp)
+	log.Debug("🔥🔥🔥 COMMITWORK CALLED!", "noempty", noempty, "timestamp", timestamp)
 
 	// Abort committing if node is still syncing
 	if w.syncing.Load() {
@@ -1345,12 +1345,12 @@ func (w *worker) commitWork(interrupt *atomic.Int32, noempty bool, timestamp int
 			log.Error("🚨 COMMITWORK ABORTED - Refusing to mine without etherbase")
 			return
 		}
-		log.Error("🔬 COMMITWORK: Got etherbase", "coinbase", coinbase.Hex())
+		log.Debug("🔬 COMMITWORK: Got etherbase", "coinbase", coinbase.Hex())
 	} else {
-		log.Error("🚨 COMMITWORK: Worker not running!")
+		log.Debug("🚨 COMMITWORK: Worker not running!")
 	}
 
-	log.Error("🔥 COMMITWORK: About to call prepareWork", "coinbase", coinbase.Hex())
+	log.Debug("🔥 COMMITWORK: About to call prepareWork", "coinbase", coinbase.Hex())
 	work, err := w.prepareWork(&generateParams{
 		timestamp: uint64(timestamp),
 		coinbase:  coinbase,
@@ -1359,7 +1359,7 @@ func (w *worker) commitWork(interrupt *atomic.Int32, noempty bool, timestamp int
 		log.Error("🚨 COMMITWORK: prepareWork failed", "err", err)
 		return
 	}
-	log.Error("🔥 COMMITWORK: prepareWork succeeded!")
+	log.Debug("🔥 COMMITWORK: prepareWork succeeded!")
 	// Create an empty block based on temporary copied state for
 	// sealing in advance without waiting block execution finished.
 	if !noempty && !w.noempty.Load() {
