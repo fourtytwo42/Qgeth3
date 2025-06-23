@@ -1,5 +1,5 @@
-# Start Geth with Mining - Quantum-Geth v0.9-rc3-hw0
-# Starts the quantum geth node with Bitcoin-style nonce-level difficulty mining
+# Start Geth with Mining - Quantum-Geth v0.9–BareBones+Halving
+# Starts the quantum geth node with quantum proof-of-work mining
 # Usage: .\start-geth-mining.ps1 -threads 1 -verbosity 4
 
 param(
@@ -15,9 +15,8 @@ param(
     [switch]$isolated = $true  # Run in isolated mode (no peers)
 )
 
-Write-Host "*** QUANTUM-GETH MINING STARTUP ***" -ForegroundColor Green
-Write-Host "Bitcoin-Style Nonce-Level Difficulty Implementation" -ForegroundColor Cyan
-Write-Host "Successfully fixed quality calculation and comparison logic!" -ForegroundColor Green
+Write-Host "*** QUANTUM-GETH v0.9 BareBones+Halving MINING STARTUP ***" -ForegroundColor Green
+Write-Host "48-Puzzle Sequential Quantum Proof-of-Work with Bitcoin-Style Halving" -ForegroundColor Cyan
 Write-Host ""
 
 # Check if blockchain exists
@@ -25,9 +24,7 @@ if (-not (Test-Path "$datadir\geth\chaindata")) {
     Write-Host "ERROR: No blockchain found in $datadir" -ForegroundColor Red
     Write-Host ""
     Write-Host "You need to initialize a blockchain first:" -ForegroundColor Yellow
-    Write-Host "   .\reset-blockchain.ps1 -difficulty 1    # Easy testing"
-    Write-Host "   .\reset-blockchain.ps1 -difficulty 100  # Medium testing"
-    Write-Host "   .\reset-blockchain.ps1 -difficulty 1000 # Hard testing"
+    Write-Host "   .\reset-blockchain.ps1 -difficulty 1 -force" -ForegroundColor White
     Write-Host ""
     exit 1
 }
@@ -40,6 +37,16 @@ Write-Host "  Etherbase: $etherbase"
 Write-Host "  Verbosity: $verbosity"
 Write-Host "  Quantum Solver: $quantumSolver"
 Write-Host "  Isolated Mode: $isolated"
+Write-Host ""
+
+Write-Host "v0.9 BareBones+Halving Mining Features:" -ForegroundColor Magenta
+Write-Host "  * 48 sequential quantum puzzles per block" -ForegroundColor Gray
+Write-Host "  * 16 qubits x 8,192 T-gates per puzzle" -ForegroundColor Gray
+Write-Host "  * Seed chaining: Seed_{i+1} = SHA256(Seed_i || Outcome_i)" -ForegroundColor Gray
+Write-Host "  * Bitcoin-style halving: 50 QGC -> 25 QGC -> 12.5 QGC..." -ForegroundColor Gray
+Write-Host "  * ASERT-Q difficulty targeting 12-second blocks" -ForegroundColor Gray
+Write-Host "  * Mahadev->CAPSS->Nova proof generation" -ForegroundColor Gray
+Write-Host "  * Dilithium-2 self-attestation" -ForegroundColor Gray
 Write-Host ""
 
 # Stop any existing geth processes
@@ -61,7 +68,7 @@ $gethArgs = @(
     "--miner.etherbase", $etherbase
     "--quantum.solver", $quantumSolver
     "--http"
-    "--http.api", "admin,eth,miner,net,txpool,personal,web3"
+    "--http.api", "admin,eth,miner,net,txpool,personal,web3,qmpow"
     "--http.addr", "localhost"
     "--http.port", $httpport
     "--http.corsdomain", "*"
@@ -80,34 +87,39 @@ if ($isolated) {
 }
 
 Write-Host ""
-Write-Host "Expected Mining Behavior:" -ForegroundColor Cyan
-Write-Host "  • Bitcoin-style nonce progression: qnonce=0,1,2,3,4..."
-Write-Host "  • Quality must be less than Target for success (lower quality = better)"
-Write-Host "  • Positive quality values (no more negative numbers)"
-Write-Host "  • Multiple attempts required for higher difficulty"
+Write-Host "Expected v0.9 Mining Behavior:" -ForegroundColor Cyan
+Write-Host "  • Sequential 48-puzzle execution with seed chaining" -ForegroundColor Gray
+Write-Host "  • OutcomeRoot = MerkleRoot(Outcome_0...Outcome_47)" -ForegroundColor Gray
+Write-Host "  • GateHash = SHA256(stream_0 || ... || stream_47)" -ForegroundColor Gray
+Write-Host "  • Nova-Lite proof aggregation (3 proofs <=6kB each)" -ForegroundColor Gray
+Write-Host "  • Dilithium signature binding prover to outcomes" -ForegroundColor Gray
+Write-Host "  • ASERT-Q difficulty adjustment every block" -ForegroundColor Gray
+Write-Host "  • Block rewards: 50 QGC + transaction fees" -ForegroundColor Gray
 Write-Host ""
 
-Write-Host "Starting Quantum-Geth mining..." -ForegroundColor Green
+Write-Host "Starting Quantum-Geth v0.9 mining..." -ForegroundColor Green
 Write-Host "   Use Ctrl+C to stop mining" -ForegroundColor Gray
 Write-Host ""
 
 # Start geth
 try {
-    & ".\quantum-geth\build\bin\geth.exe" @gethArgs
+    & ".\geth.exe" @gethArgs
 } catch {
     Write-Host ""
     Write-Host "ERROR: Failed to start geth: $_" -ForegroundColor Red
     Write-Host ""
     Write-Host "Troubleshooting:" -ForegroundColor Yellow
     Write-Host "  1. Make sure the blockchain is initialized:"
-    Write-Host "     .\reset-blockchain.ps1 -difficulty 1"
+    Write-Host "     .\reset-blockchain.ps1 -difficulty 1 -force"
     Write-Host "  2. Check if the geth binary exists:"
-    Write-Host "     .\quantum-geth\build\bin\geth.exe"
+    Write-Host "     .\geth.exe"
     Write-Host "  3. Verify the quantum solver exists:"
     Write-Host "     $quantumSolver"
+    Write-Host "  4. Check if v0.9 genesis was used:"
+    Write-Host "     Should contain 'qmpow' config section"
     Write-Host ""
     exit 1
 }
 
 Write-Host ""
-Write-Host "Mining stopped." -ForegroundColor Yellow 
+Write-Host "v0.9 Mining stopped." -ForegroundColor Yellow 
