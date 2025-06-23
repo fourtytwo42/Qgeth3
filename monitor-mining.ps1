@@ -1,21 +1,59 @@
-# Mining Monitor - Quantum-Geth v0.9 BareBones+Halving
-# Monitors mining progress and performance metrics
+# Mining Monitor - Quantum-Geth v0.9 BareBones+Halving with ASERT-Q Tracking
+# Monitors mining progress, performance metrics, and ASERT-Q multiplier values
 
 param(
     [string]$nodeUrl = "http://localhost:8545",
     [int]$refreshInterval = 10,    # seconds between updates
-    [int]$retargetBlocks = 100     # ASERT-Q retargets every 100 blocks
+    [int]$retargetBlocks = 100,    # ASERT-Q retargets every 100 blocks
+    [string]$logFile = "qdata_quantum\geth\geth.log"  # Path to geth log file
 )
 
 Write-Host "*** QUANTUM-GETH v0.9 BareBones+Halving MINING MONITOR ***" -ForegroundColor Cyan
 Write-Host "Real-Time Mining Performance | ASERT-Q Difficulty | 48 Quantum Puzzles" -ForegroundColor Green
+Write-Host "Enhanced with ASERT-Q Multiplier Tracking" -ForegroundColor Yellow
 Write-Host ""
+
+# Global variables to track ASERT-Q data
+$global:LastASERTData = @{
+    BlockNumber = 0
+    Multiplier = 100
+    ActualBlockTime = 12
+    BaseDifficulty = 0.0005
+    EffectiveDifficulty = 0.000005
+    LastUpdate = (Get-Date)
+}
 
 function Get-HexToDecimal($hexValue) {
     if ($hexValue -match "^0x([0-9a-fA-F]+)$") {
-        return [Convert]::ToInt64($matches[1], 16)
+        try {
+            return [Convert]::ToInt64($matches[1], 16)
+        } catch {
+            # Handle very large numbers that exceed Int64
+            $bigInt = [System.Numerics.BigInteger]::Parse($matches[1], [System.Globalization.NumberStyles]::HexNumber)
+            return $bigInt.ToString()
+        }
     }
     return 0
+}
+
+function Format-LargeNumber($number) {
+    if ($number -is [string]) {
+        # Already a string from BigInteger conversion
+        return $number
+    }
+    
+    if ($number -ge 1000000000) {
+        $billions = [math]::Round($number / 1000000000, 2)
+        return "$billions B"
+    } elseif ($number -ge 1000000) {
+        $millions = [math]::Round($number / 1000000, 2)
+        return "$millions M"
+    } elseif ($number -ge 1000) {
+        $thousands = [math]::Round($number / 1000, 2)
+        return "$thousands K"
+    } else {
+        return $number.ToString()
+    }
 }
 
 function Get-WeiToQGC($weiValue) {
@@ -34,6 +72,53 @@ function Get-JsonRpcCall($method, $params = @()) {
     try {
         $response = Invoke-RestMethod -Uri $nodeUrl -Method Post -Body $body -ContentType "application/json"
         return $response.result
+    } catch {
+        return $null
+    }
+}
+
+function Parse-ASERTQData {
+    if (-not (Test-Path $logFile)) {
+        return $null
+    }
+    
+    try {
+        # Get recent log entries (last 100 lines to catch recent ASERT-Q activity)
+        $logLines = Get-Content $logFile -Tail 100 -ErrorAction SilentlyContinue
+        
+        # Look for ASERT-Q multiplier calculations
+        $asertLines = $logLines | Where-Object { $_ -match "🎯 ASERT-Q Multiplier calculated" }
+        $targetLines = $logLines | Where-Object { $_ -match "🎯 ASERT-Q Target calculated" }
+        
+        if ($asertLines -and $asertLines.Count -gt 0) {
+            # Parse the most recent ASERT-Q multiplier line
+            $latestLine = $asertLines[-1]
+            
+            # Extract values using regex
+            if ($latestLine -match "actualBlockTime=(\d+).*multiplier=(\d+).*blockNumber=(\d+)") {
+                $global:LastASERTData.ActualBlockTime = [int]$matches[1]
+                $global:LastASERTData.Multiplier = [int]$matches[2]
+                $global:LastASERTData.BlockNumber = [int]$matches[3]
+                $global:LastASERTData.LastUpdate = Get-Date
+            }
+        }
+        
+        if ($targetLines -and $targetLines.Count -gt 0) {
+            # Parse the most recent target calculation
+            $latestTargetLine = $targetLines[-1]
+            
+            # Extract base difficulty
+            if ($latestTargetLine -match "difficulty=([0-9.]+)") {
+                $global:LastASERTData.BaseDifficulty = [decimal]$matches[1]
+            }
+            
+            # Calculate effective difficulty
+            if ($global:LastASERTData.Multiplier -gt 0 -and $global:LastASERTData.BaseDifficulty -gt 0) {
+                $global:LastASERTData.EffectiveDifficulty = $global:LastASERTData.BaseDifficulty / $global:LastASERTData.Multiplier
+            }
+        }
+        
+        return $global:LastASERTData
     } catch {
         return $null
     }
@@ -83,41 +168,54 @@ function Show-V09Status {
     Write-Host "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundColor Gray
     Write-Host "=" * 80 -ForegroundColor Yellow
     
+    # Parse ASERT-Q data from logs
+    $asertData = Parse-ASERTQData
+    
     # Basic node info
     $blockNumber = Get-JsonRpcCall "eth_blockNumber"
-    $hashRate = Get-JsonRpcCall "eth_hashrate"
     $mining = Get-JsonRpcCall "eth_mining"
-    $syncing = Get-JsonRpcCall "eth_syncing"
-    $peerCount = Get-JsonRpcCall "net_peerCount"
     
     if ($blockNumber) {
         $currentBlock = Get-HexToDecimal $blockNumber
-        $currentEpoch = [math]::Floor($currentBlock / 600000)
-        $currentSubsidy = 50 / [math]::Pow(2, $currentEpoch)
         
         Write-Host "BLOCKCHAIN STATUS:" -ForegroundColor Green
         Write-Host "  Current Block: #$currentBlock" -ForegroundColor White
-        Write-Host "  Current Epoch: $currentEpoch" -ForegroundColor White
-        Write-Host "  Current Block Subsidy: $currentSubsidy QGC" -ForegroundColor Cyan
         Write-Host "  Mining Active: $(if ($mining -eq $true) { 'YES' } else { 'NO' })" -ForegroundColor $(if ($mining -eq $true) { 'Green' } else { 'Red' })
-        Write-Host "  Peer Count: $(Get-HexToDecimal $peerCount)" -ForegroundColor White
-        
-        if ($syncing -ne $false) {
-            Write-Host "  Syncing: YES (startingBlock: $(Get-HexToDecimal $syncing.startingBlock), currentBlock: $(Get-HexToDecimal $syncing.currentBlock), highestBlock: $(Get-HexToDecimal $syncing.highestBlock))" -ForegroundColor Yellow
-        } else {
-            Write-Host "  Syncing: NO (fully synchronized)" -ForegroundColor Green
-        }
     }
     
     Write-Host ""
     
+    # ASERT-Q Difficulty Status
+    if ($asertData) {
+        Write-Host "ASERT-Q DIFFICULTY ADJUSTMENT:" -ForegroundColor Cyan
+        
+        $minutesAgo = [math]::Round(((Get-Date) - $asertData.LastUpdate).TotalMinutes, 1)
+        $dataAge = if ($minutesAgo -lt 1) { "Just now" } else { "$minutesAgo minutes ago" }
+        
+        Write-Host "  Base Difficulty: $($asertData.BaseDifficulty)" -ForegroundColor White
+        Write-Host "  ASERT-Q Multiplier: $($asertData.Multiplier)x" -ForegroundColor Yellow
+        Write-Host "  Effective Difficulty: $([math]::Round($asertData.EffectiveDifficulty, 9))" -ForegroundColor Green
+        Write-Host "  Last Block Time: $($asertData.ActualBlockTime) seconds" -ForegroundColor White
+        Write-Host "  Target Block Time: 12 seconds" -ForegroundColor Gray
+        
+        # Calculate adjustment direction
+        $adjustment = if ($asertData.ActualBlockTime -gt 12) { "EASIER" } elseif ($asertData.ActualBlockTime -lt 12) { "HARDER" } else { "STABLE" }
+        $adjustColor = if ($adjustment -eq "EASIER") { 'Green' } elseif ($adjustment -eq "HARDER") { 'Red' } else { 'Yellow' }
+        Write-Host "  Adjustment Direction: $adjustment" -ForegroundColor $adjustColor
+        Write-Host "  Data Age: $dataAge" -ForegroundColor Gray
+        
+        Write-Host ""
+    }
+    
     # Mining performance and difficulty
     if ($mining -eq $true) {
-        Write-Host "MINING PERFORMANCE:" -ForegroundColor Green
-        
         # Get current difficulty
         $latestBlock = Get-JsonRpcCall "eth_getBlockByNumber" @("latest", $false)
-        $difficulty = if ($latestBlock) { Get-HexToDecimal $latestBlock.difficulty } else { 0 }
+        $difficulty = if ($latestBlock -and $latestBlock.difficulty) { 
+            Get-HexToDecimal $latestBlock.difficulty 
+        } else { 
+            "N/A" 
+        }
         
         # Calculate blocks to next retarget
         $blocksToRetarget = $retargetBlocks - ($currentBlock % $retargetBlocks)
@@ -126,16 +224,20 @@ function Show-V09Status {
         $avgBlockTime = Get-AverageBlockTime 10
         $avgBlockTimeStr = if ($avgBlockTime) { "$avgBlockTime seconds" } else { "N/A" }
         
-        # Get mining efficiency
-        $currentHashrate = Get-HexToDecimal $hashRate
-        $efficiency = Get-MiningEfficiency $currentHashrate $avgBlockTime
+        # Format difficulty for display
+        $difficultyStr = if ($difficulty -ne "N/A") { Format-LargeNumber $difficulty } else { "N/A" }
         
-        Write-Host "  Hash Rate: $currentHashrate H/s" -ForegroundColor White
-        Write-Host "  Current Difficulty: $difficulty" -ForegroundColor White
+        Write-Host "MINING PERFORMANCE:" -ForegroundColor Green
+        Write-Host "  Current Difficulty: $difficultyStr" -ForegroundColor White
         Write-Host "  Blocks to Next Retarget: $blocksToRetarget" -ForegroundColor Yellow
         Write-Host "  Average Block Time (last 10): $avgBlockTimeStr" -ForegroundColor White
-        Write-Host "  Target Block Time: 12 seconds" -ForegroundColor Gray
-        Write-Host "  Mining Efficiency: $efficiency%" -ForegroundColor $(if ($efficiency -ne "N/A" -and [decimal]$efficiency -gt 90) { 'Green' } elseif ($efficiency -ne "N/A" -and [decimal]$efficiency -gt 70) { 'Yellow' } else { 'Red' })
+        
+        # Calculate mining efficiency based on block times
+        if ($avgBlockTime -and $avgBlockTime -gt 0) {
+            $efficiency = [math]::Round((12 / $avgBlockTime) * 100, 1)
+            $efficiencyColor = if ($efficiency -gt 90) { 'Green' } elseif ($efficiency -gt 70) { 'Yellow' } else { 'Red' }
+            Write-Host "  Mining Efficiency: $efficiency% (vs 12s target)" -ForegroundColor $efficiencyColor
+        }
         
         # Try to get quantum-specific stats
         $quantumStats = Get-JsonRpcCall "qmpow_getQuantumStats"
@@ -148,79 +250,57 @@ function Show-V09Status {
                 $qThreads = $quantumStats.mining.threads
                 $qActive = $quantumStats.mining.isActive
                 
+                # Calculate mining efficiency based on puzzles/sec vs theoretical
+                $theoreticalPuzzlesPerSec = 48 / 12  # 48 puzzles per 12 second target = 4 puzzles/sec
+                $efficiency = if ($qHashrate -gt 0) { 
+                    [math]::Round(($qHashrate / $theoreticalPuzzlesPerSec) * 100, 1) 
+                } else { "N/A" }
+                
                 Write-Host "  Quantum Puzzles/sec: $qHashrate" -ForegroundColor White
                 Write-Host "  Mining Threads: $qThreads" -ForegroundColor White
-                Write-Host "  Quantum Mining Active: $qActive" -ForegroundColor $(if ($qActive -eq $true) { 'Green' } else { 'Red' })
+                Write-Host "  Mining Efficiency: $efficiency%" -ForegroundColor $(if ($efficiency -ne "N/A" -and [decimal]$efficiency -gt 90) { 'Green' } elseif ($efficiency -ne "N/A" -and [decimal]$efficiency -gt 70) { 'Yellow' } else { 'Red' })
             }
             
             if ($quantumStats.difficulty) {
                 $puzzlesPerBlock = $quantumStats.difficulty.puzzlesPerBlock
                 $qubitsPerPuzzle = $quantumStats.difficulty.qubitsPerPuzzle
                 $tgatesPerPuzzle = $quantumStats.difficulty.tgatesPerPuzzle
-                $totalComplexity = $quantumStats.difficulty.totalComplexity
+                $securityBits = if ($quantumStats.quantum) { $quantumStats.quantum.effectiveSecurityBits } else { "N/A" }
                 
                 Write-Host "  Puzzles per Block: $puzzlesPerBlock" -ForegroundColor White
-                Write-Host "  Qubits per Puzzle: $qubitsPerPuzzle" -ForegroundColor White
-                Write-Host "  T-gates per Puzzle: $tgatesPerPuzzle" -ForegroundColor White
-                Write-Host "  Total Quantum Complexity: $totalComplexity" -ForegroundColor Cyan
-            }
-            
-            if ($quantumStats.quantum) {
-                $securityBits = $quantumStats.quantum.effectiveSecurityBits
-                $stateSpace = $quantumStats.quantum.stateSpaceSize
-                
-                Write-Host "  Effective Security: $securityBits bits" -ForegroundColor Green
-                Write-Host "  Quantum State Space: 2^$qubitsPerPuzzle = $stateSpace states" -ForegroundColor Gray
+                Write-Host "  Quantum Security: $qubitsPerPuzzle qubits, $tgatesPerPuzzle T-gates ($securityBits bits)" -ForegroundColor Cyan
             }
         } else {
             Write-Host ""
             Write-Host "QUANTUM STATS: Not available (RPC method not responding)" -ForegroundColor Red
         }
         
-        # Calculate estimated rewards
-        if ($currentSubsidy -gt 0 -and $avgBlockTime) {
-            $blocksPerHour = 3600 / $avgBlockTime
-            $qgcPerHour = $currentSubsidy * $blocksPerHour
+        # Latest block info (condensed)
+        if ($latestBlock) {
+            $blockTimestamp = Get-HexToDecimal $latestBlock.timestamp
+            $blockTime = (Get-Date "1970-01-01 00:00:00").AddSeconds($blockTimestamp).ToString("HH:mm:ss")
+            $quantumBlobSize = if ($latestBlock.extraData -and $latestBlock.extraData.Length -gt 10) { 
+                ($latestBlock.extraData.Length - 2) / 2 
+            } else { 0 }
+            
             Write-Host ""
-            Write-Host "ESTIMATED REWARDS:" -ForegroundColor Green
-            Write-Host "  QGC/hour (solo mining): $([math]::Round($qgcPerHour, 4)) QGC" -ForegroundColor Cyan
-            Write-Host "  QGC/day (solo mining): $([math]::Round($qgcPerHour * 24, 2)) QGC" -ForegroundColor Cyan
+            Write-Host "LATEST BLOCK:" -ForegroundColor Green
+            Write-Host "  Block #$(Get-HexToDecimal $latestBlock.number) at $blockTime | Quantum Blob: $quantumBlobSize bytes" -ForegroundColor White
         }
-    }
-    
-    Write-Host ""
-    
-    # Latest block details
-    Write-Host "LATEST BLOCK DETAILS:" -ForegroundColor Green
-    if ($latestBlock) {
-        $txCount = if ($latestBlock.transactions) { $latestBlock.transactions.Count } else { 0 }
-        $blockTimestamp = Get-HexToDecimal $latestBlock.timestamp
-        $blockTime = (Get-Date "1970-01-01 00:00:00").AddSeconds($blockTimestamp).ToString("yyyy-MM-dd HH:mm:ss")
-        
-        Write-Host "  Block #$(Get-HexToDecimal $latestBlock.number)" -ForegroundColor White
-        Write-Host "  Timestamp: $blockTime" -ForegroundColor White
-        Write-Host "  Transaction Count: $txCount" -ForegroundColor White
-        Write-Host "  Gas Used: $(Get-HexToDecimal $latestBlock.gasUsed)" -ForegroundColor White
-        Write-Host "  Gas Limit: $(Get-HexToDecimal $latestBlock.gasLimit)" -ForegroundColor White
-        Write-Host "  Miner: $($latestBlock.miner)" -ForegroundColor White
-        
-        # Check for quantum blob in extraData
-        if ($latestBlock.extraData -and $latestBlock.extraData.Length -gt 10) {
-            $quantumBlobSize = ($latestBlock.extraData.Length - 2) / 2
-            Write-Host "  Quantum Blob: Present ($quantumBlobSize bytes)" -ForegroundColor Cyan
-        } else {
-            Write-Host "  Quantum Blob: Not detected" -ForegroundColor Red
-        }
+    } else {
+        Write-Host "MINING: Inactive" -ForegroundColor Red
     }
     
     Write-Host ""
     Write-Host "v0.9 BareBones+Halving: Real Quantum Mining | ASERT-Q Difficulty | 48 Sequential Puzzles" -ForegroundColor Magenta
+    Write-Host "ASERT-Q: Bitcoin-style exponential adjustment with granular multipliers" -ForegroundColor Cyan
     Write-Host "Press Ctrl+C to stop monitoring..." -ForegroundColor Gray
 }
 
 # Main monitoring loop
 Write-Host "Connecting to Quantum-Geth node at $nodeUrl..." -ForegroundColor Yellow
 Write-Host "Refresh interval: $refreshInterval seconds" -ForegroundColor Gray
+Write-Host "Log file: $logFile" -ForegroundColor Gray
 Write-Host ""
 
 while ($true) {

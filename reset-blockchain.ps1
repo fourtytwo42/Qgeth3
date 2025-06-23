@@ -3,7 +3,7 @@
 # Usage: .\reset-blockchain-clean.ps1 -difficulty 1 -datadir "qdata_quantum"
 
 param(
-    [int]$difficulty = 1,        # Starting difficulty (1 = minimum for testing)
+    [float]$difficulty = 0.0005,  # Starting difficulty (quantum-optimized: 0.0005 based on real testing)
     [string]$datadir = "qdata_quantum",
     [int]$networkid = 73428,
     [int]$chainid = 73428,
@@ -18,7 +18,7 @@ Write-Host "This will COMPLETELY WIPE the existing blockchain and rebuild geth!"
 Write-Host ""
 Write-Host "Configuration:" -ForegroundColor Cyan
 Write-Host "  Data Directory: $datadir"
-Write-Host "  Starting Difficulty: $difficulty (0x$([Convert]::ToString($difficulty, 16)))"
+Write-Host "  Starting Difficulty: $difficulty (quantum-optimized for ~0.25 H/s)" -ForegroundColor Green
 Write-Host "  Network ID: $networkid"
 Write-Host "  Etherbase: $etherbase"
 Write-Host "  Balance: $balance wei - 300000 QGC" -ForegroundColor Yellow
@@ -126,72 +126,57 @@ if (Test-Path $datadir) {
     Write-Host "  No existing blockchain data found" -ForegroundColor Gray
 }
 
-# Create v0.9 BareBones+Halving genesis file
-Write-Host "  Creating v0.9 BareBones+Halving genesis file..." -ForegroundColor Yellow
-
-# Create genesis file directly (avoiding PowerShell encoding issues)
-$difficultyHex = "0x$([Convert]::ToString($difficulty, 16))"
-
-# Build JSON content step by step to avoid PowerShell parsing issues
-$genesisJson = @{
-    config = @{
-        networkId = $networkid
-        chainId = $chainid
-        homesteadBlock = 0
-        byzantiumBlock = 0
-        constantinopleBlock = 0
-        petersburgBlock = 0
-        istanbulBlock = 0
-        berlinBlock = 0
-        londonBlock = 0
-        quantumForkBlock = 0
-        qmpow = @{
-            qbits = 16
-            tcount = 8192
-            lnet = 48
-            epochLength = 600000
-            initialSubsidy = "50000000000000000000"
-            targetBlockTime = 12
-            asertLambda = 0.12
-            asertHalfLife = 150
-            maxAdjustment = 0.10
-            proofSystemHash = "0xA1B2C3D41234567890ABCDEF1234567890ABCDEF1234567890ABCDEF12341234"
-            templateAuditRoot = "0xDEADBEEFCAFEBABEDEADBEEFCAFEBABEDEADBEEFCAFEBABEDEADBEEFCAFEBEEF"
-            glideTableHash = "0xCAFEBABEFACECAFEBABEFACECAFEBABEFACECAFEBABEFACECAFEBABEFACEFACE"
-            canonicompSHA = "0x123456789ABC123456789ABC123456789ABC123456789ABC123456789ABC9ABC"
-            chainIDHash = "0xFEEDFACECAFEFEEDFACECAFEFEEDFACECAFEFEEDFACECAFEFEEDFACECAFECAFE"
-        }
+# Create genesis content with v0.9 BareBones+Halving specification
+$genesisContent = @"
+{
+  "config": {
+    "chainId": 73428,
+    "homesteadBlock": 0,
+    "eip150Block": 0,
+    "eip155Block": 0,
+    "eip158Block": 0,
+    "byzantiumBlock": 0,
+    "constantinopleBlock": 0,
+    "petersburgBlock": 0,
+    "istanbulBlock": 0,
+    "berlinBlock": 0,
+    "londonBlock": 0,
+    "qmpow": {
+      "qbits": 16,
+      "tcount": 8192,
+      "lnet": 48,
+      "epochLen": 0
     }
-    nonce = "0x0000000000000000"
-    timestamp = "0x00"
-    extraData = "0x00"
-    gasLimit = "0x8000000"
-    difficulty = $difficultyHex
-    mixHash = "0x0000000000000000000000000000000000000000000000000000000000000000"
-    coinbase = "0x0000000000000000000000000000000000000000"
-    baseFeePerGas = "0x3B9ACA00"
-    withdrawalsRoot = "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421"
-    alloc = @{
-        $etherbase = @{
-            balance = $balance
-        }
-        "0x0000000000000000000000000000000000000001" = @{
-            balance = "0x1"
-        }
-        "0x0000000000000000000000000000000000000002" = @{
-            balance = "0x1"
-        }
-        "0x0000000000000000000000000000000000000003" = @{
-            balance = "0x1"
-        }
-        "0x0000000000000000000000000000000000000004" = @{
-            balance = "0x1"
-        }
+  },
+  "nonce": "0x0000000000000042",
+  "timestamp": "0x0",
+  "extraData": "0x",
+  "gasLimit": "0x7D64161",
+  "difficulty": "0x$([Convert]::ToString([Math]::Max(500, [Math]::Round($difficulty * 1000000000)), 16))",
+  "mixHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "coinbase": "0x0000000000000000000000000000000000000000",
+  "alloc": {
+    "$etherbase": {
+      "balance": "$balance"
     }
+  },
+  "number": "0x0",
+  "gasUsed": "0x0",
+  "parentHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "qbits": 16,
+  "tcount": 8192,
+  "lnet": 48,
+  "qnonce64": "0x0000000000000000",
+  "extranonce32": "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "outcomeroot": "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "branchnibbles": "0x000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+  "gatehash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "proofroot": "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "attestmode": "0x00"
 }
+"@
 
 try {
-    $genesisContent = $genesisJson | ConvertTo-Json -Depth 10
     $utf8NoBom = New-Object System.Text.UTF8Encoding $false
     [System.IO.File]::WriteAllText("genesis_quantum_v09.json", $genesisContent, $utf8NoBom)
     Write-Host "  v0.9 genesis file created successfully" -ForegroundColor Green
