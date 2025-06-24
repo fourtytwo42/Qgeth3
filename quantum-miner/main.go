@@ -739,9 +739,9 @@ func (m *QuantumMiner) submitQuantumWork(qnonce uint64, workHash string, proof Q
 		"extra_nonce32":  extraNonce32Bytes,  // byte array -> base64
 	}
 
-	// Try quantum-specific SubmitWork first (FIXED: qnonce as hex string)
+	// Try quantum-specific SubmitWork first (FIXED: qnonce as raw uint64)
 	params := []interface{}{
-		fmt.Sprintf("0x%x", qnonce), // qnonce as hex string for proper JSON marshaling
+		qnonce, // qnonce as raw uint64 for proper JSON marshaling
 		workHashWithPrefix,
 		quantumProofForAPI,
 	}
@@ -757,9 +757,9 @@ func (m *QuantumMiner) submitQuantumWork(qnonce uint64, workHash string, proof Q
 			return fmt.Errorf("duplicate submission - this solution was already submitted")
 		}
 
-		// Fall back to eth_submitWork with adapted parameters (FIXED: use hex string for nonce)
+		// Fall back to eth_submitWork with adapted parameters (nonce as hex string)
 		ethParams := []interface{}{
-			fmt.Sprintf("0x%016x", qnonce),                   // nonce as hex string (FIXED)
+			fmt.Sprintf("0x%016x", qnonce),                   // nonce as hex string for eth_submitWork
 			workHashWithPrefix,                               // hash
 			"0x" + strings.TrimPrefix(proof.ProofRoot, "0x"), // mix digest (use proof root)
 		}
