@@ -6,7 +6,7 @@ param(
     [switch]$Help
 )
 
-$MinerExecutable = "quantum-gpu-miner-cpu.exe"
+$MinerExecutable = "quantum-gpu-miner.exe"
 
 if ($Help) {
     Write-Host "Quantum-Geth CPU Miner (Local)" -ForegroundColor Cyan
@@ -38,8 +38,9 @@ if ($Help) {
     Write-Host "  CPU Mining: 0.36 puzzles/sec (this miner)" -ForegroundColor White
     Write-Host "  GPU Mining: 0.45 puzzles/sec (use .\run-gpu-miner.ps1)" -ForegroundColor White
     Write-Host ""
-    Write-Host "Build Instructions:" -ForegroundColor Yellow
-    Write-Host "  go build -o quantum-gpu-miner-cpu.exe ." -ForegroundColor White
+    Write-Host "Note:" -ForegroundColor Yellow
+    Write-Host "  This script uses quantum-gpu-miner.exe in CPU mode (without -gpu flag)" -ForegroundColor White
+    Write-Host "  For GPU acceleration, use .\run-gpu-miner.ps1" -ForegroundColor White
     Write-Host ""
     exit 0
 }
@@ -66,14 +67,14 @@ if ($Coinbase -notmatch "^0x[0-9a-fA-F]{40}$") {
 }
 
 if (-not (Test-Path $MinerExecutable)) {
-    Write-Host "ERROR: CPU miner executable not found: $MinerExecutable" -ForegroundColor Red
+    Write-Host "ERROR: Quantum miner executable not found: $MinerExecutable" -ForegroundColor Red
     Write-Host "Please build the quantum-gpu-miner first." -ForegroundColor Yellow
     Write-Host ""
-    Write-Host "To build the CPU miner:" -ForegroundColor Yellow
-    Write-Host "  go build -o quantum-gpu-miner-cpu.exe ." -ForegroundColor White
+    Write-Host "To build the miner:" -ForegroundColor Yellow
+    Write-Host "  go build -o quantum-gpu-miner.exe ." -ForegroundColor White
     Write-Host ""
     Write-Host "Or use the build script:" -ForegroundColor Yellow
-    Write-Host "  .\build-simple.ps1 cpu" -ForegroundColor White
+    Write-Host "  .\build.ps1 cpu" -ForegroundColor White
     exit 1
 }
 
@@ -82,10 +83,12 @@ Write-Host "CPU Mining Configuration:" -ForegroundColor Green
 Write-Host "   Coinbase: $Coinbase" -ForegroundColor White
 Write-Host "   Node URL: $NodeURL" -ForegroundColor White
 Write-Host "   CPU Threads: $Threads" -ForegroundColor White
+Write-Host "   Mining Mode: CPU only (no -gpu flag)" -ForegroundColor White
 Write-Host "   Quantum Puzzles: 48 per block" -ForegroundColor White
 Write-Host "   Circuit Size: 16 qubits, 8192 T-gates" -ForegroundColor White
 Write-Host ""
 
+# Note: No -gpu flag used, so it defaults to CPU mode
 $MinerArgs = @("-coinbase", $Coinbase, "-node", $NodeURL, "-threads", $Threads)
 
 Write-Host "Starting CPU quantum miner..." -ForegroundColor Blue
@@ -99,8 +102,8 @@ try {
     Write-Host "Troubleshooting:" -ForegroundColor Yellow
     Write-Host "  1. Check quantum-geth node is running at $NodeURL" -ForegroundColor White
     Write-Host "  2. Verify coinbase address format" -ForegroundColor White
-    Write-Host "  3. Ensure quantum-gpu-miner-cpu.exe is built and accessible" -ForegroundColor White
+    Write-Host "  3. Ensure quantum-gpu-miner.exe is built and accessible" -ForegroundColor White
     Write-Host "  4. Consider GPU mining for better performance: .\run-gpu-miner.ps1" -ForegroundColor White
-    Write-Host "  5. Try building: go build -o quantum-gpu-miner-cpu.exe ." -ForegroundColor White
+    Write-Host "  5. Try building: go build -o quantum-gpu-miner.exe ." -ForegroundColor White
     exit 1
 }

@@ -93,8 +93,8 @@ function check_cuda_prerequisites() {
 function clean_build_artifacts() {
     echo -e "${BLUE}Cleaning build artifacts...${NC}"
     
-    # Remove executables
-    rm -f quantum-gpu-miner-*
+    # Remove executable
+    rm -f quantum-gpu-miner
     
     # Remove CUDA libraries
     rm -f pkg/quantum/*.so
@@ -107,19 +107,20 @@ function clean_build_artifacts() {
 }
 
 function build_cpu_version() {
-    echo -e "${BLUE}Building CPU version...${NC}"
+    echo -e "${BLUE}Building quantum-gpu-miner (CPU/GPU capable)...${NC}"
     
     export CGO_ENABLED=1
-    go build -ldflags "-s -w" -o quantum-gpu-miner-cpu .
+    go build -ldflags "-s -w" -o quantum-gpu-miner .
     
     if [ $? -eq 0 ]; then
-        echo -e "${GREEN}CPU version built successfully: quantum-gpu-miner-cpu${NC}"
+        echo -e "${GREEN}Quantum miner built successfully: quantum-gpu-miner${NC}"
+        echo -e "${BLUE}Note: This executable supports both CPU and GPU modes${NC}"
         
         # Test the build
-        ./quantum-gpu-miner-cpu --version
+        ./quantum-gpu-miner --version
         return 0
     else
-        echo -e "${RED}CPU build failed${NC}"
+        echo -e "${RED}Build failed${NC}"
         return 1
     fi
 }
@@ -144,7 +145,7 @@ function build_cuda_library() {
 }
 
 function build_gpu_version() {
-    echo -e "${BLUE}Building GPU version...${NC}"
+    echo -e "${BLUE}Building quantum-gpu-miner with CUDA support...${NC}"
     
     # Build CUDA library first
     if ! build_cuda_library; then
@@ -153,13 +154,14 @@ function build_gpu_version() {
     
     # Build Go application with CUDA tags
     export CGO_ENABLED=1
-    go build -tags cuda -ldflags "-s -w" -o quantum-gpu-miner-gpu .
+    go build -tags cuda -ldflags "-s -w" -o quantum-gpu-miner .
     
     if [ $? -eq 0 ]; then
-        echo -e "${GREEN}GPU version built successfully: quantum-gpu-miner-gpu${NC}"
+        echo -e "${GREEN}Quantum miner with CUDA built successfully: quantum-gpu-miner${NC}"
+        echo -e "${BLUE}Note: This executable supports both CPU and GPU modes${NC}"
         
         # Test the build
-        ./quantum-gpu-miner-gpu --version
+        ./quantum-gpu-miner --version
         return 0
     else
         echo -e "${RED}GPU build failed${NC}"
@@ -223,10 +225,10 @@ if [ $? -eq 0 ]; then
     echo ""
     echo -e "${GREEN}Build completed successfully!${NC}"
     echo -e "${BLUE}Usage examples:${NC}"
-    echo "  ./quantum-gpu-miner-cpu -node http://localhost:8545 -threads 4"
-    if [ -f "quantum-gpu-miner-gpu" ]; then
-        echo "  ./quantum-gpu-miner-gpu -gpu -node http://localhost:8545 -threads 2"
-    fi
+    echo "  ./quantum-gpu-miner -node http://localhost:8545 -threads 4"
+    echo "  ./quantum-gpu-miner -gpu -node http://localhost:8545 -threads 2"
+    echo ""
+    echo -e "${BLUE}Note: Single executable supports both CPU and GPU modes${NC}"
 else
     echo -e "${RED}Build failed!${NC}"
     exit 1

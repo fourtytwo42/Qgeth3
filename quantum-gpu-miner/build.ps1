@@ -115,7 +115,7 @@ function Clean-BuildArtifacts {
     Write-ColorOutput "Cleaning build artifacts..." $Blue
     
     # Remove executables
-    Remove-Item -Path "quantum-gpu-miner*.exe" -Force -ErrorAction SilentlyContinue
+    Remove-Item -Path "quantum-gpu-miner.exe" -Force -ErrorAction SilentlyContinue
     
     # Remove CUDA libraries
     Remove-Item -Path "pkg\quantum\*.dll" -Force -ErrorAction SilentlyContinue
@@ -128,20 +128,21 @@ function Clean-BuildArtifacts {
 }
 
 function Build-CPUVersion {
-    Write-ColorOutput "Building CPU version..." $Blue
+    Write-ColorOutput "Building quantum-gpu-miner (CPU/GPU capable)..." $Blue
     
     $env:CGO_ENABLED = "1"
-    go build -ldflags "-s -w" -o quantum-gpu-miner-cpu.exe .
+    go build -ldflags "-s -w" -o quantum-gpu-miner.exe .
     
     if ($LASTEXITCODE -eq 0) {
-        Write-ColorOutput "Success: CPU version built successfully: quantum-gpu-miner-cpu.exe" $Green
+        Write-ColorOutput "Success: Quantum miner built successfully: quantum-gpu-miner.exe" $Green
+        Write-ColorOutput "Note: This executable supports both CPU and GPU modes" $Blue
         
         # Test the build
-        $version = .\quantum-gpu-miner-cpu.exe --version
+        $version = .\quantum-gpu-miner.exe --version
         Write-ColorOutput "Version: $version" $Blue
         return $true
     } else {
-        Write-ColorOutput "Error: CPU build failed" $Red
+        Write-ColorOutput "Error: Build failed" $Red
         return $false
     }
 }
@@ -174,7 +175,7 @@ function Build-CUDALibrary {
 }
 
 function Build-GPUVersion {
-    Write-ColorOutput "Building GPU version..." $Blue
+    Write-ColorOutput "Building quantum-gpu-miner with CUDA support..." $Blue
     
     # Build CUDA library first
     if (-not (Build-CUDALibrary)) {
@@ -183,13 +184,14 @@ function Build-GPUVersion {
     
     # Build Go application with CUDA tags
     $env:CGO_ENABLED = "1"
-    go build -tags cuda -ldflags "-s -w" -o quantum-gpu-miner-gpu.exe .
+    go build -tags cuda -ldflags "-s -w" -o quantum-gpu-miner.exe .
     
     if ($LASTEXITCODE -eq 0) {
-        Write-ColorOutput "Success: GPU version built successfully: quantum-gpu-miner-gpu.exe" $Green
+        Write-ColorOutput "Success: Quantum miner with CUDA built successfully: quantum-gpu-miner.exe" $Green
+        Write-ColorOutput "Note: This executable supports both CPU and GPU modes" $Blue
         
         # Test the build
-        $version = .\quantum-gpu-miner-gpu.exe --version
+        $version = .\quantum-gpu-miner.exe --version
         Write-ColorOutput "Version: $version" $Blue
         return $true
     } else {
