@@ -47,8 +47,9 @@ if (-not (Test-Path $datadir)) {
     exit 1
 }
 
-Write-Host "Starting v0.9 BareBones+Halving geth node for external miners..." -ForegroundColor Magenta
-Write-Host "This node enables mining infrastructure with 0 threads for external miners." -ForegroundColor Green
+Write-Host "Starting v0.9 BareBones+Halving geth node (NO MINING)..." -ForegroundColor Magenta
+Write-Host "This node serves RPC/HTTP endpoints for external miners WITHOUT mining itself." -ForegroundColor Green
+Write-Host "Use .\start-geth-mining.ps1 to start mining, or external miners to mine." -ForegroundColor Green
 Write-Host "Press Ctrl+C to stop the node." -ForegroundColor Yellow
 Write-Host ""
 
@@ -79,7 +80,7 @@ if ($GethReleaseDir) {
     }
 }
 
-# Start geth WITH mining enabled but NO mining threads (for external miners)
+# Start geth WITHOUT mining - pure RPC node for external miners
 & "$GethExecutable" `
     --datadir $datadir `
     --networkid $networkid `
@@ -90,7 +91,6 @@ if ($GethReleaseDir) {
     --http.api "eth,net,web3,personal,miner,qmpow,admin,debug,trace" `
     --http.corsdomain "*" `
     --http.vhosts "*" `
-    --mine `
     --miner.threads 0 `
     --miner.etherbase $etherbase `
     --authrpc.port $authrpcport `

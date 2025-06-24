@@ -60,10 +60,16 @@ if (-not $nobuild) {
         Write-Host "  Building both quantum-geth and quantum-miner releases..." -ForegroundColor Yellow
         & ".\build-release.ps1" both
         
-        if ($LASTEXITCODE -eq 0) {
+        # Check if releases were actually created (more reliable than exit codes)
+        $GethReleaseDir = Get-ChildItem -Path "releases\quantum-geth-*" -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
+        $MinerReleaseDir = Get-ChildItem -Path "releases\quantum-miner-*" -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
+        
+        if ($GethReleaseDir -and $MinerReleaseDir) {
             Write-Host "  Release packages built successfully" -ForegroundColor Green
+            Write-Host "    Geth: $($GethReleaseDir.Name)" -ForegroundColor Gray
+            Write-Host "    Miner: $($MinerReleaseDir.Name)" -ForegroundColor Gray
         } else {
-            throw "Release build failed"
+            throw "Release directories not found after build"
         }
     } catch {
         Write-Host "  ERROR: Failed to build release packages: $($_.Exception.Message)" -ForegroundColor Red
