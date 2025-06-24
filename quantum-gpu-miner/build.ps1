@@ -46,7 +46,7 @@ function Show-Help {
 }
 
 function Test-Prerequisites {
-    Write-ColorOutput "🔍 Checking prerequisites..." $Blue
+    Write-ColorOutput "Checking prerequisites..." $Blue
     
     # Check Go
     $goVersion = go version 2>$null
@@ -86,7 +86,7 @@ function Test-Prerequisites {
 }
 
 function Test-CUDAPrerequisites {
-    Write-ColorOutput "🔍 Checking CUDA prerequisites..." $Blue
+    Write-ColorOutput "Checking CUDA prerequisites..." $Blue
     
     # Check NVCC
     $nvccVersion = nvcc --version 2>$null
@@ -112,7 +112,7 @@ function Test-CUDAPrerequisites {
 }
 
 function Clean-BuildArtifacts {
-    Write-ColorOutput "🧹 Cleaning build artifacts..." $Blue
+    Write-ColorOutput "Cleaning build artifacts..." $Blue
     
     # Remove executables
     Remove-Item -Path "quantum-gpu-miner*.exe" -Force -ErrorAction SilentlyContinue
@@ -128,7 +128,7 @@ function Clean-BuildArtifacts {
 }
 
 function Build-CPUVersion {
-    Write-ColorOutput "🔨 Building CPU version..." $Blue
+    Write-ColorOutput "Building CPU version..." $Blue
     
     $env:CGO_ENABLED = "1"
     go build -ldflags "-s -w" -o quantum-gpu-miner-cpu.exe .
@@ -147,7 +147,7 @@ function Build-CPUVersion {
 }
 
 function Build-CUDALibrary {
-    Write-ColorOutput "🔨 Building CUDA library..." $Blue
+    Write-ColorOutput "Building CUDA library..." $Blue
     
     # Initialize Visual Studio environment
     $vsPath = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
@@ -174,7 +174,7 @@ function Build-CUDALibrary {
 }
 
 function Build-GPUVersion {
-    Write-ColorOutput "🔨 Building GPU version..." $Blue
+    Write-ColorOutput "Building GPU version..." $Blue
     
     # Build CUDA library first
     if (-not (Build-CUDALibrary)) {
@@ -199,7 +199,7 @@ function Build-GPUVersion {
 }
 
 function Main {
-    Write-ColorOutput "🚀 Quantum-GPU-Miner Build Script" $Blue
+    Write-ColorOutput "Quantum-GPU-Miner Build Script" $Blue
     Write-Output ""
     
     if ($Help) {
