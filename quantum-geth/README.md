@@ -18,6 +18,12 @@ Quantum-Geth introduces the first practical quantum-resistant proof-of-work cons
 - **Work preparation** and submission handling
 - **Thread-safe** mining operations
 
+###  **Block Validation & Security**
+- **Comprehensive RLP validation** for external miner submissions
+- **Multi-layer integrity checks** preventing malformed blocks
+- **Quantum field validation** ensuring proper structure
+- **Roundtrip encoding verification** preventing blockchain corruption
+
 ###  **Network Configuration**
 - **Network ID**: 73428
 - **Chain ID**: 73428
