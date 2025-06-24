@@ -1,5 +1,5 @@
 # Reset Blockchain - Quantum-Geth v0.9 BareBones+Halving
-# Cleans the blockchain data, builds latest binary, and creates a new genesis block
+# Cleans the blockchain data, builds latest release binaries, and creates a new genesis block
 # Usage: .\reset-blockchain.ps1 -difficulty 1 -force
 
 param(
@@ -10,11 +10,11 @@ param(
     [string]$etherbase = "0x8b61271473f14c80f2B1381Db9CB13b2d5306200",
     [string]$balance = "300000000000000000000000", # 300000 QGC
     [switch]$force = $false,     # Skip confirmation prompt
-    [switch]$nobuild = $false    # Skip building geth binary
+    [switch]$nobuild = $false    # Skip building new release packages
 )
 
 Write-Host "*** QUANTUM-GETH v0.9 BareBones+Halving COMPLETE RESET ***" -ForegroundColor Yellow
-Write-Host "This will COMPLETELY WIPE the existing blockchain and rebuild both geth and quantum-miner!" -ForegroundColor Red
+Write-Host "This will COMPLETELY WIPE the existing blockchain and build new release packages!" -ForegroundColor Red
 Write-Host ""
 Write-Host "Configuration:" -ForegroundColor Cyan
 Write-Host "  Data Directory: $datadir"
@@ -22,7 +22,7 @@ Write-Host "  Starting Difficulty: $difficulty (quantum-optimized for ~0.25 H/s)
 Write-Host "  Network ID: $networkid"
 Write-Host "  Etherbase: $etherbase"
 Write-Host "  Balance: $balance wei - 300000 QGC" -ForegroundColor Yellow
-Write-Host "  Build Binaries: $(if ($nobuild) { 'NO' } else { 'YES' })" -ForegroundColor $(if ($nobuild) { 'Yellow' } else { 'Green' })
+  Write-Host "  Build Releases: $(if ($nobuild) { 'NO' } else { 'YES' })" -ForegroundColor $(if ($nobuild) { 'Yellow' } else { 'Green' })
 Write-Host ""
 Write-Host "v0.9 BareBones+Halving Features:" -ForegroundColor Magenta
 Write-Host "  * Initial Subsidy: 50 QGC per block" -ForegroundColor Gray
@@ -35,7 +35,7 @@ Write-Host ""
 
 # Confirmation prompt (unless -force is used)
 if (-not $force) {
-    $confirmation = Read-Host "Are you sure you want to DELETE all blockchain data and rebuild? (type 'YES' to confirm)"
+    $confirmation = Read-Host "Are you sure you want to DELETE all blockchain data and build new releases? (type 'YES' to confirm)"
     if ($confirmation -ne "YES") {
         Write-Host "Operation cancelled." -ForegroundColor Red
         exit 1
@@ -52,89 +52,44 @@ try {
     Write-Host "  No running geth processes found" -ForegroundColor Gray
 }
 
-# Build latest binaries (unless skipped)
+# Build latest release packages (unless skipped)
 if (-not $nobuild) {
-    Write-Host "Building latest Quantum-Geth v0.9 BareBones+Halving binaries..." -ForegroundColor Cyan
+    Write-Host "Building new Quantum-Geth v0.9 BareBones+Halving release packages..." -ForegroundColor Cyan
     
-    # Check if Go is available
     try {
-        $goVersion = & go version 2>$null
-        Write-Host "  Go detected: $goVersion" -ForegroundColor Green
+        Write-Host "  Building both quantum-geth and quantum-miner releases..." -ForegroundColor Yellow
+        & ".\build-release.ps1" both
+        
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "  Release packages built successfully" -ForegroundColor Green
+        } else {
+            throw "Release build failed"
+        }
     } catch {
-        Write-Host "  ERROR: Go compiler not found!" -ForegroundColor Red
-        Write-Host "  Please install Go from https://golang.org/dl/" -ForegroundColor Yellow
+        Write-Host "  ERROR: Failed to build release packages: $($_.Exception.Message)" -ForegroundColor Red
         Write-Host "  Or use -nobuild flag to skip building" -ForegroundColor Yellow
         exit 1
     }
     
-    # Build geth binary in quantum-geth directory
-    if (-not (Test-Path "quantum-geth")) {
-        Write-Host "  ERROR: quantum-geth directory not found!" -ForegroundColor Red
-        exit 1
-    }
-    
-    Push-Location "quantum-geth"
-    try {
-        Write-Host "  Building geth binary..." -ForegroundColor Yellow
-        $buildResult = & go build -o ..\geth.exe ./cmd/geth 2>&1
-        
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "  ✅ Geth binary built successfully" -ForegroundColor Green
-        } else {
-            Write-Host "  Failed to build geth binary:" -ForegroundColor Red
-            Write-Host $buildResult -ForegroundColor Red
-            Pop-Location
-            exit 1
-        }
-    } catch {
-        Write-Host "  Build error: $_" -ForegroundColor Red
-        Pop-Location
-        exit 1
-    }
-    Pop-Location
-    
-    # Build quantum-miner binary
-    if (Test-Path "quantum-miner") {
-        Push-Location "quantum-miner"
-        try {
-            Write-Host "  Building quantum-miner binary..." -ForegroundColor Yellow
-            $buildResult = & go build -o ..\quantum-miner.exe . 2>&1
-            
-            if ($LASTEXITCODE -eq 0) {
-                Write-Host "  ✅ Quantum-miner binary built successfully" -ForegroundColor Green
-            } else {
-                Write-Host "  Failed to build quantum-miner binary:" -ForegroundColor Red
-                Write-Host $buildResult -ForegroundColor Red
-                Pop-Location
-                exit 1
-            }
-        } catch {
-            Write-Host "  Build error: $_" -ForegroundColor Red
-            Pop-Location
-            exit 1
-        }
-        Pop-Location
-    } else {
-        Write-Host "  Warning: quantum-miner directory not found, skipping miner build" -ForegroundColor Yellow
-    }
-    
-    # Verify the geth binary has quantum features
-    $helpOutput = & .\geth.exe --help 2>&1 | Out-String
-    if ($helpOutput -match "quantum\.solver") {
-        Write-Host "  ✅ Quantum features detected in geth binary" -ForegroundColor Green
-    } else {
-        Write-Host "  ⚠️  Warning: Quantum features not detected in binary" -ForegroundColor Yellow
-    }
-    
 } else {
-    Write-Host "Skipping binary build (using existing executables)..." -ForegroundColor Yellow
-    if (-not (Test-Path "geth.exe")) {
-        Write-Host "  ERROR: geth.exe not found in current directory!" -ForegroundColor Red
-        Write-Host "  Remove -nobuild flag to build the binary" -ForegroundColor Yellow
+    Write-Host "Skipping release build (using existing releases)..." -ForegroundColor Yellow
+    
+    # Find the newest geth release
+    $GethReleaseDir = Get-ChildItem -Path "releases\quantum-geth-*" -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
+    if (-not $GethReleaseDir) {
+        Write-Host "  ERROR: No quantum-geth release found!" -ForegroundColor Red
+        Write-Host "  Remove -nobuild flag to build release packages" -ForegroundColor Yellow
         exit 1
+    } else {
+        Write-Host "  Using geth release: $($GethReleaseDir.Name)" -ForegroundColor Green
     }
-    if (-not (Test-Path "quantum-miner.exe")) {
-        Write-Host "  Warning: quantum-miner.exe not found in current directory!" -ForegroundColor Yellow
+    
+    # Find the newest miner release
+    $MinerReleaseDir = Get-ChildItem -Path "releases\quantum-miner-*" -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
+    if (-not $MinerReleaseDir) {
+        Write-Host "  Warning: No quantum-miner release found!" -ForegroundColor Yellow
+    } else {
+        Write-Host "  Using miner release: $($MinerReleaseDir.Name)" -ForegroundColor Green
     }
 }
 
@@ -233,10 +188,21 @@ try {
     exit 1
 }
 
+# Find the newest geth release to use for initialization
+$GethReleaseDir = Get-ChildItem -Path "releases\quantum-geth-*" -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
+if ($GethReleaseDir) {
+    $GethExecutable = "$($GethReleaseDir.FullName)\geth.exe"
+    Write-Host "Using geth from release: $($GethReleaseDir.Name)" -ForegroundColor Green
+} else {
+    Write-Host "ERROR: No quantum-geth release found for initialization!" -ForegroundColor Red
+    Write-Host "Run the script without -nobuild flag to build releases" -ForegroundColor Yellow
+    exit 1
+}
+
 # Initialize blockchain with dynamic genesis format
 Write-Host "Initializing blockchain with custom difficulty genesis..." -ForegroundColor Yellow
 try {
-    $initResult = & ".\geth.exe" --datadir $datadir init $tempGenesisFile 2>&1
+    $initResult = & "$GethExecutable" --datadir $datadir init $tempGenesisFile 2>&1
     if ($LASTEXITCODE -eq 0) {
         Write-Host "  Blockchain initialized successfully with difficulty $difficulty" -ForegroundColor Green
     } else {

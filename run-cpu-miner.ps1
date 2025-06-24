@@ -6,7 +6,15 @@ param(
     [switch]$Help
 )
 
-$MinerExecutable = "quantum-miner.exe"
+# Find the newest quantum-miner release or use development version
+$ReleaseDir = Get-ChildItem -Path "releases\quantum-miner-*" -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
+if ($ReleaseDir) {
+    $MinerExecutable = "$($ReleaseDir.FullName)\quantum-miner.exe"
+    $WorkingDir = $ReleaseDir.FullName
+} else {
+    $MinerExecutable = "quantum-miner\quantum-miner.exe"
+    $WorkingDir = "quantum-miner"
+}
 
 if ($Help) {
     Write-Host "Quantum-Geth CPU Miner" -ForegroundColor Cyan
@@ -63,13 +71,29 @@ if ($Coinbase -notmatch "^0x[0-9a-fA-F]{40}$") {
 }
 
 if (-not (Test-Path $MinerExecutable)) {
-    Write-Host "ERROR: CPU miner executable not found: $MinerExecutable" -ForegroundColor Red
-    Write-Host "Please ensure quantum-miner.exe is compiled and available." -ForegroundColor Yellow
+    Write-Host "CPU miner executable not found. Building release..." -ForegroundColor Yellow
     Write-Host ""
-    Write-Host "To build the CPU miner:" -ForegroundColor Yellow
-    Write-Host "  cd quantum-miner" -ForegroundColor White
-    Write-Host "  go build -o quantum-miner.exe ." -ForegroundColor White
-    exit 1
+    
+    try {
+        & ".\build-release.ps1" miner
+        
+        # Re-find the newest release
+        $ReleaseDir = Get-ChildItem -Path "releases\quantum-miner-*" -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
+        if ($ReleaseDir) {
+            $MinerExecutable = "$($ReleaseDir.FullName)\quantum-miner.exe"
+            $WorkingDir = $ReleaseDir.FullName
+            Write-Host "SUCCESS: Release built at $($ReleaseDir.FullName)" -ForegroundColor Green
+        } else {
+            throw "Failed to create release"
+        }
+    } catch {
+        Write-Host "ERROR: Failed to build quantum-miner release: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host ""
+        Write-Host "Manual build options:" -ForegroundColor Yellow
+        Write-Host "  .\build-release.ps1 miner" -ForegroundColor White
+        Write-Host "  cd quantum-miner && go build -o quantum-miner.exe ." -ForegroundColor White
+        exit 1
+    }
 }
 
 Write-Host ""
@@ -87,7 +111,8 @@ Write-Host "Starting CPU quantum miner..." -ForegroundColor Blue
 Write-Host ""
 
 try {
-    & ".\$MinerExecutable" @MinerArgs
+    Push-Location $WorkingDir
+    & ".\quantum-miner.exe" @MinerArgs
 } catch {
     Write-Host "ERROR: Failed to start CPU miner: $($_.Exception.Message)" -ForegroundColor Red
     Write-Host ""
@@ -97,4 +122,6 @@ try {
     Write-Host "  3. Ensure quantum-miner.exe is built and accessible" -ForegroundColor White
     Write-Host "  4. Consider GPU mining for better performance: .\run-gpu-miner.ps1" -ForegroundColor White
     exit 1
+} finally {
+    Pop-Location
 }
