@@ -155,11 +155,20 @@ if (Test-Path $datadir) {
     Write-Host "  No existing blockchain data found" -ForegroundColor Gray
 }
 
-# Create genesis content with v0.9 BareBones+Halving specification
-$genesisContent = @"
+# Create genesis file with specified difficulty
+Write-Host "Creating genesis file with difficulty $difficulty..." -ForegroundColor Yellow
+
+# Convert difficulty to hex (multiply by 1000000 to convert from decimal to fixed-point)
+$difficultyInt = [math]::Round($difficulty * 1000000)
+$difficultyHex = "0x" + [Convert]::ToString($difficultyInt, 16).ToUpper()
+
+Write-Host "  Converting difficulty: $difficulty -> $difficultyInt -> $difficultyHex" -ForegroundColor Gray
+
+# Create dynamic genesis JSON
+$genesisJson = @"
 {
   "config": {
-    "chainId": 73428,
+    "chainId": $chainid,
     "homesteadBlock": 0,
     "eip150Block": 0,
     "eip155Block": 0,
@@ -170,56 +179,66 @@ $genesisContent = @"
     "istanbulBlock": 0,
     "berlinBlock": 0,
     "londonBlock": 0,
+    "arrowGlacierBlock": 0,
+    "grayGlacierBlock": 0,
+    "mergeNetsplitBlock": 0,
+    "shanghaiTime": 0,
+    "cancunTime": 0,
+    "pragueTime": null,
+    "verkleTime": null,
     "qmpow": {
       "qbits": 16,
       "tcount": 8192,
       "lnet": 48,
-      "epochLen": 0
+      "epochLen": 100,
+      "testMode": false
     }
   },
-  "nonce": "0x0000000000000042",
+  "nonce": "0x0",
   "timestamp": "0x0",
-  "extraData": "0x",
-  "gasLimit": "0x7D64161",
-  "difficulty": "0x$([Convert]::ToString([Math]::Max(500, [Math]::Round($difficulty * 1000000000)), 16))",
+  "extraData": "0x51756161746756756d2d476574682076302e39204261726542766e65732b48616c76696e67",
+  "gasLimit": "0x2fefd8",
+  "difficulty": "$difficultyHex",
   "mixHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
   "coinbase": "0x0000000000000000000000000000000000000000",
   "alloc": {
     "$etherbase": {
+      "balance": "$balance"
+    },
+    "0x742d35C6C4e6d8de6f10E7FF75DD98dd25b02C3A": {
+      "balance": "$balance"
+    },
+    "0x1234567890123456789012345678901234567890": {
       "balance": "$balance"
     }
   },
   "number": "0x0",
   "gasUsed": "0x0",
   "parentHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
-  "qbits": 16,
-  "tcount": 8192,
-  "lnet": 48,
-  "qnonce64": "0x0000000000000000",
-  "extranonce32": "0x0000000000000000000000000000000000000000000000000000000000000000",
-  "outcomeroot": "0x0000000000000000000000000000000000000000000000000000000000000000",
-  "branchnibbles": "0x000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
-  "gatehash": "0x0000000000000000000000000000000000000000000000000000000000000000",
-  "proofroot": "0x0000000000000000000000000000000000000000000000000000000000000000",
-  "attestmode": "0x00"
+  "baseFeePerGas": "0x7",
+  "excessBlobGas": "0x0",
+  "blobGasUsed": "0x0"
 }
 "@
 
+# Write the dynamic genesis file
+$tempGenesisFile = "genesis_quantum_temp.json"
 try {
+    # Use UTF-8 encoding without BOM to prevent 'invalid character' errors
     $utf8NoBom = New-Object System.Text.UTF8Encoding $false
-    [System.IO.File]::WriteAllText("genesis_quantum_v09.json", $genesisContent, $utf8NoBom)
-    Write-Host "  v0.9 genesis file created successfully" -ForegroundColor Green
+    [System.IO.File]::WriteAllText($tempGenesisFile, $genesisJson, $utf8NoBom)
+    Write-Host "  Dynamic genesis file created: $tempGenesisFile" -ForegroundColor Green
 } catch {
-    Write-Host "  Failed to create v0.9 genesis file: $_" -ForegroundColor Red
+    Write-Host "  Failed to create genesis file: $_" -ForegroundColor Red
     exit 1
 }
 
-# Initialize blockchain with v0.9 genesis
-Write-Host "Initializing blockchain with v0.9 BareBones+Halving genesis..." -ForegroundColor Yellow
+# Initialize blockchain with dynamic genesis format
+Write-Host "Initializing blockchain with custom difficulty genesis..." -ForegroundColor Yellow
 try {
-    $initResult = & ".\geth.exe" --datadir $datadir init genesis_quantum_v09.json 2>&1
+    $initResult = & ".\geth.exe" --datadir $datadir init $tempGenesisFile 2>&1
     if ($LASTEXITCODE -eq 0) {
-        Write-Host "  Blockchain initialized successfully" -ForegroundColor Green
+        Write-Host "  Blockchain initialized successfully with difficulty $difficulty" -ForegroundColor Green
     } else {
         Write-Host "  Failed to initialize blockchain:" -ForegroundColor Red
         Write-Host $initResult -ForegroundColor Red
@@ -233,8 +252,14 @@ try {
 # Clean up temporary genesis file
 Write-Host "Cleaning up..." -ForegroundColor Yellow
 try {
-    Remove-Item genesis_quantum_v09.json -Force
-    Write-Host "  Temporary genesis file removed" -ForegroundColor Green
+    if (Test-Path $tempGenesisFile) {
+        Remove-Item $tempGenesisFile -Force
+        Write-Host "  Temporary genesis file removed" -ForegroundColor Green
+    }
+    if (Test-Path "genesis_quantum_v09.json") {
+        Remove-Item genesis_quantum_v09.json -Force
+        Write-Host "  Old genesis file removed" -ForegroundColor Green
+    }
 } catch {
     Write-Host "  Warning: Could not remove temporary genesis file: $_" -ForegroundColor Yellow
 }

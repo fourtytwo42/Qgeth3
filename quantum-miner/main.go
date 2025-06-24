@@ -36,6 +36,8 @@ type QuantumMiner struct {
 	attempts    uint64
 	accepted    uint64
 	rejected    uint64
+	stale       uint64
+	duplicates  uint64
 	startTime   time.Time
 	client      *http.Client
 	currentWork *QuantumWork
@@ -207,6 +209,8 @@ func (m *QuantumMiner) Stop() {
 	attempts := atomic.LoadUint64(&m.attempts)
 	accepted := atomic.LoadUint64(&m.accepted)
 	rejected := atomic.LoadUint64(&m.rejected)
+	stale := atomic.LoadUint64(&m.stale)
+	duplicates := atomic.LoadUint64(&m.duplicates)
 
 	fmt.Println("\n📊 Final Quantum Mining Statistics:")
 	fmt.Printf("   ⏱️  Runtime: %v\n", duration.Round(time.Second))
@@ -214,6 +218,10 @@ func (m *QuantumMiner) Stop() {
 	fmt.Printf("   🧮 Total Puzzles Solved: %d\n", attempts)
 	fmt.Printf("   ✅ Accepted Blocks: %d\n", accepted)
 	fmt.Printf("   ❌ Rejected Blocks: %d\n", rejected)
+	if stale > 0 || duplicates > 0 {
+		fmt.Printf("   ⏰ Stale Submissions: %d\n", stale)
+		fmt.Printf("   🔄 Duplicate Submissions: %d\n", duplicates)
+	}
 
 	if accepted > 0 {
 		fmt.Printf("   💎 Success Rate: %.4f%%\n", float64(accepted)/float64(attempts)*100)
@@ -372,11 +380,20 @@ func (m *QuantumMiner) mineBlock(threadID int) error {
 			threadID, work.BlockNumber, qnonce)
 
 		if err := m.submitQuantumWork(qnonce, work.WorkHash, proof); err != nil {
-			log.Printf("❌ Failed to submit quantum block: %v", err)
+			errMsg := err.Error()
+			if strings.Contains(errMsg, "stale") {
+				log.Printf("⏰ Thread %d: Stale work rejected (QNonce %d) - %v", threadID, qnonce, err)
+				atomic.AddUint64(&m.stale, 1)
+			} else if strings.Contains(errMsg, "duplicate") {
+				log.Printf("🔄 Thread %d: Duplicate submission rejected (QNonce %d) - %v", threadID, qnonce, err)
+				atomic.AddUint64(&m.duplicates, 1)
+			} else {
+				log.Printf("❌ Thread %d: Failed to submit quantum block (QNonce %d): %v", threadID, qnonce, err)
+			}
 			atomic.AddUint64(&m.rejected, 1)
 		} else {
 			atomic.AddUint64(&m.accepted, 1)
-			log.Printf("✅ Quantum block accepted! 🎊")
+			log.Printf("✅ Thread %d: Quantum block accepted! QNonce %d 🎊", threadID, qnonce)
 		}
 	} else {
 		log.Printf("🎯 Thread %d: Quantum proof doesn't meet target (QNonce %d)", threadID, qnonce)
@@ -545,6 +562,15 @@ func (m *QuantumMiner) submitQuantumWork(qnonce uint64, workHash string, proof Q
 	
 	result, err := m.rpcCall("qmpow_submitWork", params)
 	if err != nil {
+		// Check for specific error patterns that indicate stale/duplicate work
+		errMsg := strings.ToLower(err.Error())
+		if strings.Contains(errMsg, "stale") || strings.Contains(errMsg, "not found") {
+			return fmt.Errorf("stale work - block already sealed or work expired")
+		}
+		if strings.Contains(errMsg, "duplicate") || strings.Contains(errMsg, "already submitted") {
+			return fmt.Errorf("duplicate submission - this solution was already submitted")
+		}
+		
 		// Fall back to eth_submitWork with adapted parameters (FIXED: use hex string for nonce)
 		ethParams := []interface{}{
 			fmt.Sprintf("0x%016x", qnonce), // nonce as hex string (FIXED)
@@ -553,6 +579,14 @@ func (m *QuantumMiner) submitQuantumWork(qnonce uint64, workHash string, proof Q
 		}
 		result, err = m.rpcCall("eth_submitWork", ethParams)
 		if err != nil {
+			// Check for stale/duplicate patterns in eth_submitWork too
+			errMsg := strings.ToLower(err.Error())
+			if strings.Contains(errMsg, "stale") || strings.Contains(errMsg, "not found") {
+				return fmt.Errorf("stale work - block already sealed or work expired")
+			}
+			if strings.Contains(errMsg, "duplicate") || strings.Contains(errMsg, "already submitted") {
+				return fmt.Errorf("duplicate submission - this solution was already submitted")
+			}
 			return fmt.Errorf("failed to submit work: %w", err)
 		}
 	}
@@ -562,7 +596,18 @@ func (m *QuantumMiner) submitQuantumWork(qnonce uint64, workHash string, proof Q
 		return nil
 	}
 
-	return fmt.Errorf("quantum work submission rejected")
+	// If we get false result without error, it's likely stale or duplicate
+	// Check current work to see if it has changed (indicating stale work)
+	m.workMutex.RLock()
+	currentWork := m.currentWork
+	m.workMutex.RUnlock()
+	
+	if currentWork != nil && currentWork.WorkHash != workHash {
+		return fmt.Errorf("stale work - new block available (was working on %s, now %s)", 
+			workHash[:10]+"...", currentWork.WorkHash[:10]+"...")
+	}
+
+	return fmt.Errorf("submission rejected - likely duplicate or invalid proof")
 }
 
 // statsReporter reports mining statistics periodically
@@ -585,12 +630,14 @@ func (m *QuantumMiner) reportStats() {
 	attempts := atomic.LoadUint64(&m.attempts)
 	accepted := atomic.LoadUint64(&m.accepted)
 	rejected := atomic.LoadUint64(&m.rejected)
+	stale := atomic.LoadUint64(&m.stale)
+	duplicates := atomic.LoadUint64(&m.duplicates)
 
 	duration := time.Since(m.startTime)
 	puzzleRate := float64(attempts) / duration.Seconds()
 
-	log.Printf("📊 Quantum Mining Stats: %.2f puzzles/sec | %d solved | %d accepted | %d rejected | %v runtime",
-		puzzleRate, attempts, accepted, rejected, duration.Truncate(time.Second))
+	log.Printf("📊 Quantum Mining Stats: %.2f puzzles/sec | %d solved | %d accepted | %d rejected (%d stale, %d duplicates) | %v runtime",
+		puzzleRate, attempts, accepted, rejected, stale, duplicates, duration.Truncate(time.Second))
 }
 
 // rpcCall makes a JSON-RPC call to the geth node
