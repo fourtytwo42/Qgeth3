@@ -103,9 +103,36 @@ Write-Host "Starting Quantum-Geth v0.9 mining..." -ForegroundColor Green
 Write-Host "   Use Ctrl+C to stop mining" -ForegroundColor Gray
 Write-Host ""
 
+# Find the newest quantum-geth release or use development version
+$GethReleaseDir = Get-ChildItem -Path "releases\quantum-geth-*" -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
+if ($GethReleaseDir) {
+    $GethExecutable = "$($GethReleaseDir.FullName)\geth.exe"
+    Write-Host "Using geth from release: $($GethReleaseDir.Name)" -ForegroundColor Green
+} else {
+    $GethExecutable = ".\geth.exe"
+    if (-not (Test-Path $GethExecutable)) {
+        Write-Host "Geth executable not found. Building release..." -ForegroundColor Yellow
+        try {
+            & ".\build-release.ps1" geth
+            $GethReleaseDir = Get-ChildItem -Path "releases\quantum-geth-*" -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
+            if ($GethReleaseDir) {
+                $GethExecutable = "$($GethReleaseDir.FullName)\geth.exe"
+                Write-Host "SUCCESS: Release built at $($GethReleaseDir.FullName)" -ForegroundColor Green
+            } else {
+                throw "Failed to create release"
+            }
+        } catch {
+            Write-Host "ERROR: Failed to build quantum-geth release: $($_.Exception.Message)" -ForegroundColor Red
+            exit 1
+        }
+    } else {
+        Write-Host "Using development geth from root directory" -ForegroundColor Yellow
+    }
+}
+
 # Start geth with logging
 try {
-    & ".\geth.exe" @gethArgs | Tee-Object -FilePath "$datadir\geth.log"
+    & "$GethExecutable" @gethArgs | Tee-Object -FilePath "$datadir\geth.log"
 } catch {
     Write-Host ""
     Write-Host "ERROR: Failed to start geth: $_" -ForegroundColor Red

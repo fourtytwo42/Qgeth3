@@ -39,6 +39,78 @@ function Get-UnixTimestamp {
     return [int][double]::Parse((Get-Date -UFormat %s))
 }
 
+
+function Build-WithVisualStudio {
+    param(
+        [string]$SourceDir,
+        [string]$OutputFile,
+        [string]$BuildArgs = ""
+    )
+    
+    Write-Host "Setting up Visual Studio build environment..." -ForegroundColor Yellow
+    
+    # Find vcvarsall.bat with full path
+    $vcvarsallPath = Get-ChildItem "C:\Program Files*" -Recurse -Filter "vcvarsall.bat" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+    
+    if (-not $vcvarsallPath) {
+        throw "Visual Studio vcvarsall.bat not found. Please install Visual Studio Build Tools."
+    }
+    
+    Write-Host "Found Visual Studio: $vcvarsallPath" -ForegroundColor Green
+    
+    # Convert to absolute paths
+    $absoluteSourceDir = Resolve-Path $SourceDir
+    $absoluteOutputFile = [System.IO.Path]::GetFullPath($OutputFile)
+    
+    Write-Host "Building in: $absoluteSourceDir" -ForegroundColor Green
+    Write-Host "Output file: $absoluteOutputFile" -ForegroundColor Green
+    
+    # Create a temporary batch file that sets up VS environment and builds
+    $tempBat = [System.IO.Path]::GetTempFileName() + ".bat"
+    
+    $batchContent = @"
+@echo off
+echo Setting up Visual Studio environment...
+call "$vcvarsallPath" x64
+if %ERRORLEVEL% neq 0 (
+    echo Failed to set up Visual Studio environment
+    exit /b %ERRORLEVEL%
+)
+
+echo Visual Studio environment ready
+echo Changing to source directory: $absoluteSourceDir
+cd /d "$absoluteSourceDir"
+if %ERRORLEVEL% neq 0 (
+    echo Failed to change to source directory
+    exit /b %ERRORLEVEL%
+)
+
+echo Building without CGO (Visual Studio compatibility)...
+set CGO_ENABLED=0
+go build $BuildArgs -o "$absoluteOutputFile" .
+exit /b %ERRORLEVEL%
+"@
+    
+    try {
+        $batchContent | Out-File -FilePath $tempBat -Encoding ASCII
+        
+        Write-Host "Running build with Visual Studio environment..." -ForegroundColor Yellow
+        $process = Start-Process -FilePath "cmd.exe" -ArgumentList "/c", $tempBat -Wait -PassThru -NoNewWindow
+        
+        if ($process.ExitCode -ne 0) {
+            throw "Build failed with exit code $($process.ExitCode)"
+        }
+        
+        Write-Host "Build completed successfully!" -ForegroundColor Green
+        
+    } finally {
+        # Clean up temp file
+        if (Test-Path $tempBat) {
+            Remove-Item $tempBat -Force
+        }
+    }
+}
+
 function New-ReleaseFolder {
     param([string]$BaseName)
     
@@ -66,23 +138,68 @@ function Build-QuantumGeth {
     
     # Build geth
     Write-Host "Compiling quantum-geth..." -ForegroundColor Yellow
-    Push-Location "quantum-geth"
     
-    $env:CGO_ENABLED = "1"
-    go build -ldflags "-s -w" -o "geth.exe" .\cmd\geth
-    
-    if ($LASTEXITCODE -ne 0) {
-        Pop-Location
-        throw "Failed to build quantum-geth"
-    }
-    
-    Pop-Location
+    Build-WithVisualStudio -SourceDir "quantum-geth\cmd\geth" -OutputFile "quantum-geth\geth.exe" -BuildArgs "-ldflags `"-s -w`""
     
     # Copy files to release
     Write-Host "Preparing release package..." -ForegroundColor Yellow
     
     Copy-Item "quantum-geth\geth.exe" "$releaseDir\"
-    Copy-Item "genesis_quantum.json" "$releaseDir\"
+    
+    # Create a basic genesis file for the release
+    Write-Host "Creating basic genesis file for release..." -ForegroundColor Yellow
+    $basicGenesis = @"
+{
+  "config": {
+    "chainId": 1337,
+    "homesteadBlock": 0,
+    "eip150Block": 0,
+    "eip155Block": 0,
+    "eip158Block": 0,
+    "byzantiumBlock": 0,
+    "constantinopleBlock": 0,
+    "petersburgBlock": 0,
+    "istanbulBlock": 0,
+    "berlinBlock": 0,
+    "londonBlock": 0,
+    "arrowGlacierBlock": 0,
+    "grayGlacierBlock": 0,
+    "mergeNetsplitBlock": 0,
+    "shanghaiTime": 0,
+    "cancunTime": 0,
+    "pragueTime": null,
+    "verkleTime": null,
+    "qmpow": {
+      "qbits": 16,
+      "tcount": 8192,
+      "lnet": 48,
+      "epochLen": 100,
+      "testMode": false
+    }
+  },
+  "nonce": "0x0",
+  "timestamp": "0x0",
+  "extraData": "0x51756161746756756d2d476574682052656c65617365",
+  "gasLimit": "0x2fefd8",
+  "difficulty": "0x1f4",
+  "mixHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "coinbase": "0x0000000000000000000000000000000000000000",
+  "alloc": {
+    "0x742d35C6C4e6d8de6f10E7FF75DD98dd25b02C3A": {
+      "balance": "300000000000000000000000"
+    }
+  },
+  "number": "0x0",
+  "gasUsed": "0x0",
+  "parentHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "baseFeePerGas": "0x7",
+  "excessBlobGas": "0x0",
+  "blobGasUsed": "0x0"
+}
+"@
+    
+    $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+    [System.IO.File]::WriteAllText("$releaseDir\genesis_quantum.json", $basicGenesis, $utf8NoBom)
     
     # Create batch scripts
     @"
@@ -230,17 +347,8 @@ function Build-QuantumMiner {
     
     # Build miner
     Write-Host "Compiling quantum-miner..." -ForegroundColor Yellow
-    Push-Location "quantum-miner"
     
-    $env:CGO_ENABLED = "1"
-    go build -ldflags "-s -w" -o "quantum-miner.exe" .
-    
-    if ($LASTEXITCODE -ne 0) {
-        Pop-Location
-        throw "Failed to build quantum-miner"
-    }
-    
-    Pop-Location
+    Build-WithVisualStudio -SourceDir "quantum-miner" -OutputFile "quantum-miner\quantum-miner.exe" -BuildArgs "-ldflags `"-s -w`""
     
     # Copy files to release
     Write-Host "Preparing release package..." -ForegroundColor Yellow
