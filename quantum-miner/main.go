@@ -66,6 +66,9 @@ type QuantumMiner struct {
 
 	// HIGH-PERFORMANCE GPU acceleration (eliminates sync bottlenecks)
 	hybridSimulator *quantum.HighPerformanceQuantumSimulator
+
+	// Rate limiting to prevent overwhelming geth node
+	submissionSemaphore chan struct{} // Limits concurrent submissions
 }
 
 // JSON-RPC structures
@@ -203,6 +206,7 @@ func main() {
 		client: &http.Client{
 			Timeout: 30 * time.Second,
 		},
+		submissionSemaphore: make(chan struct{}, 10), // Assuming a default limit of 10 concurrent submissions
 	}
 
 	// Initialize HIGH-PERFORMANCE GPU acceleration if enabled
@@ -700,6 +704,14 @@ func (m *QuantumMiner) checkQuantumTarget(proof QuantumProofSubmission, target s
 
 // submitQuantumWork submits quantum mining work to the node
 func (m *QuantumMiner) submitQuantumWork(qnonce uint64, workHash string, proof QuantumProofSubmission) error {
+	// Rate limiting: prevent overwhelming geth with too many simultaneous submissions
+	select {
+	case m.submissionSemaphore <- struct{}{}:
+		defer func() { <-m.submissionSemaphore }()
+	case <-time.After(5 * time.Second):
+		return fmt.Errorf("submission queue full - too many pending submissions")
+	}
+
 	// Convert string workHash to the format expected by the API
 	// Ensure proper 0x prefix for all hex values
 	cleanWorkHash := strings.TrimPrefix(workHash, "0x")
@@ -727,8 +739,12 @@ func (m *QuantumMiner) submitQuantumWork(qnonce uint64, workHash string, proof Q
 		"extra_nonce32":  extraNonce32Bytes,  // byte array -> base64
 	}
 
-	// Try quantum-specific SubmitWork first
-	params := []interface{}{qnonce, workHashWithPrefix, quantumProofForAPI}
+	// Try quantum-specific SubmitWork first (FIXED: qnonce as hex string)
+	params := []interface{}{
+		fmt.Sprintf("0x%x", qnonce), // qnonce as hex string for proper JSON marshaling
+		workHashWithPrefix,
+		quantumProofForAPI,
+	}
 
 	result, err := m.rpcCall("qmpow_submitWork", params)
 	if err != nil {
