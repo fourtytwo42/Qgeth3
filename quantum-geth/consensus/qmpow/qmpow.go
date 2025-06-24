@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/qmpow/proof"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -21,7 +22,6 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/holiman/uint256"
 )
 
@@ -74,10 +74,16 @@ var (
 	errQMPoWStopped = errors.New("qmpow stopped")
 
 	// errNoMiningWork is returned when no mining work is available
-	errNoMiningWork = errors.New("no mining work available")
+	errNoMiningWork = errors.New("no mining work available yet")
 
 	// errInvalidSealResult is returned when the submitted seal is invalid
-	errInvalidSealResult = errors.New("invalid or stale proof of work")
+	errInvalidSealResult = errors.New("invalid or unverifiable seal result")
+
+	// errStaleWork is returned when work is stale - block already sealed
+	errStaleWork = errors.New("work is stale - block already sealed")
+
+	// errDuplicateWork is returned when a duplicate submission is attempted
+	errDuplicateWork = errors.New("duplicate submission - already submitted this solution")
 )
 
 // Remote sealer related types
@@ -122,11 +128,15 @@ type remoteSealer struct {
 	submitRateCh chan *hashrate
 	requestExit  chan struct{}
 	exitCh       chan struct{}
-	
+
 	// For automatic work preparation
 	chain       consensus.ChainHeaderReader
 	workReadyCh chan struct{}
-	mu          sync.RWMutex
+
+	// For duplicate submission tracking
+	submittedWork map[common.Hash]map[uint64]bool // workHash -> qnonce -> submitted
+
+	mu sync.RWMutex
 }
 
 // QMPoW is the v0.9-rc3-hw0 quantum mining engine
@@ -181,15 +191,16 @@ func New(config Config) *QMPoW {
 
 	// Initialize remote mining support
 	qmpow.remote = &remoteSealer{
-		qmpow:        qmpow,
-		works:        make(map[common.Hash]*types.Block),
-		rates:        make(map[common.Hash]hashrate),
-		fetchWorkCh:  make(chan *sealWork),
-		submitWorkCh: make(chan *quantumMineResult),
-		submitRateCh: make(chan *hashrate),
-		requestExit:  make(chan struct{}),
-		exitCh:       make(chan struct{}),
-		workReadyCh:  make(chan struct{}, 1),
+		qmpow:         qmpow,
+		works:         make(map[common.Hash]*types.Block),
+		rates:         make(map[common.Hash]hashrate),
+		fetchWorkCh:   make(chan *sealWork),
+		submitWorkCh:  make(chan *quantumMineResult),
+		submitRateCh:  make(chan *hashrate),
+		requestExit:   make(chan struct{}),
+		exitCh:        make(chan struct{}),
+		workReadyCh:   make(chan struct{}, 1),
+		submittedWork: make(map[common.Hash]map[uint64]bool),
 	}
 
 	// Start remote sealer
@@ -494,7 +505,7 @@ func (q *QMPoW) Seal(chain consensus.ChainHeaderReader, block *types.Block, resu
 	if q.remote != nil {
 		q.remote.submitWork(block, results)
 	}
-	
+
 	// Also start local mining in a separate goroutine
 	go q.seal(chain, block, results, stop)
 	return nil
@@ -1022,6 +1033,7 @@ func (api *API) GetQuantumStats() map[string]interface{} {
 // GetWork returns a work package for external quantum miners.
 //
 // The work package consists of 5 strings:
+//
 //	result[0] - 32 bytes hex encoded current block header hash (without quantum fields)
 //	result[1] - 32 bytes hex encoded block number
 //	result[2] - 32 bytes hex encoded difficulty target
@@ -1060,10 +1072,10 @@ func (api *API) SubmitWork(qnonce uint64, blockHash common.Hash, quantumProof Qu
 
 	var errc = make(chan error, 1)
 	solution := &quantumMineResult{
-		qnonce:      qnonce,
-		blockHash:   blockHash,
+		qnonce:       qnonce,
+		blockHash:    blockHash,
 		quantumProof: quantumProof,
-		errc:        errc,
+		errc:         errc,
 	}
 
 	select {
@@ -1101,7 +1113,7 @@ func (s *remoteSealer) loop() {
 
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
-	
+
 	workTicker := time.NewTicker(15 * time.Second) // Prepare work every 15 seconds
 	defer workTicker.Stop()
 
@@ -1113,7 +1125,7 @@ func (s *remoteSealer) loop() {
 			currentBlock := s.currentBlock
 			currentWork := s.currentWork
 			s.mu.RUnlock()
-			
+
 			if currentBlock == nil {
 				// Try to prepare work automatically
 				s.tryPrepareWork()
@@ -1150,6 +1162,21 @@ func (s *remoteSealer) loop() {
 				}
 			}
 
+			// Clean up old work submissions (keep only current work)
+			s.mu.Lock()
+			currentWorkHash := common.Hash{}
+			if s.currentBlock != nil {
+				currentWorkHash = s.qmpow.SealHash(s.currentBlock.Header())
+			}
+
+			// Remove all submitted work except for current work
+			for workHash := range s.submittedWork {
+				if workHash != currentWorkHash {
+					delete(s.submittedWork, workHash)
+				}
+			}
+			s.mu.Unlock()
+
 		case <-workTicker.C:
 			// Automatically prepare work for external miners
 			s.tryPrepareWork()
@@ -1179,29 +1206,29 @@ func (s *remoteSealer) makeQuantumWork(block *types.Block) {
 // makeQuantumWorkUnsafe creates a quantum work package for external miners (requires lock)
 func (s *remoteSealer) makeQuantumWorkUnsafe(block *types.Block) {
 	header := block.Header()
-	
+
 	// Initialize quantum fields
 	s.qmpow.initializeQuantumFields(header)
-	
+
 	// Calculate work hash (header without quantum proof fields)
 	workHash := s.qmpow.SealHash(header)
-	
+
 	// Calculate target from difficulty
 	target := DifficultyToTarget(header.Difficulty)
-	
+
 	// Prepare quantum parameters
-	params := fmt.Sprintf("qbits:%d,tcount:%d,lnet:%d", 
+	params := fmt.Sprintf("qbits:%d,tcount:%d,lnet:%d",
 		*header.QBits, *header.TCount, *header.LNet)
-	
-	s.currentWork[0] = workHash.Hex()                           // Work hash
-	s.currentWork[1] = hexutil.EncodeBig(header.Number)         // Block number
-	s.currentWork[2] = target.Text(16)                          // Difficulty target
-	s.currentWork[3] = hexutil.Encode([]byte(params))           // Quantum parameters
-	s.currentWork[4] = header.Coinbase.Hex()                    // Coinbase address
-	
+
+	s.currentWork[0] = workHash.Hex()                   // Work hash
+	s.currentWork[1] = hexutil.EncodeBig(header.Number) // Block number
+	s.currentWork[2] = target.Text(16)                  // Difficulty target
+	s.currentWork[3] = hexutil.Encode([]byte(params))   // Quantum parameters
+	s.currentWork[4] = header.Coinbase.Hex()            // Coinbase address
+
 	// Store work for submission verification
 	s.works[workHash] = block
-	
+
 	log.Info("🔗 Quantum work prepared for external miners",
 		"number", header.Number.Uint64(),
 		"difficulty", FormatDifficulty(header.Difficulty),
@@ -1213,43 +1240,87 @@ func (s *remoteSealer) makeQuantumWorkUnsafe(block *types.Block) {
 func (s *remoteSealer) submitQuantumWork(qnonce uint64, blockHash common.Hash, quantumProof QuantumProofSubmission) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	if s.currentBlock == nil {
 		log.Error("No current work for quantum submission", "hash", blockHash.Hex())
 		return false
 	}
-	
+
 	// Find the work
 	block := s.works[blockHash]
 	if block == nil {
-		log.Warn("Quantum work not found", "hash", blockHash.Hex())
+		log.Warn("Quantum work not found (stale)", "hash", blockHash.Hex())
 		return false
 	}
-	
+
+	// Check for duplicate submission
+	if submissions, exists := s.submittedWork[blockHash]; exists {
+		if submissions[qnonce] {
+			log.Warn("Duplicate quantum submission rejected", "hash", blockHash.Hex(), "qnonce", qnonce)
+			return false
+		}
+	}
+
 	// Create header with quantum proof
 	header := types.CopyHeader(block.Header())
+	
+	// CRITICAL: Initialize optional fields (WithdrawalsHash, etc.) before RLP validation
+	// This prevents "input string too short" RLP errors from external miners
+	s.qmpow.initializeOptionalFields(header)
+	
 	header.QNonce64 = &qnonce
 	header.OutcomeRoot = &quantumProof.OutcomeRoot
 	header.GateHash = &quantumProof.GateHash
 	header.ProofRoot = &quantumProof.ProofRoot
-	
+
 	if len(quantumProof.BranchNibbles) >= BranchNibblesSize {
 		copy(header.BranchNibbles, quantumProof.BranchNibbles[:BranchNibblesSize])
 	}
-	
+
 	if len(quantumProof.ExtraNonce32) >= ExtraNonce32Size {
 		copy(header.ExtraNonce32, quantumProof.ExtraNonce32[:ExtraNonce32Size])
 	}
-	
+
+	// CRITICAL: Comprehensive RLP validation before accepting external miner blocks
+	// This prevents malformed blocks from jamming the blockchain
+	log.Debug("🔍 Validating external miner block RLP encoding", "qnonce", qnonce, "hash", blockHash.Hex())
+
+	// Step 1: Validate header RLP encoding/decoding roundtrip
+	if err := s.validateHeaderRLPIntegrity(header); err != nil {
+		log.Warn("❌ External miner block rejected - Header RLP validation failed",
+			"qnonce", qnonce, "hash", blockHash.Hex(), "error", err)
+		return false
+	}
+
+	// Step 2: Create sealed block and validate full block RLP
+	sealedBlock := block.WithSeal(header)
+	if err := s.validateBlockRLPIntegrity(sealedBlock); err != nil {
+		log.Warn("❌ External miner block rejected - Block RLP validation failed",
+			"qnonce", qnonce, "hash", blockHash.Hex(), "error", err)
+		return false
+	}
+
+	// Step 3: Validate quantum fields structure
+	if err := s.validateQuantumFieldsIntegrity(header); err != nil {
+		log.Warn("❌ External miner block rejected - Quantum fields validation failed",
+			"qnonce", qnonce, "hash", blockHash.Hex(), "error", err)
+		return false
+	}
+
+	log.Debug("✅ External miner block passed RLP validation", "qnonce", qnonce, "hash", blockHash.Hex())
+
 	// Verify quantum proof meets target
 	if !s.qmpow.checkQuantumTarget(header) {
 		log.Debug("Quantum proof does not meet target", "qnonce", qnonce)
 		return false
 	}
-	
-	// Create sealed block
-	sealedBlock := block.WithSeal(header)
-	
+
+	// Mark this submission as attempted (before trying to submit)
+	if s.submittedWork[blockHash] == nil {
+		s.submittedWork[blockHash] = make(map[uint64]bool)
+	}
+	s.submittedWork[blockHash][qnonce] = true
+
 	// Submit successful block if we have a result channel
 	if s.results != nil {
 		select {
@@ -1270,7 +1341,7 @@ func (s *remoteSealer) submitQuantumWork(qnonce uint64, blockHash common.Hash, q
 			"number", header.Number.Uint64(),
 			"qnonce", qnonce,
 			"miner", "external")
-		
+
 		// For template blocks, we don't have a direct submission path
 		// The external miner found a valid solution but we need the miner
 		// subsystem to be running to handle block submission
@@ -1279,12 +1350,252 @@ func (s *remoteSealer) submitQuantumWork(qnonce uint64, blockHash common.Hash, q
 	}
 }
 
+// validateHeaderRLPIntegrity performs comprehensive header RLP validation
+// This function is CRITICAL for blockchain security - it prevents external miners
+// from submitting malformed blocks that could corrupt the blockchain or cause
+// consensus failures. All external miner submissions MUST pass this validation.
+//
+// Validation steps:
+// 1. Marshal quantum fields into QBlob for proper RLP encoding
+// 2. Test RLP encoding to catch malformed data structures
+// 3. Validate encoded size to prevent oversized/undersized blocks
+// 4. Test RLP decoding roundtrip to ensure data integrity
+// 5. Unmarshal quantum blob to verify quantum field consistency
+// 6. Verify all critical fields survived the encoding/decoding process
+//
+// This prevents:
+// - Malformed RLP that could crash nodes during decoding
+// - Corrupted quantum fields that could break consensus
+// - Oversized blocks that could cause DoS attacks
+// - Data corruption during network transmission
+func (s *remoteSealer) validateHeaderRLPIntegrity(header *types.Header) error {
+	// Marshal quantum fields into QBlob before encoding
+	header.MarshalQuantumBlob()
+
+	// Test RLP encoding
+	encoded, err := rlp.EncodeToBytes(header)
+	if err != nil {
+		return fmt.Errorf("header RLP encoding failed: %v", err)
+	}
+
+	// Validate encoded size (quantum headers should be ~580+ bytes)
+	if len(encoded) < 500 {
+		return fmt.Errorf("header RLP too small: got %d bytes, expected >500", len(encoded))
+	}
+
+	if len(encoded) > 2048 {
+		return fmt.Errorf("header RLP too large: got %d bytes, expected <2048", len(encoded))
+	}
+
+	// Test RLP decoding roundtrip
+	var decodedHeader types.Header
+	if err := rlp.DecodeBytes(encoded, &decodedHeader); err != nil {
+		return fmt.Errorf("header RLP decoding failed: %v", err)
+	}
+
+	// Unmarshal quantum blob to populate virtual quantum fields
+	if err := decodedHeader.UnmarshalQuantumBlob(); err != nil {
+		return fmt.Errorf("quantum blob unmarshaling failed: %v", err)
+	}
+
+	// Verify critical fields survived roundtrip
+	if decodedHeader.Number == nil || decodedHeader.Number.Cmp(header.Number) != 0 {
+		return fmt.Errorf("block number corrupted in RLP roundtrip")
+	}
+
+	if decodedHeader.ParentHash != header.ParentHash {
+		return fmt.Errorf("parent hash corrupted in RLP roundtrip")
+	}
+
+	if decodedHeader.Difficulty == nil || decodedHeader.Difficulty.Cmp(header.Difficulty) != 0 {
+		return fmt.Errorf("difficulty corrupted in RLP roundtrip")
+	}
+
+	// Verify quantum fields survived roundtrip
+	if decodedHeader.QNonce64 == nil || *decodedHeader.QNonce64 != *header.QNonce64 {
+		return fmt.Errorf("QNonce64 corrupted in RLP roundtrip")
+	}
+
+	if decodedHeader.OutcomeRoot == nil || *decodedHeader.OutcomeRoot != *header.OutcomeRoot {
+		return fmt.Errorf("OutcomeRoot corrupted in RLP roundtrip")
+	}
+
+	if decodedHeader.GateHash == nil || *decodedHeader.GateHash != *header.GateHash {
+		return fmt.Errorf("GateHash corrupted in RLP roundtrip")
+	}
+
+	if decodedHeader.ProofRoot == nil || *decodedHeader.ProofRoot != *header.ProofRoot {
+		return fmt.Errorf("ProofRoot corrupted in RLP roundtrip")
+	}
+
+	return nil
+}
+
+// validateBlockRLPIntegrity performs comprehensive block RLP validation
+// This function validates the complete block structure to ensure external miners
+// cannot submit blocks that would cause blockchain corruption or consensus issues.
+//
+// Validation steps:
+// 1. Test complete block RLP encoding
+// 2. Validate encoded size to prevent DoS attacks
+// 3. Test block RLP decoding roundtrip
+// 4. Verify block hash consistency after roundtrip
+// 5. Verify transaction and uncle count consistency
+//
+// This prevents:
+// - Blocks that cannot be properly encoded/decoded
+// - Oversized blocks that could cause network issues
+// - Blocks with corrupted transaction data
+// - Hash inconsistencies that could break chain validation
+func (s *remoteSealer) validateBlockRLPIntegrity(block *types.Block) error {
+	// Test block RLP encoding
+	encoded, err := rlp.EncodeToBytes(block)
+	if err != nil {
+		return fmt.Errorf("block RLP encoding failed: %v", err)
+	}
+
+	// Validate encoded size
+	if len(encoded) < 600 {
+		return fmt.Errorf("block RLP too small: got %d bytes, expected >600", len(encoded))
+	}
+
+	if len(encoded) > 1048576 { // 1MB max
+		return fmt.Errorf("block RLP too large: got %d bytes, expected <1MB", len(encoded))
+	}
+
+	// Test block RLP decoding roundtrip
+	var decodedBlock types.Block
+	if err := rlp.DecodeBytes(encoded, &decodedBlock); err != nil {
+		return fmt.Errorf("block RLP decoding failed: %v", err)
+	}
+
+	// Verify block hash consistency
+	if block.Hash() != decodedBlock.Hash() {
+		return fmt.Errorf("block hash corrupted in RLP roundtrip: original=%s, decoded=%s",
+			block.Hash().Hex(), decodedBlock.Hash().Hex())
+	}
+
+	// Verify transaction count consistency
+	if len(block.Transactions()) != len(decodedBlock.Transactions()) {
+		return fmt.Errorf("transaction count corrupted in RLP roundtrip: original=%d, decoded=%d",
+			len(block.Transactions()), len(decodedBlock.Transactions()))
+	}
+
+	// Verify uncle count consistency
+	if len(block.Uncles()) != len(decodedBlock.Uncles()) {
+		return fmt.Errorf("uncle count corrupted in RLP roundtrip: original=%d, decoded=%d",
+			len(block.Uncles()), len(decodedBlock.Uncles()))
+	}
+
+	return nil
+}
+
+// validateQuantumFieldsIntegrity validates quantum field structure and consistency
+// This function ensures that all quantum-specific fields are properly structured
+// and contain valid data according to the Quantum-Geth v0.9 specification.
+//
+// Validation steps:
+// 1. Verify all required quantum fields are present
+// 2. Validate field sizes match specification requirements
+// 3. Verify parameter values match expected values for block height
+// 4. Ensure hash fields contain actual data (not zero hashes)
+// 5. Verify nonce values are reasonable (not edge cases)
+//
+// This prevents:
+// - Missing quantum fields that would break consensus
+// - Invalid field sizes that could cause buffer overflows
+// - Incorrect quantum parameters for the block height
+// - Zero hash values indicating missing quantum proofs
+// - Invalid nonce values that could break mining logic
+func (s *remoteSealer) validateQuantumFieldsIntegrity(header *types.Header) error {
+	// Verify all required quantum fields are present
+	if header.Epoch == nil {
+		return fmt.Errorf("missing Epoch field")
+	}
+	if header.QBits == nil {
+		return fmt.Errorf("missing QBits field")
+	}
+	if header.TCount == nil {
+		return fmt.Errorf("missing TCount field")
+	}
+	if header.LNet == nil {
+		return fmt.Errorf("missing LNet field")
+	}
+	if header.QNonce64 == nil {
+		return fmt.Errorf("missing QNonce64 field")
+	}
+	if header.OutcomeRoot == nil {
+		return fmt.Errorf("missing OutcomeRoot field")
+	}
+	if header.GateHash == nil {
+		return fmt.Errorf("missing GateHash field")
+	}
+	if header.ProofRoot == nil {
+		return fmt.Errorf("missing ProofRoot field")
+	}
+	if header.AttestMode == nil {
+		return fmt.Errorf("missing AttestMode field")
+	}
+
+	// Verify field sizes
+	if len(header.ExtraNonce32) != ExtraNonce32Size {
+		return fmt.Errorf("invalid ExtraNonce32 size: got %d, expected %d",
+			len(header.ExtraNonce32), ExtraNonce32Size)
+	}
+
+	if len(header.BranchNibbles) != BranchNibblesSize {
+		return fmt.Errorf("invalid BranchNibbles size: got %d, expected %d",
+			len(header.BranchNibbles), BranchNibblesSize)
+	}
+
+	// Verify parameter values match expected for height
+	expectedEpoch := uint32(header.Number.Uint64() / EpochBlocks)
+	if *header.Epoch != expectedEpoch {
+		return fmt.Errorf("invalid epoch: got %d, expected %d", *header.Epoch, expectedEpoch)
+	}
+
+	expectedQBits, expectedTCount, expectedLNet := CalculateQuantumParamsForHeight(header.Number.Uint64())
+	if *header.QBits != expectedQBits {
+		return fmt.Errorf("invalid qbits: got %d, expected %d", *header.QBits, expectedQBits)
+	}
+
+	if *header.TCount != expectedTCount {
+		return fmt.Errorf("invalid tcount: got %d, expected %d", *header.TCount, expectedTCount)
+	}
+
+	if *header.LNet != expectedLNet {
+		return fmt.Errorf("invalid lnet: got %d, expected %d", *header.LNet, expectedLNet)
+	}
+
+	// Verify hash fields are not zero (indicates missing data)
+	zeroHash := common.Hash{}
+	if *header.OutcomeRoot == zeroHash {
+		return fmt.Errorf("OutcomeRoot is zero hash")
+	}
+	if *header.GateHash == zeroHash {
+		return fmt.Errorf("GateHash is zero hash")
+	}
+	if *header.ProofRoot == zeroHash {
+		return fmt.Errorf("ProofRoot is zero hash")
+	}
+
+	// Verify nonce is reasonable (not zero, not max)
+	if *header.QNonce64 == 0 {
+		return fmt.Errorf("QNonce64 is zero")
+	}
+	if *header.QNonce64 == ^uint64(0) {
+		return fmt.Errorf("QNonce64 is max value")
+	}
+
+	return nil
+}
+
 // setChain sets the blockchain reference for remote work preparation
 func (s *remoteSealer) setChain(chain consensus.ChainHeaderReader) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.chain = chain
-	
+
 	// Prepare initial work
 	go s.tryPrepareWork()
 }
@@ -1293,24 +1604,24 @@ func (s *remoteSealer) setChain(chain consensus.ChainHeaderReader) {
 func (s *remoteSealer) tryPrepareWork() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	// Skip if we already have recent work
 	if s.currentBlock != nil {
 		return
 	}
-	
+
 	// Skip if no chain reference available
 	if s.chain == nil {
 		return
 	}
-	
+
 	// Get current head block
 	parent := s.chain.CurrentHeader()
 	if parent == nil {
 		log.Warn("No current header available for work preparation")
 		return
 	}
-	
+
 	// Create a template block for external miners
 	header := &types.Header{
 		ParentHash: parent.Hash(),
@@ -1320,21 +1631,21 @@ func (s *remoteSealer) tryPrepareWork() {
 		Difficulty: s.qmpow.CalcDifficulty(s.chain, uint64(time.Now().Unix()), parent),
 		Coinbase:   common.Address{}, // Will be set by external miner
 	}
-	
+
 	// Prepare the header using QMPoW
 	if err := s.qmpow.Prepare(s.chain, header); err != nil {
 		log.Error("Failed to prepare header for remote mining", "err", err)
 		return
 	}
-	
+
 	// Create template block
 	block := types.NewBlock(header, nil, nil, nil, nil)
-	
+
 	// Prepare work for external miners
 	s.currentBlock = block
 	s.results = nil // No result channel for template work
 	s.makeQuantumWorkUnsafe(block)
-	
+
 	log.Info("🔗 Quantum work automatically prepared for external miners",
 		"number", header.Number.Uint64(),
 		"difficulty", FormatDifficulty(header.Difficulty),
