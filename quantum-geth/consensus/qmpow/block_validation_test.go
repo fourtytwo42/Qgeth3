@@ -578,3 +578,274 @@ func (m *MockChainReader) GetHeaderByHash(hash common.Hash) *types.Header {
 func (m *MockChainReader) GetHeaderByNumber(number uint64) *types.Header {
 	return m.GetHeader(common.Hash{}, number)
 }
+
+// TestValidateNovaProofFakeProofRejection tests that fake proofs are properly rejected
+func TestValidateNovaProofFakeProofRejection(t *testing.T) {
+	chainIDHash := common.HexToHash("0xFEEDFACECAFEBABE")
+	pipeline := NewBlockValidationPipeline(chainIDHash)
+
+	// Test 1: Fake proof root (all zeros) should be rejected
+	header := createTestQuantumHeader()
+	zeroHash := common.Hash{}
+	header.ProofRoot = &zeroHash
+
+	valid, err := pipeline.validateNovaProof(header)
+	if err == nil {
+		t.Error("Expected validation to fail with zero proof root")
+	}
+	if valid {
+		t.Error("Zero proof root should be invalid")
+	}
+
+	// Test 2: Missing proof root should be rejected
+	headerNoProof := createTestQuantumHeader()
+	headerNoProof.ProofRoot = nil
+
+	valid, err = pipeline.validateNovaProof(headerNoProof)
+	if err == nil {
+		t.Error("Expected validation to fail with missing proof root")
+	}
+	if valid {
+		t.Error("Missing proof root should be invalid")
+	}
+
+	// Test 3: Valid proof root structure should trigger full verification
+	headerValid := createTestQuantumHeader()
+	// This will fail during reconstruction/verification, which is expected
+	// since we don't have a real quantum execution environment in tests
+	valid, err = pipeline.validateNovaProof(headerValid)
+	if err == nil {
+		t.Error("Expected validation to fail during proof reconstruction (test environment)")
+	}
+	if valid {
+		t.Error("Should fail during full verification in test environment")
+	}
+
+	t.Log("✅ Fake proof rejection tests passed")
+}
+
+// TestCAPSSVerifierFakeProofDetection tests CAPSS verifier fake proof detection
+func TestCAPSSVerifierFakeProofDetection(t *testing.T) {
+	verifier := &CAPSSVerifier{
+		name:      "TestVerifier",
+		available: true,
+	}
+
+	// Test 1: All-zero proof should be rejected
+	fakeProof := &CAPSSProof{
+		TraceID:      1000,
+		Proof:        make([]byte, 2200), // All zeros
+		PublicInputs: make([]byte, 64),
+		ProofHash:    make([]byte, 32),
+	}
+
+	valid, err := verifier.VerifyProof(fakeProof)
+	if err == nil {
+		t.Error("Expected fake proof to be rejected")
+	}
+	if valid {
+		t.Error("All-zero proof should be invalid")
+	}
+
+	// Test 2: Wrong size proof should be rejected
+	wrongSizeProof := &CAPSSProof{
+		TraceID:      1001,
+		Proof:        make([]byte, 1000), // Wrong size
+		PublicInputs: make([]byte, 64),
+		ProofHash:    make([]byte, 32),
+	}
+
+	valid, err = verifier.VerifyProof(wrongSizeProof)
+	if err == nil {
+		t.Error("Expected wrong-size proof to be rejected")
+	}
+	if valid {
+		t.Error("Wrong-size proof should be invalid")
+	}
+
+	// Test 3: Missing public inputs should be rejected
+	noInputsProof := &CAPSSProof{
+		TraceID:      1002,
+		Proof:        make([]byte, 2200),
+		PublicInputs: []byte{}, // Empty
+		ProofHash:    make([]byte, 32),
+	}
+	// Fill with non-zero data
+	for i := range noInputsProof.Proof {
+		noInputsProof.Proof[i] = byte(i % 256)
+	}
+
+	valid, err = verifier.VerifyProof(noInputsProof)
+	if err == nil {
+		t.Error("Expected proof with missing public inputs to be rejected")
+	}
+	if valid {
+		t.Error("Proof with missing public inputs should be invalid")
+	}
+
+	// Test 4: Valid structure should pass basic checks
+	validProof := &CAPSSProof{
+		TraceID:      1003,
+		Proof:        make([]byte, 2200),
+		PublicInputs: make([]byte, 64),
+		ProofHash:    make([]byte, 32),
+	}
+	// Fill with non-zero data
+	for i := range validProof.Proof {
+		validProof.Proof[i] = byte((i + 1) % 256)
+	}
+	for i := range validProof.PublicInputs {
+		validProof.PublicInputs[i] = byte((i + 100) % 256)
+	}
+
+	valid, err = verifier.VerifyProof(validProof)
+	if err != nil {
+		t.Errorf("Valid proof structure should pass basic checks: %v", err)
+	}
+	if !valid {
+		t.Error("Valid proof structure should be accepted")
+	}
+
+	t.Log("✅ CAPSS verifier fake proof detection tests passed")
+}
+
+// TestNovaLiteVerifierFakeProofDetection tests Nova-Lite verifier fake proof detection
+func TestNovaLiteVerifierFakeProofDetection(t *testing.T) {
+	verifier := &NovaLiteVerifier{
+		name:      "TestVerifier",
+		available: true,
+	}
+
+	// Test 1: All-zero proof should be rejected
+	fakeProof := &NovaLiteProof{
+		ProofID:      1000,
+		Tier:         2,
+		BatchIndex:   0,
+		ProofData:    make([]byte, 5000), // All zeros
+		PublicInputs: make([]byte, 96),
+		ProofHash:    make([]byte, 32),
+		CAPSSCount:   16,
+		Size:         5000,
+	}
+
+	valid, err := verifier.VerifyRecursiveProof(fakeProof)
+	if err == nil {
+		t.Error("Expected fake Nova-Lite proof to be rejected")
+	}
+	if valid {
+		t.Error("All-zero Nova-Lite proof should be invalid")
+	}
+
+	// Test 2: Oversized proof should be rejected
+	oversizedProof := &NovaLiteProof{
+		ProofID:      1001,
+		Tier:         2,
+		BatchIndex:   0,
+		ProofData:    make([]byte, 7000), // > 6 kB limit
+		PublicInputs: make([]byte, 96),
+		ProofHash:    make([]byte, 32),
+		CAPSSCount:   16,
+		Size:         7000,
+	}
+
+	valid, err = verifier.VerifyRecursiveProof(oversizedProof)
+	if err == nil {
+		t.Error("Expected oversized proof to be rejected")
+	}
+	if valid {
+		t.Error("Oversized proof should be invalid")
+	}
+
+	// Test 3: Wrong CAPSS count should be rejected
+	wrongCountProof := &NovaLiteProof{
+		ProofID:      1002,
+		Tier:         2,
+		BatchIndex:   0,
+		ProofData:    make([]byte, 5000),
+		PublicInputs: make([]byte, 96),
+		ProofHash:    make([]byte, 32),
+		CAPSSCount:   10, // Should be 16
+		Size:         5000,
+	}
+	// Fill with non-zero data
+	for i := range wrongCountProof.ProofData {
+		wrongCountProof.ProofData[i] = byte(i % 256)
+	}
+
+	valid, err = verifier.VerifyRecursiveProof(wrongCountProof)
+	if err == nil {
+		t.Error("Expected wrong CAPSS count proof to be rejected")
+	}
+	if valid {
+		t.Error("Wrong CAPSS count proof should be invalid")
+	}
+
+	// Test 4: Valid structure should pass basic checks
+	validProof := &NovaLiteProof{
+		ProofID:      1003,
+		Tier:         2,
+		BatchIndex:   0,
+		ProofData:    make([]byte, 5000),
+		PublicInputs: make([]byte, 96),
+		ProofHash:    make([]byte, 32),
+		CAPSSCount:   16,
+		Size:         5000,
+	}
+	// Fill with non-zero data
+	for i := range validProof.ProofData {
+		validProof.ProofData[i] = byte((i + 1) % 256)
+	}
+	for i := range validProof.PublicInputs {
+		validProof.PublicInputs[i] = byte((i + 200) % 256)
+	}
+
+	valid, err = verifier.VerifyRecursiveProof(validProof)
+	if err != nil {
+		t.Errorf("Valid Nova-Lite proof structure should pass basic checks: %v", err)
+	}
+	if !valid {
+		t.Error("Valid Nova-Lite proof structure should be accepted")
+	}
+
+	t.Log("✅ Nova-Lite verifier fake proof detection tests passed")
+}
+
+// TestFullQuantumProofVerificationPipeline tests the complete proof verification pipeline
+func TestFullQuantumProofVerificationPipeline(t *testing.T) {
+	chainIDHash := common.HexToHash("0xFEEDFACECAFEBABE")
+	pipeline := NewBlockValidationPipeline(chainIDHash)
+
+	// Create a test block with quantum fields
+	header := createTestQuantumHeader()
+	block := types.NewBlockWithWithdrawals(header, nil, nil, nil, nil, nil)
+
+	chain := &MockChainReader{}
+	state := &state.StateDB{}
+
+	// Create dummy attestation
+	publicKey := make([]byte, DilithiumPublicKeySize)
+	signature := make([]byte, DilithiumSignatureSize)
+
+	// Test the full validation pipeline
+	// This should fail during proof reconstruction since we don't have real quantum execution
+	result, err := pipeline.ValidateQuantumBlock(chain, block, state, publicKey, signature)
+
+	// We expect this to fail in the test environment during proof reconstruction
+	if err == nil {
+		t.Error("Expected validation to fail during proof reconstruction in test environment")
+	}
+
+	if result != nil && result.Valid {
+		t.Error("Validation should fail in test environment")
+	}
+
+	// Verify it fails at the correct step (Nova proof verification)
+	if result != nil && result.FailureStep != "NOVA_PROOF" {
+		t.Errorf("Expected failure at NOVA_PROOF step, got %s", result.FailureStep)
+	}
+
+	t.Log("✅ Full quantum proof verification pipeline test completed")
+	t.Logf("   - Pipeline correctly rejects invalid proofs")
+	t.Logf("   - Failure step: %s", result.FailureStep)
+	t.Logf("   - Failure reason: %s", result.FailureReason)
+}

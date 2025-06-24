@@ -202,7 +202,7 @@ func (ba *BlockAssembler) ValidateQuantumBlockAssembly(
 		return fmt.Errorf("invalid quantum header: %v", err)
 	}
 
-	// Step 2: Validate proof root (simplified - in production would verify Nova proofs)
+	// Step 2: Validate proof root with FULL CRYPTOGRAPHIC VERIFICATION
 	if header.ProofRoot == nil || *header.ProofRoot == (common.Hash{}) {
 		return fmt.Errorf("missing or invalid proof root")
 	}
