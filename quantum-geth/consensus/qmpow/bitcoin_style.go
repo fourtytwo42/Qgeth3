@@ -20,8 +20,8 @@ import (
 // Bitcoin-Style Quantum Mining Constants
 const (
 	// Target adjustment parameters (like Bitcoin)
-	TargetAdjustmentFactor = 4   // Maximum adjustment per retarget (like Bitcoin)
-	RetargetBlocks         = 100 // Retarget every 100 blocks (~20 minutes at 12s blocks)
+	TargetAdjustmentFactor = 2   // Maximum adjustment per retarget (max 1x increase/decrease)
+	RetargetBlocks         = 50  // Retarget every 50 blocks (~10 minutes at 12s blocks)
 
 	// Bitcoin-style mining parameters optimized for quantum computation speeds
 	QuantumTargetBits = 248        // Target space size (bits)

@@ -661,12 +661,12 @@ func (q *QMPoW) CalcDifficulty(chain consensus.ChainHeaderReader, time uint64, p
 		"blockNumber", blockNumber,
 		"parentDifficulty", FormatDifficulty(parentDifficulty))
 
-	// Check if it's time for difficulty retargeting (every 100 blocks)
-	if blockNumber > 0 && blockNumber%100 == 0 {
+	// Check if it's time for difficulty retargeting (every 50 blocks)
+	if blockNumber > 0 && blockNumber%50 == 0 {
 		log.Info("🎯 Difficulty retarget triggered", "blockNumber", blockNumber)
 
-		// Get the header from 100 blocks ago
-		retargetStart := blockNumber - 100
+		// Get the header from 50 blocks ago
+		retargetStart := blockNumber - 50
 		var startHeader *types.Header
 		if retargetStart == 0 {
 			startHeader = chain.GetHeaderByNumber(0) // Genesis
@@ -679,9 +679,9 @@ func (q *QMPoW) CalcDifficulty(chain consensus.ChainHeaderReader, time uint64, p
 			return parentDifficulty
 		}
 
-		// Calculate actual time for the last 100 blocks
+		// Calculate actual time for the last 50 blocks
 		actualTime := time - startHeader.Time
-		targetTime := uint64(100 * 12) // 100 blocks * 12 seconds = 1200 seconds
+		targetTime := uint64(50 * 12) // 50 blocks * 12 seconds = 600 seconds
 
 		log.Info("📊 Retarget analysis",
 			"retargetStart", retargetStart,
@@ -698,19 +698,19 @@ func (q *QMPoW) CalcDifficulty(chain consensus.ChainHeaderReader, time uint64, p
 		newDifficulty.Mul(newDifficulty, big.NewInt(int64(targetTime)))
 		newDifficulty.Div(newDifficulty, big.NewInt(int64(actualTime)))
 
-		// Clamp adjustment to 4x max change (like Bitcoin)
+		// Clamp adjustment to 2x max change (max 1x increase/decrease)
 		maxIncrease := new(big.Int).Set(parentDifficulty)
-		maxIncrease.Mul(maxIncrease, big.NewInt(4))
+		maxIncrease.Mul(maxIncrease, big.NewInt(2))
 
 		maxDecrease := new(big.Int).Set(parentDifficulty)
-		maxDecrease.Div(maxDecrease, big.NewInt(4))
+		maxDecrease.Div(maxDecrease, big.NewInt(2))
 
 		if newDifficulty.Cmp(maxIncrease) > 0 {
 			newDifficulty.Set(maxIncrease)
-			log.Info("🔒 Difficulty increase clamped to 4x")
+			log.Info("🔒 Difficulty increase clamped to 2x")
 		} else if newDifficulty.Cmp(maxDecrease) < 0 {
 			newDifficulty.Set(maxDecrease)
-			log.Info("🔒 Difficulty decrease clamped to 4x")
+			log.Info("🔒 Difficulty decrease clamped to 2x")
 		}
 
 		// Ensure minimum difficulty
@@ -729,7 +729,7 @@ func (q *QMPoW) CalcDifficulty(chain consensus.ChainHeaderReader, time uint64, p
 	}
 
 	// Not a retarget block - keep current difficulty
-	nextRetarget := ((blockNumber / 100) + 1) * 100
+	nextRetarget := ((blockNumber / 50) + 1) * 50
 	log.Info("➡️  Difficulty maintained",
 		"blockNumber", blockNumber,
 		"difficulty", FormatDifficulty(parentDifficulty),
