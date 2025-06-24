@@ -7,7 +7,15 @@ param(
     [switch]$Help
 )
 
-$MinerExecutable = "quantum-gpu-miner\quantum-gpu-miner.exe"
+# Find the newest quantum-miner release or use development version
+$ReleaseDir = Get-ChildItem -Path "releases\quantum-miner-*" -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
+if ($ReleaseDir) {
+    $MinerExecutable = "$($ReleaseDir.FullName)\quantum-miner.exe"
+    $WorkingDir = $ReleaseDir.FullName
+} else {
+    $MinerExecutable = "quantum-miner\quantum-miner.exe"
+    $WorkingDir = "quantum-miner"
+}
 
 if ($Help) {
     Write-Host "Quantum-Geth GPU Miner" -ForegroundColor Cyan
@@ -60,13 +68,29 @@ if ($Coinbase -notmatch "^0x[0-9a-fA-F]{40}$") {
 }
 
 if (-not (Test-Path $MinerExecutable)) {
-    Write-Host "ERROR: GPU miner executable not found: $MinerExecutable" -ForegroundColor Red
-    Write-Host "Please ensure quantum-gpu-miner.exe is compiled in the quantum-gpu-miner folder." -ForegroundColor Yellow
+    Write-Host "GPU miner executable not found. Building release..." -ForegroundColor Yellow
     Write-Host ""
-    Write-Host "To build the GPU miner:" -ForegroundColor Yellow
-    Write-Host "  cd quantum-gpu-miner" -ForegroundColor White
-    Write-Host "  go build -o quantum-gpu-miner.exe ." -ForegroundColor White
-    exit 1
+    
+    try {
+        & ".\build-release.ps1" miner
+        
+        # Re-find the newest release
+        $ReleaseDir = Get-ChildItem -Path "releases\quantum-miner-*" -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
+        if ($ReleaseDir) {
+            $MinerExecutable = "$($ReleaseDir.FullName)\quantum-miner.exe"
+            $WorkingDir = $ReleaseDir.FullName
+            Write-Host "SUCCESS: Release built at $($ReleaseDir.FullName)" -ForegroundColor Green
+        } else {
+            throw "Failed to create release"
+        }
+    } catch {
+        Write-Host "ERROR: Failed to build quantum-miner release: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host ""
+        Write-Host "Manual build options:" -ForegroundColor Yellow
+        Write-Host "  .\build-release.ps1 miner" -ForegroundColor White
+        Write-Host "  cd quantum-miner && go build -o quantum-miner.exe ." -ForegroundColor White
+        exit 1
+    }
 }
 
 Write-Host ""
@@ -86,7 +110,8 @@ Write-Host "Note: First run may take longer while initializing Qiskit backend" -
 Write-Host ""
 
 try {
-    & ".\$MinerExecutable" @MinerArgs
+    Push-Location $WorkingDir
+    & ".\quantum-miner.exe" @MinerArgs
 } catch {
     Write-Host "ERROR: Failed to start GPU miner: $($_.Exception.Message)" -ForegroundColor Red
     Write-Host ""
@@ -96,4 +121,6 @@ try {
     Write-Host "  3. Check quantum-geth node is running at $NodeURL" -ForegroundColor White
     Write-Host "  4. Verify coinbase address format" -ForegroundColor White
     exit 1
+} finally {
+    Pop-Location
 } 
