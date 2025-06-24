@@ -3,6 +3,7 @@ param(
     [string]$Coinbase = "",
     [string]$NodeURL = "http://localhost:8545",
     [int]$Threads = 1,
+    [switch]$Log,
     [switch]$Help
 )
 
@@ -29,12 +30,14 @@ if ($Help) {
     Write-Host "  -Coinbase <address>    Coinbase address for mining rewards (required)" -ForegroundColor White
     Write-Host "  -NodeURL <url>         Quantum-Geth node URL (default: http://localhost:8545)" -ForegroundColor White
     Write-Host "  -Threads <number>      Number of CPU mining threads (default: 1)" -ForegroundColor White
+    Write-Host "  -Log                   Enable detailed logging to quantum-miner.log file" -ForegroundColor White
     Write-Host "  -Help                  Show this help message" -ForegroundColor White
     Write-Host ""
     Write-Host "Examples:" -ForegroundColor Yellow
     Write-Host "  .\run-cpu-miner.ps1 -Coinbase 0x742d35C6C4e6d8de6f10E7FF75DD98dd25b02C3A" -ForegroundColor Green
     Write-Host "  .\run-cpu-miner.ps1 -Coinbase 0x742d35C6C4e6d8de6f10E7FF75DD98dd25b02C3A -Threads 4" -ForegroundColor Green
     Write-Host "  .\run-cpu-miner.ps1 -Coinbase 0x742d35C6C4e6d8de6f10E7FF75DD98dd25b02C3A -NodeURL http://192.168.1.100:8545" -ForegroundColor Green
+    Write-Host "  .\run-cpu-miner.ps1 -Coinbase 0x742d35C6C4e6d8de6f10E7FF75DD98dd25b02C3A -Log  # Enable logging to file" -ForegroundColor Green
     Write-Host ""
     Write-Host "Features:" -ForegroundColor Yellow
     Write-Host "  * CPU quantum simulation (0.36 puzzles/sec)" -ForegroundColor Green
@@ -106,6 +109,9 @@ Write-Host "   Circuit Size: 16 qubits, 8192 T-gates" -ForegroundColor White
 Write-Host ""
 
 $MinerArgs = @("-coinbase", $Coinbase, "-node", $NodeURL, "-threads", $Threads)
+if ($Log) {
+    $MinerArgs += "-log"
+}
 
 Write-Host "Starting CPU quantum miner..." -ForegroundColor Blue
 Write-Host ""

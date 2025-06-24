@@ -363,17 +363,24 @@ function Build-QuantumMiner {
     }
     
     # Build with CUDA if available, otherwise CPU-only
-    if ($cudaAvailable) {
-        # Try CUDA build first
-        try {
-            & "quantum-miner\build-optimized.ps1"
-            Write-Host "CUDA-optimized quantum-miner built successfully" -ForegroundColor Green
-        } catch {
-            Write-Host "CUDA build failed, falling back to CPU-only build" -ForegroundColor Yellow
-            & "quantum-miner\build-simple.ps1"
+    $currentDir = Get-Location
+    try {
+        Set-Location "quantum-miner"
+        
+        if ($cudaAvailable) {
+            # Try CUDA build first
+            try {
+                & ".\build-optimized.ps1"
+                Write-Host "CUDA-optimized quantum-miner built successfully" -ForegroundColor Green
+            } catch {
+                Write-Host "CUDA build failed, falling back to CPU-only build" -ForegroundColor Yellow
+                & ".\build-simple.ps1"
+            }
+        } else {
+            & ".\build-simple.ps1"
         }
-    } else {
-        & "quantum-miner\build-simple.ps1"
+    } finally {
+        Set-Location $currentDir
     }
     
     # Copy files to release

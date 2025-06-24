@@ -91,6 +91,7 @@ if ($GethReleaseDir) {
     --http.api "eth,net,web3,personal,miner,qmpow,admin,debug,trace" `
     --http.corsdomain "*" `
     --http.vhosts "*" `
+    --mine `
     --miner.threads 0 `
     --miner.etherbase $etherbase `
     --authrpc.port $authrpcport `

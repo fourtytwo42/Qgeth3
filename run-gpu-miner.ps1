@@ -4,6 +4,7 @@ param(
     [string]$NodeURL = "http://localhost:8545",
     [int]$Threads = 1,
     [int]$GpuId = 0,
+    [switch]$Log,
     [switch]$Help
 )
 
@@ -31,6 +32,7 @@ if ($Help) {
     Write-Host "  -NodeURL <url>         Quantum-Geth node URL (default: http://localhost:8545)" -ForegroundColor White
     Write-Host "  -Threads <number>      Number of mining threads (default: 1)" -ForegroundColor White
     Write-Host "  -GpuId <number>        GPU device ID (default: 0)" -ForegroundColor White
+    Write-Host "  -Log                   Enable detailed logging to quantum-miner.log file" -ForegroundColor White
     Write-Host "  -Help                  Show this help message" -ForegroundColor White
     Write-Host ""
     Write-Host "Examples:" -ForegroundColor Yellow
@@ -38,6 +40,7 @@ if ($Help) {
     Write-Host "  .\run-gpu-miner.ps1 -Coinbase 0x742d35C6C4e6d8de6f10E7FF75DD98dd25b02C3A -Threads 2" -ForegroundColor Green
     Write-Host "  .\run-gpu-miner.ps1 -Coinbase 0x742d35C6C4e6d8de6f10E7FF75DD98dd25b02C3A -NodeURL http://192.168.1.100:8545" -ForegroundColor Green
     Write-Host "  .\run-gpu-miner.ps1 -Coinbase 0x742d35C6C4e6d8de6f10E7FF75DD98dd25b02C3A -GpuId 1" -ForegroundColor Green
+    Write-Host "  .\run-gpu-miner.ps1 -Coinbase 0x742d35C6C4e6d8de6f10E7FF75DD98dd25b02C3A -Log  # Enable logging to file" -ForegroundColor Green
     Write-Host ""
     Write-Host "Features:" -ForegroundColor Yellow
     Write-Host "  * Qiskit GPU acceleration (0.45 puzzles/sec)" -ForegroundColor Green
@@ -104,6 +107,9 @@ Write-Host "   Circuit Size: 16 qubits, 8192 T-gates" -ForegroundColor White
 Write-Host ""
 
 $MinerArgs = @("-gpu", "-coinbase", $Coinbase, "-node", $NodeURL, "-threads", $Threads, "-gpu-id", $GpuId)
+if ($Log) {
+    $MinerArgs += "-log"
+}
 
 Write-Host "Starting GPU quantum miner..." -ForegroundColor Blue
 Write-Host "Note: First run may take longer while initializing Qiskit backend" -ForegroundColor Yellow

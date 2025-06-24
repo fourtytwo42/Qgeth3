@@ -125,28 +125,19 @@ $difficultyHex = "0x" + [Convert]::ToString($difficultyInt, 16).ToUpper()
 
 Write-Host "  Converting difficulty: $difficulty -> $difficultyInt -> $difficultyHex" -ForegroundColor Gray
 
-# Create dynamic genesis JSON
+# Create dynamic genesis JSON with proper QMPoW consensus engine format
 $genesisJson = @"
 {
   "config": {
+    "networkId": $chainid,
     "chainId": $chainid,
-    "homesteadBlock": 0,
+    "eip2FBlock": 0,
+    "eip7FBlock": 0,
     "eip150Block": 0,
     "eip155Block": 0,
-    "eip158Block": 0,
-    "byzantiumBlock": 0,
-    "constantinopleBlock": 0,
-    "petersburgBlock": 0,
-    "istanbulBlock": 0,
-    "berlinBlock": 0,
-    "londonBlock": 0,
-    "arrowGlacierBlock": 0,
-    "grayGlacierBlock": 0,
-    "mergeNetsplitBlock": 0,
-    "shanghaiTime": 0,
-    "cancunTime": 0,
-    "pragueTime": null,
-    "verkleTime": null,
+    "eip160Block": 0,
+    "eip161FBlock": 0,
+    "eip170FBlock": 0,
     "qmpow": {
       "qbits": 16,
       "tcount": 8192,
@@ -155,13 +146,8 @@ $genesisJson = @"
       "testMode": false
     }
   },
-  "nonce": "0x0",
-  "timestamp": "0x0",
-  "extraData": "0x51756161746756756d2d476574682076302e39204261726542766e65732b48616c76696e67",
-  "gasLimit": "0x2fefd8",
   "difficulty": "$difficultyHex",
-  "mixHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
-  "coinbase": "0x0000000000000000000000000000000000000000",
+  "gasLimit": "0x2fefd8",
   "alloc": {
     "$etherbase": {
       "balance": "$balance"
@@ -172,13 +158,7 @@ $genesisJson = @"
     "0x1234567890123456789012345678901234567890": {
       "balance": "$balance"
     }
-  },
-  "number": "0x0",
-  "gasUsed": "0x0",
-  "parentHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
-  "baseFeePerGas": "0x7",
-  "excessBlobGas": "0x0",
-  "blobGasUsed": "0x0"
+  }
 }
 "@
 
