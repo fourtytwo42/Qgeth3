@@ -2,6 +2,7 @@
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -94,6 +95,60 @@ type QuantumMiner struct {
 
 	// Rate limiting to prevent overwhelming geth node
 	submissionSemaphore chan struct{} // Limits concurrent submissions
+
+	// THREAD-SAFE NONCE GENERATION: Ensures each thread produces unique nonces
+	nonceCounter uint64 // Atomic counter for unique nonce generation
+	nonceBase    uint64 // Base nonce value (timestamp + random)
+
+	// ENHANCED THREAD MANAGEMENT: Fix thread starvation and stale work issues
+	threadStates     map[int]*ThreadState // Track individual thread states
+	threadStateMux   sync.RWMutex         // Protect thread state access
+	activeThreads    int32                // Count of actively working threads
+	maxActiveThreads int32                // Maximum concurrent active threads
+
+	// MEMORY-EFFICIENT PUZZLE STAGING: Pre-allocate memory to avoid swapping
+	puzzleMemoryPool chan []PuzzleMemory // Pool of pre-allocated puzzle memory
+	memoryPoolSize   int                 // Size of memory pool
+
+	// STAGGERED EXECUTION: Prevent all threads from starting simultaneously
+	threadStartDelay time.Duration // Delay between thread starts
+	lastThreadStart  time.Time     // Track last thread start time
+}
+
+// ThreadState tracks individual thread execution state
+type ThreadState struct {
+	ID             int                // Thread ID
+	Status         string             // Current status: "idle", "working", "aborting", "stuck"
+	StartTime      time.Time          // When current work started
+	WorkHash       string             // Current work hash
+	QNonce         uint64             // Current qnonce being worked on
+	LastHeartbeat  time.Time          // Last activity timestamp
+	AbortRequested bool               // Whether abort has been requested
+	StuckCount     int                // Number of times marked as stuck
+	cancelFunc     context.CancelFunc // Context cancellation for hard abort
+}
+
+// PuzzleMemory represents pre-allocated memory for puzzle solving
+type PuzzleMemory struct {
+	Outcomes   [][]byte // Pre-allocated outcome buffers
+	GateHashes [][]byte // Pre-allocated gate hash buffers
+	WorkBuffer []byte   // Working memory buffer
+	ID         int      // Memory block ID for tracking
+}
+
+// ENHANCED WORK STRUCTURE: Add memory management
+type QuantumWork struct {
+	WorkHash    string    `json:"work_hash"`
+	BlockNumber uint64    `json:"block_number"`
+	Target      string    `json:"target"`
+	QBits       int       `json:"qbits"`
+	TCount      int       `json:"tcount"`
+	LNet        int       `json:"lnet"`
+	FetchTime   time.Time `json:"fetch_time"`
+
+	// Memory management
+	EstimatedMemory uint64 // Estimated memory requirement
+	Priority        int    // Work priority (higher = more important)
 }
 
 // JSON-RPC structures
@@ -114,17 +169,6 @@ type JSONRPCResponse struct {
 type RPCError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
-}
-
-// Work structures
-type QuantumWork struct {
-	WorkHash    string    `json:"work_hash"`
-	BlockNumber uint64    `json:"block_number"`
-	Target      string    `json:"target"`
-	QBits       int       `json:"qbits"`
-	TCount      int       `json:"tcount"`
-	LNet        int       `json:"lnet"`
-	FetchTime   time.Time `json:"fetch_time"`
 }
 
 type QuantumProofSubmission struct {
@@ -243,7 +287,10 @@ func main() {
 		client: &http.Client{
 			Timeout: 30 * time.Second,
 		},
-		submissionSemaphore: make(chan struct{}, 10), // Assuming a default limit of 10 concurrent submissions
+		submissionSemaphore: make(chan struct{}, 10), // Limit concurrent submissions
+		threadStates:        make(map[int]*ThreadState),
+		puzzleMemoryPool:    make(chan []PuzzleMemory, 100), // Memory pool for puzzle solving
+		threadStartDelay:    100 * time.Millisecond,         // Stagger thread starts
 	}
 
 	// Initialize HIGH-PERFORMANCE GPU acceleration if enabled
@@ -316,18 +363,230 @@ func (m *QuantumMiner) Start() error {
 		return fmt.Errorf("miner already running")
 	}
 
+	// Initialize thread-safe nonce generation
+	// Use timestamp + random value as base to ensure uniqueness across restarts
+	baseBytes := make([]byte, 4)
+	rand.Read(baseBytes)
+	randomPart := uint64(baseBytes[0])<<24 | uint64(baseBytes[1])<<16 | uint64(baseBytes[2])<<8 | uint64(baseBytes[3])
+	m.nonceBase = uint64(time.Now().Unix())<<32 | randomPart
+	m.nonceCounter = 0
+
+	log.Printf("🔢 Nonce base initialized: %016x", m.nonceBase)
+
+	// ENHANCED INITIALIZATION: Set up thread management and memory pools
+	m.initializeThreadManagement()
+	m.initializeMemoryPools()
+
 	// Start work fetcher
 	go m.workFetcher()
 
-	// Start mining threads
+	// Start thread monitor for stuck thread detection
+	go m.threadMonitor()
+
+	// Start mining threads with staggered execution
 	for i := 0; i < m.threads; i++ {
-		go m.miningThread(i)
+		go m.enhancedMiningThread(i)
+		// Stagger thread starts to prevent resource contention
+		time.Sleep(m.threadStartDelay)
 	}
 
 	// Start statistics reporter
 	go m.statsReporter()
 
 	return nil
+}
+
+// initializeThreadManagement sets up enhanced thread tracking
+func (m *QuantumMiner) initializeThreadManagement() {
+	m.threadStateMux.Lock()
+	defer m.threadStateMux.Unlock()
+
+	// Calculate optimal thread limits based on system resources
+	// Limit concurrent active threads to prevent resource exhaustion
+	m.maxActiveThreads = int32(m.threads / 2) // Max 50% threads active simultaneously
+	if m.maxActiveThreads < 2 {
+		m.maxActiveThreads = 2 // Minimum 2 active threads
+	}
+
+	// Set staggered execution delay
+	m.threadStartDelay = 100 * time.Millisecond // 100ms between thread starts
+
+	// Initialize thread states
+	for i := 0; i < m.threads; i++ {
+		m.threadStates[i] = &ThreadState{
+			ID:            i,
+			Status:        "idle",
+			LastHeartbeat: time.Now(),
+			StuckCount:    0,
+		}
+	}
+
+	logInfo("🧵 Thread management initialized: %d threads, max %d active", m.threads, m.maxActiveThreads)
+}
+
+// initializeMemoryPools pre-allocates memory to prevent swapping
+func (m *QuantumMiner) initializeMemoryPools() {
+	// Calculate memory requirements per puzzle set
+	const bytesPerQubits = 2    // 16 qubits = 2 bytes
+	const puzzlesPerSet = 48    // Standard puzzle count
+	const gateHashSize = 32     // SHA256 hash size
+	const workBufferSize = 1024 // Additional working memory
+
+	memoryPerSet := (bytesPerQubits * puzzlesPerSet) + (gateHashSize * puzzlesPerSet) + workBufferSize
+
+	// Pre-allocate memory pool to avoid runtime allocation
+	// Use available system memory efficiently
+	m.memoryPoolSize = 50 // Conservative pool size
+	if m.gpuMode {
+		m.memoryPoolSize = 20 // GPU mode uses more memory per operation
+	}
+
+	logInfo("🧠 Initializing memory pools: %d sets, %d bytes per set", m.memoryPoolSize, memoryPerSet)
+
+	// Pre-allocate all memory blocks
+	for i := 0; i < m.memoryPoolSize; i++ {
+		puzzleMemory := make([]PuzzleMemory, 1)
+		puzzleMemory[0] = PuzzleMemory{
+			ID:         i,
+			Outcomes:   make([][]byte, puzzlesPerSet),
+			GateHashes: make([][]byte, puzzlesPerSet),
+			WorkBuffer: make([]byte, workBufferSize),
+		}
+
+		// Pre-allocate outcome and gate hash buffers
+		for j := 0; j < puzzlesPerSet; j++ {
+			puzzleMemory[0].Outcomes[j] = make([]byte, bytesPerQubits)
+			puzzleMemory[0].GateHashes[j] = make([]byte, gateHashSize)
+		}
+
+		// Add to pool (non-blocking)
+		select {
+		case m.puzzleMemoryPool <- puzzleMemory:
+		default:
+			// Pool full, this shouldn't happen during initialization
+			logError("Memory pool full during initialization")
+		}
+	}
+
+	logInfo("✅ Memory pools initialized: %d MB pre-allocated", (memoryPerSet*m.memoryPoolSize)/(1024*1024))
+}
+
+// threadMonitor watches for stuck threads and recovers them
+func (m *QuantumMiner) threadMonitor() {
+	ticker := time.NewTicker(5 * time.Second) // Check every 5 seconds
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-m.stopChan:
+			return
+		case <-ticker.C:
+			m.checkForStuckThreads()
+		}
+	}
+}
+
+// checkForStuckThreads identifies and recovers stuck threads
+func (m *QuantumMiner) checkForStuckThreads() {
+	m.threadStateMux.Lock()
+	defer m.threadStateMux.Unlock()
+
+	now := time.Now()
+	stuckThreshold := 15 * time.Second // Consider stuck after 15 seconds
+
+	for threadID, state := range m.threadStates {
+		if state.Status == "working" {
+			timeSinceHeartbeat := now.Sub(state.LastHeartbeat)
+
+			if timeSinceHeartbeat > stuckThreshold {
+				state.StuckCount++
+				logInfo("🚨 Thread %d stuck for %v (count: %d), attempting recovery",
+					threadID, timeSinceHeartbeat, state.StuckCount)
+
+				// Request abort
+				state.AbortRequested = true
+				state.Status = "aborting"
+
+				// Hard abort if stuck multiple times
+				if state.StuckCount >= 3 && state.cancelFunc != nil {
+					logInfo("🛑 Hard aborting thread %d after %d stuck occurrences", threadID, state.StuckCount)
+					state.cancelFunc()
+				}
+			}
+		}
+	}
+}
+
+// enhancedMiningThread runs a single mining thread with improved lifecycle management
+func (m *QuantumMiner) enhancedMiningThread(threadID int) {
+	// Initialize thread state
+	m.threadStateMux.Lock()
+	state := m.threadStates[threadID]
+	state.Status = "idle"
+	state.LastHeartbeat = time.Now()
+	m.threadStateMux.Unlock()
+
+	logInfo("🧵 Thread %d started with enhanced management", threadID)
+
+	for {
+		select {
+		case <-m.stopChan:
+			m.updateThreadState(threadID, "stopped", "", 0)
+			return
+		default:
+			// Check if we should throttle thread activation
+			if !m.shouldActivateThread(threadID) {
+				time.Sleep(200 * time.Millisecond)
+				continue
+			}
+
+			if err := m.enhancedMineBlock(threadID); err != nil {
+				m.updateThreadState(threadID, "error", "", 0)
+				time.Sleep(100 * time.Millisecond)
+			}
+		}
+	}
+}
+
+// shouldActivateThread determines if a thread should become active
+func (m *QuantumMiner) shouldActivateThread(threadID int) bool {
+	activeCount := atomic.LoadInt32(&m.activeThreads)
+
+	// Always allow if under the limit
+	if activeCount < m.maxActiveThreads {
+		return true
+	}
+
+	// Check if this thread is already active
+	m.threadStateMux.RLock()
+	state := m.threadStates[threadID]
+	isActive := state.Status == "working"
+	m.threadStateMux.RUnlock()
+
+	return isActive
+}
+
+// updateThreadState safely updates thread state
+func (m *QuantumMiner) updateThreadState(threadID int, status string, workHash string, qnonce uint64) {
+	m.threadStateMux.Lock()
+	defer m.threadStateMux.Unlock()
+
+	state := m.threadStates[threadID]
+	oldStatus := state.Status
+
+	state.Status = status
+	state.WorkHash = workHash
+	state.QNonce = qnonce
+	state.LastHeartbeat = time.Now()
+
+	// Update active thread count
+	if oldStatus != "working" && status == "working" {
+		atomic.AddInt32(&m.activeThreads, 1)
+		state.StartTime = time.Now()
+		state.AbortRequested = false
+	} else if oldStatus == "working" && status != "working" {
+		atomic.AddInt32(&m.activeThreads, -1)
+	}
 }
 
 // Stop stops the miner
@@ -407,9 +666,9 @@ func (m *QuantumMiner) testConnection() error {
 
 // workFetcher continuously fetches work from quantum-geth
 func (m *QuantumMiner) workFetcher() {
-	// OPTIMIZED: Balanced work refresh for continuous mining
-	// Fast enough to get fresh work quickly, not so fast as to overwhelm geth
-	ticker := time.NewTicker(500 * time.Millisecond) // 2x per second - good balance
+	// AGGRESSIVE WORK REFRESH: Fast response to rapid block changes
+	// When blocks are being found every 12 seconds, we need sub-second work updates
+	ticker := time.NewTicker(100 * time.Millisecond) // 10x per second - very aggressive for rapid blocks
 	defer ticker.Stop()
 
 	for {
@@ -419,7 +678,7 @@ func (m *QuantumMiner) workFetcher() {
 		case <-ticker.C:
 			if err := m.fetchWork(); err != nil {
 				log.Printf("❌ Failed to fetch work: %v", err)
-				time.Sleep(1 * time.Second) // Brief pause on error
+				time.Sleep(200 * time.Millisecond) // Brief pause on error
 			}
 		}
 	}
@@ -491,76 +750,86 @@ func (m *QuantumMiner) fetchWork() error {
 	return nil
 }
 
-// miningThread runs a single mining thread
-func (m *QuantumMiner) miningThread(threadID int) {
-	// Quiet operation - no startup logging for clean dashboard
-
-	for {
-		select {
-		case <-m.stopChan:
-			return
-		default:
-			if err := m.mineBlock(threadID); err != nil {
-				time.Sleep(100 * time.Millisecond)
-			}
-		}
-	}
-}
-
-// mineBlock performs quantum mining for one iteration - solving actual quantum puzzles
-func (m *QuantumMiner) mineBlock(threadID int) error {
+// enhancedMineBlock performs quantum mining with improved thread and memory management
+func (m *QuantumMiner) enhancedMineBlock(threadID int) error {
 	// Get current work
 	m.workMutex.RLock()
 	work := m.currentWork
 	m.workMutex.RUnlock()
 
 	if work == nil {
+		m.updateThreadState(threadID, "idle", "", 0)
 		time.Sleep(100 * time.Millisecond)
 		return nil
 	}
 
-	// CONTINUOUS MINING: Only abort work if it's extremely stale or we have newer work
-	// This ensures threads never stop mining and maintain consistent performance
-	if time.Since(work.FetchTime) > 30*time.Second {
-		// Only abort extremely stale work (network issues)
+	// Check if thread should abort due to monitoring
+	m.threadStateMux.RLock()
+	state := m.threadStates[threadID]
+	shouldAbort := state.AbortRequested
+	m.threadStateMux.RUnlock()
+
+	if shouldAbort {
+		m.updateThreadState(threadID, "idle", "", 0)
+		logInfo("Thread %d: Aborting due to monitor request", threadID)
 		return nil
 	}
 
-	// Generate quantum nonce (similar to geth's approach)
-	var qnonce uint64
-	nonceBytes := make([]byte, 8)
-	rand.Read(nonceBytes)
-	for i := 0; i < 8; i++ {
-		qnonce |= uint64(nonceBytes[i]) << (i * 8)
-	}
+	// ENHANCED STALENESS CHECK: Only abandon work if we get work for a newer block
+	// Time-based staleness was too aggressive - we should keep trying the same block until it's mined
+	// The real "stale" condition is when geth gives us work for a different (newer) block number
+
+	// THREAD-SAFE UNIQUE QUANTUM NONCE GENERATION
+	counter := atomic.AddUint64(&m.nonceCounter, 1)
+	qnonce := m.nonceBase + (counter << 8) + uint64(threadID)
+
+	// Update thread state to working
+	m.updateThreadState(threadID, "working", work.WorkHash, qnonce)
+
+	// Create context for cancellation - shorter timeout to prevent stuck threads
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Store cancel function for hard abort
+	m.threadStateMux.Lock()
+	m.threadStates[threadID].cancelFunc = cancel
+	m.threadStateMux.Unlock()
 
 	// Store work hash for change detection during puzzle solving
 	workHash := work.WorkHash
 
-	// Solve quantum puzzles quietly for clean dashboard
+	// Solve quantum puzzles with memory management
 	puzzleStart := time.Now()
-	proof, err := m.solveQuantumPuzzles(work.WorkHash, qnonce, work.QBits, work.TCount, work.LNet)
+	proof, err := m.enhancedSolveQuantumPuzzles(ctx, threadID, work.WorkHash, qnonce, work.QBits, work.TCount, work.LNet)
 	if err != nil {
+		m.updateThreadState(threadID, "error", "", 0)
+		// Check if it was a context cancellation (abort) - don't spam logs
+		if ctx.Err() == context.DeadlineExceeded {
+			logInfo("Thread %d: Puzzle solving timed out after 5s, aborting", threadID)
+		} else if ctx.Err() == context.Canceled {
+			logInfo("Thread %d: Puzzle solving cancelled, aborting", threadID)
+		} else {
+			logError("Thread %d: Puzzle solving failed: %v", threadID, err)
+		}
 		return err
 	}
 
 	puzzleTime := time.Since(puzzleStart)
 
-	// OPTIMIZED: Check if work changed during puzzle solving (smart work transition)
+	// Update heartbeat
+	m.updateThreadState(threadID, "working", workHash, qnonce)
+
+	// ENHANCED WORK CHANGE DETECTION: Check for new work
 	m.workMutex.RLock()
 	currentWork := m.currentWork
 	m.workMutex.RUnlock()
 
 	if currentWork == nil || currentWork.WorkHash != workHash {
-		// Work changed during puzzle solving - check if solution is still valuable
-		// Only abort if the new work is significantly newer (>5 seconds)
-		if currentWork != nil && time.Since(currentWork.FetchTime) < 5*time.Second {
-			logInfo("Thread %d: Work changed during solving, but continuing with current solution", threadID)
-			// Continue with current solution - it might still be valid
-		} else {
-			// New work is recent, abort stale solution
-			return nil
+		m.updateThreadState(threadID, "idle", "", 0)
+		if currentWork != nil && time.Since(currentWork.FetchTime) < 2*time.Second {
+			logInfo("Thread %d: Fresh work available (age: %v), aborting stale solution", threadID, time.Since(currentWork.FetchTime))
 		}
+		return nil
 	}
 
 	// Update solve time statistics
@@ -568,15 +837,15 @@ func (m *QuantumMiner) mineBlock(threadID int) error {
 	m.totalSolveTime += puzzleTime
 
 	// Debug logging for GPU mining investigation
-	logInfo("Thread %d: Solved %d puzzles in %v, checking target...", threadID, work.LNet, puzzleTime)
+	logInfo("Thread %d: Solved %d puzzles in %v, qnonce=%016x, checking target...", threadID, work.LNet, puzzleTime, qnonce)
 
 	// Check if solution meets target (Bitcoin-style difficulty check)
 	if m.checkQuantumTarget(proof, work.Target) {
-		logInfo("Thread %d: Target met! Submitting solution...", threadID)
+		logInfo("Thread %d: Target met! Submitting solution qnonce=%016x...", threadID, qnonce)
 		// Block found! Submit quietly
 		if err := m.submitQuantumWork(qnonce, work.WorkHash, proof); err != nil {
 			errMsg := err.Error()
-			logError("Thread %d: Submission failed: %v", threadID, err)
+			logError("Thread %d: Submission failed qnonce=%016x: %v", threadID, qnonce, err)
 			if strings.Contains(errMsg, "stale") {
 				atomic.AddUint64(&m.stale, 1)
 			} else if strings.Contains(errMsg, "duplicate") {
@@ -585,7 +854,7 @@ func (m *QuantumMiner) mineBlock(threadID int) error {
 				atomic.AddUint64(&m.rejected, 1)
 			}
 		} else {
-			logInfo("Thread %d: Block accepted! 🎉", threadID)
+			logInfo("Thread %d: Block accepted qnonce=%016x! 🎉", threadID, qnonce)
 			atomic.AddUint64(&m.accepted, 1)
 			// Track new block time for average calculation
 			now := time.Now()
@@ -595,18 +864,273 @@ func (m *QuantumMiner) mineBlock(threadID int) error {
 			}
 
 			// CONTINUOUS MINING: Immediately request fresh work after finding a block
-			// This ensures mining never stops and maintains peak performance
 			go func() {
 				time.Sleep(100 * time.Millisecond) // Brief delay to avoid overwhelming geth
 				m.fetchWork()                      // Trigger immediate work refresh
 			}()
 		}
 	} else {
-		logInfo("Thread %d: Target not met, trying next nonce...", threadID)
+		logInfo("Thread %d: Target not met qnonce=%016x, trying next nonce...", threadID, qnonce)
 	}
 
 	atomic.AddUint64(&m.attempts, 1)
+	m.updateThreadState(threadID, "idle", "", 0)
 	return nil
+}
+
+// enhancedSolveQuantumPuzzles solves puzzles with memory management and cancellation support
+func (m *QuantumMiner) enhancedSolveQuantumPuzzles(ctx context.Context, threadID int, workHash string, qnonce uint64, qbits, tcount, lnet int) (QuantumProofSubmission, error) {
+	// Acquire memory from pool
+	var memoryBlock []PuzzleMemory
+	select {
+	case memoryBlock = <-m.puzzleMemoryPool:
+		// Got memory block
+	case <-time.After(1 * time.Second):
+		// No memory available, fall back to regular allocation
+		logInfo("Thread %d: Memory pool exhausted, using fallback allocation", threadID)
+		return m.solveQuantumPuzzles(workHash, qnonce, qbits, tcount, lnet)
+	case <-ctx.Done():
+		return QuantumProofSubmission{}, ctx.Err()
+	}
+
+	// Ensure memory is returned to pool
+	defer func() {
+		select {
+		case m.puzzleMemoryPool <- memoryBlock:
+			// Memory returned successfully
+		default:
+			// Pool full, this is unusual but not critical
+			logInfo("Thread %d: Memory pool full on return, discarding block", threadID)
+		}
+	}()
+
+	memory := &memoryBlock[0]
+
+	// Update heartbeat periodically
+	heartbeatTicker := time.NewTicker(1 * time.Second)
+	defer heartbeatTicker.Stop()
+
+	// Start heartbeat goroutine
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-heartbeatTicker.C:
+				m.updateThreadState(threadID, "working", workHash, qnonce)
+			}
+		}
+	}()
+
+	// Simulate quantum computation time based on circuit complexity and GPU acceleration
+	var baseTime time.Duration
+	var complexityFactor float64
+
+	if m.gpuMode {
+		// GPU mining with CUDA acceleration - much faster parallel quantum circuit execution
+		baseTime = 3 * time.Millisecond                              // Reduced from 5ms for better responsiveness
+		complexityFactor = float64(qbits*tcount) / (16 * 8192) * 0.1 // Additional GPU optimization
+	} else {
+		// CPU mining with standard timing
+		baseTime = 30 * time.Millisecond                       // Reduced from 50ms for better responsiveness
+		complexityFactor = float64(qbits*tcount) / (16 * 8192) // Relative to standard params
+	}
+
+	// Note: puzzleTime calculated but not used in enhanced version
+	// as timing is handled by the GPU/CPU simulation functions
+	_ = time.Duration(float64(baseTime) * complexityFactor)
+
+	// Solve puzzles using pre-allocated memory
+	var outcomes [][]byte
+	var gateHashes [][]byte
+
+	if m.gpuMode && m.hybridSimulator != nil {
+		// Use HIGH-PERFORMANCE batch quantum simulation with cancellation
+		logInfo("Starting GPU batch simulation: %d puzzles, %d qubits, %d gates", lnet, qbits, tcount)
+
+		// Create a channel to receive results
+		resultChan := make(chan [][]byte, 1)
+		errorChan := make(chan error, 1)
+
+		// Run GPU simulation in goroutine with timeout protection
+		go func() {
+			// Add internal timeout to prevent GPU simulation from hanging indefinitely
+			gpuCtx, gpuCancel := context.WithTimeout(context.Background(), 4*time.Second)
+			defer gpuCancel()
+
+			// Monitor for cancellation while GPU runs
+			done := make(chan bool, 1)
+
+			go func() {
+				batchOutcomes, err := m.hybridSimulator.BatchSimulateQuantumPuzzles(
+					workHash, qnonce, qbits, tcount, lnet,
+				)
+				select {
+				case <-gpuCtx.Done():
+					// GPU timeout - don't send results
+					return
+				default:
+					if err != nil {
+						errorChan <- err
+					} else {
+						resultChan <- batchOutcomes
+					}
+					done <- true
+				}
+			}()
+
+			// Wait for GPU completion or timeout
+			select {
+			case <-done:
+				// GPU completed successfully
+			case <-gpuCtx.Done():
+				// GPU timed out - this prevents stuck threads
+				errorChan <- fmt.Errorf("GPU simulation timed out after 4s")
+			}
+		}()
+
+		// Wait for completion, error, or cancellation
+		select {
+		case batchOutcomes := <-resultChan:
+			outcomes = batchOutcomes
+		case err := <-errorChan:
+			if err.Error() != "simulation interrupted" {
+				// Only log timeout errors occasionally to avoid spam
+				if ctx.Err() == nil {
+					logError("Thread %d: GPU simulation failed: %v", threadID, err)
+				}
+			}
+			// Fallback to CPU with pre-allocated memory
+			return m.cpuFallbackWithMemory(ctx, threadID, memory, workHash, qnonce, qbits, tcount, lnet)
+		case <-ctx.Done():
+			logInfo("Thread %d: GPU simulation cancelled by context", threadID)
+			return QuantumProofSubmission{}, ctx.Err()
+		}
+	} else {
+		// Use CPU simulation with pre-allocated memory
+		return m.cpuFallbackWithMemory(ctx, threadID, memory, workHash, qnonce, qbits, tcount, lnet)
+	}
+
+	// Generate gate hashes using pre-allocated memory
+	for puzzleIndex := 0; puzzleIndex < lnet; puzzleIndex++ {
+		// Check for cancellation
+		select {
+		case <-ctx.Done():
+			return QuantumProofSubmission{}, ctx.Err()
+		default:
+		}
+
+		seed := fmt.Sprintf("%s_%016x_%d", workHash, qnonce, puzzleIndex)
+		gateData := fmt.Sprintf("gates_%s_%d_qubits_%d_tgates", seed, qbits, tcount)
+		gateHash := sha256Hash(gateData)
+
+		// Reuse pre-allocated buffer
+		copy(memory.GateHashes[puzzleIndex], []byte(gateHash)[:32])
+		gateHashes = append(gateHashes, memory.GateHashes[puzzleIndex])
+	}
+
+	// Calculate outcome root from all puzzle outcomes (like geth)
+	outcomeRoot := m.calculateOutcomeRoot(outcomes)
+
+	// Calculate combined gate hash
+	combinedGateData := ""
+	for _, gh := range gateHashes {
+		combinedGateData += fmt.Sprintf("%x", gh)
+	}
+	gateHash := sha256Hash(combinedGateData)
+
+	// Generate proof root and other proof components
+	proofData := fmt.Sprintf("%s_%s_%016x", outcomeRoot, gateHash, qnonce)
+	proofRoot := sha256Hash(proofData)
+
+	// Generate branch nibbles and extra nonce
+	branchData := fmt.Sprintf("branch_%s_%016x", workHash, qnonce)
+	branchHash := sha256Hash(branchData)
+
+	extraNonceData := fmt.Sprintf("extra_%016x_%s", qnonce, workHash)
+	extraNonceHash := sha256Hash(extraNonceData)
+
+	return QuantumProofSubmission{
+		OutcomeRoot:   outcomeRoot,
+		GateHash:      gateHash,
+		ProofRoot:     proofRoot,
+		BranchNibbles: branchHash[:8],     // First 8 characters
+		ExtraNonce32:  extraNonceHash[:8], // First 8 characters
+	}, nil
+}
+
+// cpuFallbackWithMemory performs CPU simulation using pre-allocated memory
+func (m *QuantumMiner) cpuFallbackWithMemory(ctx context.Context, threadID int, memory *PuzzleMemory, workHash string, qnonce uint64, qbits, tcount, lnet int) (QuantumProofSubmission, error) {
+	var outcomes [][]byte
+	var gateHashes [][]byte
+
+	// Use optimized CPU simulation with proper CPU timing and pre-allocated memory
+	for puzzleIndex := 0; puzzleIndex < lnet; puzzleIndex++ {
+		// Check for cancellation frequently
+		select {
+		case <-ctx.Done():
+			return QuantumProofSubmission{}, ctx.Err()
+		default:
+		}
+
+		// Shorter sleep for better responsiveness
+		time.Sleep(20 * time.Millisecond) // Reduced from 50ms
+
+		// UNIQUE SOLUTION: Use qnonce and puzzle index for unique seeds per thread
+		seed := fmt.Sprintf("%s_%016x_%d_%d", workHash, qnonce, puzzleIndex, time.Now().UnixNano())
+		hash := sha256Hash(fmt.Sprintf("outcome_%s", seed))
+
+		// Use pre-allocated buffer
+		copy(memory.Outcomes[puzzleIndex], []byte(hash)[:len(memory.Outcomes[puzzleIndex])])
+		outcomes = append(outcomes, memory.Outcomes[puzzleIndex])
+
+		// Update heartbeat every few iterations
+		if puzzleIndex%10 == 0 {
+			m.updateThreadState(threadID, "working", workHash, qnonce)
+		}
+	}
+
+	// Generate gate hashes using pre-allocated memory
+	for puzzleIndex := 0; puzzleIndex < lnet; puzzleIndex++ {
+		select {
+		case <-ctx.Done():
+			return QuantumProofSubmission{}, ctx.Err()
+		default:
+		}
+
+		seed := fmt.Sprintf("%s_%016x_%d", workHash, qnonce, puzzleIndex)
+		gateData := fmt.Sprintf("gates_%s_%d_qubits_%d_tgates", seed, qbits, tcount)
+		gateHash := sha256Hash(gateData)
+
+		copy(memory.GateHashes[puzzleIndex], []byte(gateHash)[:32])
+		gateHashes = append(gateHashes, memory.GateHashes[puzzleIndex])
+	}
+
+	// Calculate outcome root and other components
+	outcomeRoot := m.calculateOutcomeRoot(outcomes)
+
+	combinedGateData := ""
+	for _, gh := range gateHashes {
+		combinedGateData += fmt.Sprintf("%x", gh)
+	}
+	gateHash := sha256Hash(combinedGateData)
+
+	proofData := fmt.Sprintf("%s_%s_%016x", outcomeRoot, gateHash, qnonce)
+	proofRoot := sha256Hash(proofData)
+
+	branchData := fmt.Sprintf("branch_%s_%016x", workHash, qnonce)
+	branchHash := sha256Hash(branchData)
+
+	extraNonceData := fmt.Sprintf("extra_%016x_%s", qnonce, workHash)
+	extraNonceHash := sha256Hash(extraNonceData)
+
+	return QuantumProofSubmission{
+		OutcomeRoot:   outcomeRoot,
+		GateHash:      gateHash,
+		ProofRoot:     proofRoot,
+		BranchNibbles: branchHash[:8],
+		ExtraNonce32:  extraNonceHash[:8],
+	}, nil
 }
 
 // solveQuantumPuzzles simulates solving actual quantum puzzles (like geth's approach)
@@ -668,7 +1192,8 @@ func (m *QuantumMiner) solveQuantumPuzzles(workHash string, qnonce uint64, qbits
 		// Use optimized CPU simulation with proper CPU timing (not GPU timing)
 		for puzzleIndex := 0; puzzleIndex < lnet; puzzleIndex++ {
 			time.Sleep(50 * time.Millisecond) // Proper CPU timing
-			seed := fmt.Sprintf("%s_%d_%d_%d", workHash, qnonce, puzzleIndex, time.Now().UnixNano())
+			// UNIQUE SOLUTION: Use qnonce and puzzle index for unique seeds per thread
+			seed := fmt.Sprintf("%s_%016x_%d_%d", workHash, qnonce, puzzleIndex, time.Now().UnixNano())
 			outcomeBytes := make([]byte, (qbits+7)/8)
 			hash := sha256Hash(fmt.Sprintf("outcome_%s", seed))
 			copy(outcomeBytes, []byte(hash)[:len(outcomeBytes)])
@@ -678,7 +1203,8 @@ func (m *QuantumMiner) solveQuantumPuzzles(workHash string, qnonce uint64, qbits
 		// Use CPU simulation (previous behavior)
 		for puzzleIndex := 0; puzzleIndex < lnet; puzzleIndex++ {
 			time.Sleep(puzzleTime)
-			seed := fmt.Sprintf("%s_%d_%d_%d", workHash, qnonce, puzzleIndex, time.Now().UnixNano())
+			// UNIQUE SOLUTION: Use qnonce and puzzle index for unique seeds per thread
+			seed := fmt.Sprintf("%s_%016x_%d_%d", workHash, qnonce, puzzleIndex, time.Now().UnixNano())
 			outcomeBytes := make([]byte, (qbits+7)/8)
 			hash := sha256Hash(fmt.Sprintf("outcome_%s", seed))
 			copy(outcomeBytes, []byte(hash)[:len(outcomeBytes)])
@@ -686,9 +1212,9 @@ func (m *QuantumMiner) solveQuantumPuzzles(workHash string, qnonce uint64, qbits
 		}
 	}
 
-	// Generate gate hashes for all puzzles
+	// Generate gate hashes for all puzzles with unique qnonce
 	for puzzleIndex := 0; puzzleIndex < lnet; puzzleIndex++ {
-		seed := fmt.Sprintf("%s_%d_%d", workHash, qnonce, puzzleIndex)
+		seed := fmt.Sprintf("%s_%016x_%d", workHash, qnonce, puzzleIndex)
 		gateData := fmt.Sprintf("gates_%s_%d_qubits_%d_tgates", seed, qbits, tcount)
 		gateHash := sha256Hash(gateData)
 		gateHashes = append(gateHashes, []byte(gateHash)[:32])
@@ -704,8 +1230,8 @@ func (m *QuantumMiner) solveQuantumPuzzles(workHash string, qnonce uint64, qbits
 	}
 	gateHash := sha256Hash(combinedGateData)
 
-	// Generate proof root (Nova proofs simulation)
-	proofData := fmt.Sprintf("nova_proof_%s_%s_%s", outcomeRoot, gateHash, workHash)
+	// Generate proof root (Nova proofs simulation) with unique qnonce
+	proofData := fmt.Sprintf("nova_proof_%s_%s_%s_%016x", outcomeRoot, gateHash, workHash, qnonce)
 	proofRoot := sha256Hash(proofData)
 
 	// Generate branch nibbles (48 bytes for 48 puzzles)
@@ -716,10 +1242,10 @@ func (m *QuantumMiner) solveQuantumPuzzles(workHash string, qnonce uint64, qbits
 		}
 	}
 
-	// Generate extra nonce
+	// Generate extra nonce with embedded qnonce for uniqueness
 	extraNonce := make([]byte, 32)
 	rand.Read(extraNonce)
-	// Embed qnonce in extra nonce
+	// Embed qnonce in extra nonce for guaranteed uniqueness
 	for i := 0; i < 8; i++ {
 		extraNonce[i] = byte(qnonce >> (i * 8))
 	}
@@ -735,8 +1261,8 @@ func (m *QuantumMiner) solveQuantumPuzzles(workHash string, qnonce uint64, qbits
 
 // solveQuantumPuzzleCPU solves a single quantum puzzle using CPU simulation
 func (m *QuantumMiner) solveQuantumPuzzleCPU(puzzleIndex int, workHash string, qnonce uint64, qbits, tcount int) ([]byte, error) {
-	// Generate deterministic quantum circuit
-	seed := fmt.Sprintf("%s_%d_%d", workHash, qnonce, puzzleIndex)
+	// Generate deterministic quantum circuit with unique qnonce
+	seed := fmt.Sprintf("%s_%016x_%d", workHash, qnonce, puzzleIndex)
 
 	// Simulate quantum measurement outcome (qbits of data)
 	outcomeBytes := make([]byte, (qbits+7)/8)
@@ -988,6 +1514,11 @@ func (m *QuantumMiner) updateDashboard() {
 		accepted, rejected, stale)
 	fmt.Printf("│ 📊 Work Stats      │ Total QNonces: %-10d │ Total Puzzles: %-10d │\n",
 		attempts, puzzlesSolved)
+
+	// Enhanced thread status display
+	activeCount := atomic.LoadInt32(&m.activeThreads)
+	fmt.Printf("│ 🧵 Thread Status   │ Active: %d/%-2d │ Max Concurrent: %-2d │ Pool: %d/%d │\n",
+		activeCount, m.threads, m.maxActiveThreads, len(m.puzzleMemoryPool), m.memoryPoolSize)
 	fmt.Println("├─────────────────────────────────────────────────────────────────────────────────┤")
 	fmt.Printf("│ 🔗 Current Block   │ Block: %-10d │ Difficulty: %-15d │\n",
 		blockNumber, m.currentDifficulty)
