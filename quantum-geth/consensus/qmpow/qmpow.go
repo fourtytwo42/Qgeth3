@@ -506,8 +506,20 @@ func (q *QMPoW) Seal(chain consensus.ChainHeaderReader, block *types.Block, resu
 		q.remote.submitWork(block, results)
 	}
 
-	// Also start local mining in a separate goroutine
-	go q.seal(chain, block, results, stop)
+	// Check if local mining is disabled (threads = -1)
+	q.lock.RLock()
+	threads := q.threads
+	q.lock.RUnlock()
+
+	// Only start local mining if threads > 0 or threads == 0 (default)
+	// When threads == -1, local mining is explicitly disabled for external miners only
+	if threads != -1 {
+		// Start local mining in a separate goroutine
+		go q.seal(chain, block, results, stop)
+	} else {
+		log.Info("🚫 Local mining disabled (threads=-1), only serving external miners")
+	}
+	
 	return nil
 }
 
