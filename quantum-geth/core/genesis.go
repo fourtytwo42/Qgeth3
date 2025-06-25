@@ -93,7 +93,7 @@ func SetupGenesisBlock(db ethdb.Database, triedb *triedb.Database, genesis *gene
 
 func SetupGenesisBlockWithOverride(db ethdb.Database, triedb *triedb.Database, genesis *genesisT.Genesis, overrides *ChainOverrides) (ctypes.ChainConfigurator, common.Hash, error) {
 	if genesis != nil && confp.IsEmpty(genesis.Config) {
-		return params.AllEthashProtocolChanges, common.Hash{}, genesisT.ErrGenesisNoConfig
+		return params.QCoinTestnetChainConfig, common.Hash{}, genesisT.ErrGenesisNoConfig
 	}
 
 	applyOverrides := func(config ctypes.ChainConfigurator) {
@@ -322,7 +322,8 @@ func configOrDefault(g *genesisT.Genesis, ghash common.Hash) ctypes.ChainConfigu
 	case ghash == params.MintMeGenesisHash:
 		return params.MintMeChainConfig
 	default:
-		return params.AllEthashProtocolChanges
+		// Q Coin uses QMPoW consensus - return Q Coin testnet config as fallback
+		return params.QCoinTestnetChainConfig
 	}
 }
 
@@ -578,7 +579,7 @@ func CommitGenesis(g *genesisT.Genesis, db ethdb.Database, triedb *triedb.Databa
 	}
 	config := g.Config
 	if config == nil {
-		config = params.AllEthashProtocolChanges
+		config = params.QCoinTestnetChainConfig
 	}
 
 	// Upstream omission:
