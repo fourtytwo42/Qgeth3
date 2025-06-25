@@ -120,6 +120,13 @@ fi
 echo -e "\033[36m$NETWORK_NAME - Starting Geth Node\033[0m"
 echo ""
 
+# Check if genesis file exists
+if [ ! -f "$GENESIS_FILE" ]; then
+    echo -e "\033[31mERROR: Genesis file not found: $GENESIS_FILE\033[0m"
+    echo -e "\033[33mMake sure you're running this script from the scripts directory\033[0m"
+    exit 1
+fi
+
 GETH_RELEASE_DIR=$(find ../releases -name "quantum-geth-*" -type d 2>/dev/null | sort -r | head -n 1)
 if [ -z "$GETH_RELEASE_DIR" ]; then
     echo -e "\033[31mERROR: No quantum-geth release found!\033[0m"
@@ -134,7 +141,21 @@ fi
 
 if [ ! -f "$GETH_EXECUTABLE" ]; then
     echo -e "\033[31mERROR: Geth executable not found in release directory!\033[0m"
-    exit 1
+    echo -e "\033[33mFound release dir: $GETH_RELEASE_DIR\033[0m"
+    echo -e "\033[33mTrying to build release...\033[0m"
+    
+    # Try to build a release
+    if ./build-release.sh geth; then
+        GETH_RELEASE_DIR=$(find ../releases -name "quantum-geth-*" -type d 2>/dev/null | sort -r | head -n 1)
+        GETH_EXECUTABLE="$GETH_RELEASE_DIR/geth"
+        if [ ! -f "$GETH_EXECUTABLE" ]; then
+            echo -e "\033[31mERROR: Build succeeded but executable still not found!\033[0m"
+            exit 1
+        fi
+    else
+        echo -e "\033[31mERROR: Failed to build quantum-geth release!\033[0m"
+        exit 1
+    fi
 fi
 
 echo -e "\033[32mUsing geth from: $(basename "$GETH_RELEASE_DIR")\033[0m"

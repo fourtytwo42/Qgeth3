@@ -89,30 +89,33 @@ echo ""
 if [ ! -d "$DATADIR" ]; then
     echo "Data directory '$DATADIR' not found!"
     echo "Initializing with quantum genesis..."
-    echo "  ./scripts/reset-blockchain.sh --difficulty 1 --force"
+    echo "  ./dev-reset-blockchain.sh --difficulty 1 --force"
     echo ""
     echo "Please run the reset script first to initialize the blockchain:"
-    echo "   ./scripts/reset-blockchain.sh --difficulty 1 --force"
+    echo "   ./dev-reset-blockchain.sh --difficulty 1 --force"
     echo ""
     exit 1
 fi
 
 echo "Starting quantum geth node (NO MINING)..."
 echo "This node serves RPC/HTTP endpoints for external miners WITHOUT mining itself."
-echo "Use ./scripts/start-mining.sh to start mining, or external miners to mine."
+echo "Use ./start-mining.sh to start mining, or external miners to mine."
 echo "Press Ctrl+C to stop the node."
 echo ""
 
 # Find the newest quantum-geth release or use development version
-GETH_RELEASE_DIR=$(find releases -name "quantum-geth-*" -type d 2>/dev/null | sort -V | tail -1)
+GETH_RELEASE_DIR=$(find ../releases -name "quantum-geth-*" -type d 2>/dev/null | sort -V | tail -1)
 
 if [ -n "$GETH_RELEASE_DIR" ] && [ -f "$GETH_RELEASE_DIR/geth" ]; then
     echo "Using geth from release: $(basename $GETH_RELEASE_DIR)"
     GETH_PATH="$GETH_RELEASE_DIR/geth"
+elif [ -f "../geth" ]; then
+    echo "Using development geth from parent directory"
+    GETH_PATH="../geth"
 elif [ ! -f "geth" ]; then
     echo "Geth executable not found. Building release..."
-    if ./build-linux.sh geth; then
-        GETH_RELEASE_DIR=$(find releases -name "quantum-geth-*" -type d 2>/dev/null | sort -V | tail -1)
+    if ./build-release.sh geth; then
+        GETH_RELEASE_DIR=$(find ../releases -name "quantum-geth-*" -type d 2>/dev/null | sort -V | tail -1)
         echo "SUCCESS: Release built at $GETH_RELEASE_DIR"
         GETH_PATH="$GETH_RELEASE_DIR/geth"
     else
@@ -120,7 +123,7 @@ elif [ ! -f "geth" ]; then
         exit 1
     fi
 else
-    echo "Using development geth from root directory"
+    echo "Using development geth from current directory"
     GETH_PATH="./geth"
 fi
 

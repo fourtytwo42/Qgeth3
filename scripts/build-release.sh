@@ -65,12 +65,25 @@ build_quantum_geth() {
     local release_dir=$(new_release_folder "quantum-geth")
     echo "Release directory: $release_dir"
     
-    # Build geth
-    echo "Compiling quantum-geth..."
+    # Check if we're in the scripts directory and need to go up
+    if [ -d "../quantum-geth" ]; then
+        QUANTUM_GETH_DIR="../quantum-geth"
+    elif [ -d "quantum-geth" ]; then
+        QUANTUM_GETH_DIR="quantum-geth"
+    else
+        echo "ERROR: quantum-geth directory not found"
+        echo "Current directory: $(pwd)"
+        echo "Looking for: ../quantum-geth or quantum-geth"
+        exit 1
+    fi
     
-    cd quantum-geth/cmd/geth
+    # Build geth
+    echo "Compiling quantum-geth from: $QUANTUM_GETH_DIR"
+    
+    cd "$QUANTUM_GETH_DIR/cmd/geth"
     if ! CGO_ENABLED=0 go build -ldflags "-s -w" -o ../../../"$release_dir"/geth .; then
         echo "ERROR: Failed to build quantum-geth"
+        cd ../../..
         exit 1
     fi
     cd ../../..
@@ -284,12 +297,25 @@ build_quantum_miner() {
     local release_dir=$(new_release_folder "quantum-miner")
     echo "Release directory: $release_dir"
     
-    # Build miner
-    echo "Compiling quantum-miner..."
+    # Check if we're in the scripts directory and need to go up
+    if [ -d "../quantum-miner" ]; then
+        QUANTUM_MINER_DIR="../quantum-miner"
+    elif [ -d "quantum-miner" ]; then
+        QUANTUM_MINER_DIR="quantum-miner"
+    else
+        echo "ERROR: quantum-miner directory not found"
+        echo "Current directory: $(pwd)"
+        echo "Looking for: ../quantum-miner or quantum-miner"
+        exit 1
+    fi
     
-    cd quantum-miner
+    # Build miner
+    echo "Compiling quantum-miner from: $QUANTUM_MINER_DIR"
+    
+    cd "$QUANTUM_MINER_DIR"
     if ! CGO_ENABLED=0 go build -ldflags "-s -w" -o ../"$release_dir"/quantum-miner .; then
         echo "ERROR: Failed to build quantum-miner"
+        cd ..
         exit 1
     fi
     cd ..
@@ -297,7 +323,24 @@ build_quantum_miner() {
     # Copy configuration files
     echo "Preparing release package..."
     
-    cp miner.json "$release_dir/"
+    # Copy miner.json if it exists in the parent directory
+    if [ -f "../miner.json" ]; then
+        cp ../miner.json "$release_dir/"
+    elif [ -f "miner.json" ]; then
+        cp miner.json "$release_dir/"
+    else
+        echo "Warning: miner.json not found, creating default configuration"
+        cat > "$release_dir/miner.json" << 'EOF'
+{
+  "geth_rpc": "http://127.0.0.1:8545",
+  "mining_address": "0x742d35C6C4e6d8de6f10E7FF75DD98dd25b02C3A",
+  "cpu_threads": 4,
+  "gpu_enabled": true,
+  "gpu_device": 0,
+  "log_level": "info"
+}
+EOF
+    fi
     
     # Create startup script
     cat > "$release_dir/start-miner.sh" << 'EOF'
