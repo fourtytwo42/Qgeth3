@@ -34,7 +34,6 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/consensus"
-	"github.com/ethereum/go-ethereum/consensus/ethash"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip1559"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -2243,15 +2242,9 @@ func (api *DebugAPI) PrintBlock(ctx context.Context, number uint64) (string, err
 }
 
 // SeedHash retrieves the seed hash of a block.
+// Note: This function is deprecated as Q Coin uses QMPoW consensus instead of Ethash.
 func (api *DebugAPI) SeedHash(ctx context.Context, number uint64) (string, error) {
-	block, _ := api.b.BlockByNumber(ctx, rpc.BlockNumber(number))
-	if block == nil {
-		return "", fmt.Errorf("block #%d not found", number)
-	}
-	ecip1099FBlock := api.b.ChainConfig().GetEthashECIP1099Transition()
-	epochLength := ethash.CalcEpochLength(number, ecip1099FBlock)
-	epoch := ethash.CalcEpoch(number, epochLength)
-	return fmt.Sprintf("%#x", ethash.SeedHash(epoch, epochLength)), nil
+	return "", fmt.Errorf("SeedHash not supported - Q Coin uses QMPoW consensus, not Ethash")
 }
 
 // ChaindbProperty returns leveldb properties of the key-value database.

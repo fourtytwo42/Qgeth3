@@ -71,14 +71,7 @@ var (
 		utils.OverrideCancun,
 		utils.OverrideVerkle,
 		utils.EnablePersonal,
-		utils.EthashCacheDirFlag,
-		utils.EthashCachesInMemoryFlag,
-		utils.EthashCachesOnDiskFlag,
-		utils.EthashCachesLockMmapFlag,
-		utils.EthashDatasetDirFlag,
-		utils.EthashDatasetsInMemoryFlag,
-		utils.EthashDatasetsOnDiskFlag,
-		utils.EthashDatasetsLockMmapFlag,
+		// Ethash flags removed - Q Coin uses QMPoW consensus
 		utils.TxPoolLocalsFlag,
 		utils.TxPoolNoLocalsFlag,
 		utils.TxPoolJournalFlag,
@@ -159,7 +152,7 @@ var (
 		utils.NetworkIdFlag,
 		utils.EthStatsURLFlag,
 		utils.FakePoWFlag,
-		utils.FakePoWPoissonFlag,
+		// FakePoWPoissonFlag removed - not applicable to QMPoW consensus
 		utils.NoCompactionFlag,
 		utils.GpoBlocksFlag,
 		utils.GpoPercentileFlag,
@@ -250,8 +243,7 @@ func init() {
 		attachCommand,
 		javascriptCommand,
 		// See misccmd.go:
-		makecacheCommand,
-		makedagCommand,
+		// makecache and makedag commands removed - Q Coin uses QMPoW consensus
 		versionCommand,
 		versionCheckCommand,
 		licenseCommand,

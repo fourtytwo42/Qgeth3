@@ -30,7 +30,6 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
-	"runtime"
 	godebug "runtime/debug"
 	"strconv"
 	"strings"
@@ -40,7 +39,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/fdlimit"
-	"github.com/ethereum/go-ethereum/consensus/ethash"
 	"github.com/ethereum/go-ethereum/consensus/lyra2"
 
 	"github.com/ethereum/go-ethereum/core"
@@ -381,58 +379,7 @@ var (
 		Category: flags.LightCategory,
 	}
 
-	// Ethash settings
-	EthashCacheDirFlag = &flags.DirectoryFlag{
-		Name:     "ethash.cachedir",
-		Usage:    "Directory to store the ethash verification caches (default = inside the datadir)",
-		Category: flags.EthashCategory,
-	}
-	EthashCachesInMemoryFlag = &cli.IntFlag{
-		Name:     "ethash.cachesinmem",
-		Usage:    "Number of recent ethash caches to keep in memory (16MB each)",
-		Value:    ethconfig.Defaults.Ethash.CachesInMem,
-		Category: flags.EthashCategory,
-	}
-	EthashCachesOnDiskFlag = &cli.IntFlag{
-		Name:     "ethash.cachesondisk",
-		Usage:    "Number of recent ethash caches to keep on disk (16MB each)",
-		Value:    ethconfig.Defaults.Ethash.CachesOnDisk,
-		Category: flags.EthashCategory,
-	}
-	EthashCachesLockMmapFlag = &cli.BoolFlag{
-		Name:     "ethash.cacheslockmmap",
-		Usage:    "Lock memory maps of recent ethash caches",
-		Category: flags.EthashCategory,
-	}
-	EthashDatasetDirFlag = &flags.DirectoryFlag{
-		Name:     "ethash.dagdir",
-		Usage:    "Directory to store the ethash mining DAGs",
-		Value:    flags.DirectoryString(ethconfig.Defaults.Ethash.DatasetDir),
-		Category: flags.EthashCategory,
-	}
-	EthashDatasetsInMemoryFlag = &cli.IntFlag{
-		Name:     "ethash.dagsinmem",
-		Usage:    "Number of recent ethash mining DAGs to keep in memory (1+GB each)",
-		Value:    ethconfig.Defaults.Ethash.DatasetsInMem,
-		Category: flags.EthashCategory,
-	}
-	EthashDatasetsOnDiskFlag = &cli.IntFlag{
-		Name:     "ethash.dagsondisk",
-		Usage:    "Number of recent ethash mining DAGs to keep on disk (1+GB each)",
-		Value:    ethconfig.Defaults.Ethash.DatasetsOnDisk,
-		Category: flags.EthashCategory,
-	}
-	EthashDatasetsLockMmapFlag = &cli.BoolFlag{
-		Name:     "ethash.dagslockmmap",
-		Usage:    "Lock memory maps for recent ethash mining DAGs",
-		Category: flags.EthashCategory,
-	}
-	EthashEpochLengthFlag = &cli.Int64Flag{
-		Name:     "epoch.length",
-		Usage:    "Sets epoch length for makecache & makedag commands",
-		Value:    30000,
-		Category: flags.EthashCategory,
-	}
+	// Ethash settings removed - Q Coin uses QMPoW consensus
 
 	// Transaction pool settings
 	TxPoolLocalsFlag = &cli.StringFlag{
@@ -734,11 +681,7 @@ var (
 		Usage:    "Disables proof-of-work verification",
 		Category: flags.LoggingCategory, // FIXME(meowsbits) Logging, really? Not Developer?
 	}
-	FakePoWPoissonFlag = &cli.BoolFlag{
-		Name:     "fakepow.poisson",
-		Usage:    "Disables proof-of-work verification and adds mining delay (Poisson) based on --miner.threads",
-		Category: flags.LoggingCategory,
-	}
+	// FakePoWPoissonFlag removed - not applicable to QMPoW consensus
 	NoCompactionFlag = &cli.BoolFlag{
 		Name:     "nocompaction",
 		Usage:    "Disables db compaction after import",
@@ -1788,68 +1731,7 @@ func homeDir() string {
 	return ""
 }
 
-func setEthashDatasetDir(ctx *cli.Context, cfg *ethconfig.Config) {
-	switch {
-	case ctx.IsSet(EthashDatasetDirFlag.Name):
-		cfg.Ethash.DatasetDir = ctx.String(EthashDatasetDirFlag.Name)
-
-	case (ctx.Bool(ClassicFlag.Name) || ctx.Bool(MordorFlag.Name)) && cfg.Ethash.DatasetDir == ethconfig.Defaults.Ethash.DatasetDir:
-		// ECIP-1099 is set, use etchash dir for DAGs instead
-		home := homeDir()
-
-		if runtime.GOOS == "darwin" {
-			cfg.Ethash.DatasetDir = filepath.Join(home, "Library", "Etchash")
-		} else if runtime.GOOS == "windows" {
-			localappdata := os.Getenv("LOCALAPPDATA")
-			if localappdata != "" {
-				cfg.Ethash.DatasetDir = filepath.Join(localappdata, "Etchash")
-			} else {
-				cfg.Ethash.DatasetDir = filepath.Join(home, "AppData", "Local", "Etchash")
-			}
-		} else {
-			cfg.Ethash.DatasetDir = filepath.Join(home, ".etchash")
-		}
-	}
-}
-
-func setEthashCacheDir(ctx *cli.Context, cfg *eth.Config) {
-	switch {
-	case ctx.IsSet(EthashCacheDirFlag.Name):
-		cfg.Ethash.CacheDir = ctx.String(EthashCacheDirFlag.Name)
-
-	case (ctx.Bool(ClassicFlag.Name) || ctx.Bool(MordorFlag.Name)) && cfg.Ethash.CacheDir == ethconfig.Defaults.Ethash.CacheDir:
-		// ECIP-1099 is set, use etchash dir for caches instead
-		cfg.Ethash.CacheDir = "etchash"
-	}
-}
-
-func setEthash(ctx *cli.Context, cfg *eth.Config) {
-	// ECIP-1099
-	setEthashCacheDir(ctx, cfg)
-	setEthashDatasetDir(ctx, cfg)
-
-	if ctx.Bool(FakePoWPoissonFlag.Name) {
-		cfg.Ethash.PowMode = ethash.ModePoissonFake
-	}
-	if ctx.IsSet(EthashCachesInMemoryFlag.Name) {
-		cfg.Ethash.CachesInMem = ctx.Int(EthashCachesInMemoryFlag.Name)
-	}
-	if ctx.IsSet(EthashCachesOnDiskFlag.Name) {
-		cfg.Ethash.CachesOnDisk = ctx.Int(EthashCachesOnDiskFlag.Name)
-	}
-	if ctx.IsSet(EthashCachesLockMmapFlag.Name) {
-		cfg.Ethash.CachesLockMmap = ctx.Bool(EthashCachesLockMmapFlag.Name)
-	}
-	if ctx.IsSet(EthashDatasetsInMemoryFlag.Name) {
-		cfg.Ethash.DatasetsInMem = ctx.Int(EthashDatasetsInMemoryFlag.Name)
-	}
-	if ctx.IsSet(EthashDatasetsOnDiskFlag.Name) {
-		cfg.Ethash.DatasetsOnDisk = ctx.Int(EthashDatasetsOnDiskFlag.Name)
-	}
-	if ctx.IsSet(EthashDatasetsLockMmapFlag.Name) {
-		cfg.Ethash.DatasetsLockMmap = ctx.Bool(EthashDatasetsLockMmapFlag.Name)
-	}
-}
+// Ethash functions removed - Q Coin uses QMPoW consensus
 
 func setMiner(ctx *cli.Context, cfg *miner.Config) {
 	if ctx.IsSet(MinerNotifyFlag.Name) {
@@ -1966,7 +1848,7 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *ethconfig.Config) {
 	setEtherbase(ctx, cfg)
 	setGPO(ctx, &cfg.GPO)
 	setTxPool(ctx, &cfg.TxPool)
-	setEthash(ctx, cfg)
+	// setEthash removed - Q Coin uses QMPoW consensus
 	setMiner(ctx, &cfg.Miner)
 	setRequiredBlocks(ctx, cfg)
 	setLes(ctx, cfg)
@@ -2549,26 +2431,14 @@ func MakeChain(ctx *cli.Context, stack *node.Node, readonly bool) (*core.BlockCh
 	if err != nil {
 		Fatalf("%v", err)
 	}
-	ethashConfig := ethconfig.Defaults.Ethash
-
-	// ETC-specific configuration: ECIP1099 modifies the original Ethash algo, doubling the epoch size.
-	if gspec != nil && gspec.Config != nil {
-		ethashConfig.ECIP1099Block = gspec.GetEthashECIP1099Transition() // This will panic if the genesis config field is not nil.
-	}
 
 	var lyra2Config *lyra2.Config
 	if ctx.Bool(MintMeFlag.Name) {
 		lyra2Config = &lyra2.Config{}
 	}
 
-	// Toggle PoW modes at user request.
-	if ctx.Bool(FakePoWFlag.Name) {
-		ethashConfig.PowMode = ethash.ModeFake
-	} else if ctx.Bool(FakePoWPoissonFlag.Name) {
-		ethashConfig.PowMode = ethash.ModePoissonFake
-	}
-
-	engine := ethconfig.CreateConsensusEngine(stack, &ethashConfig, cliqueConfig, lyra2Config, nil, nil, false, chainDb)
+	// Ethash removed - Q Coin uses QMPoW consensus
+	engine := ethconfig.CreateConsensusEngine(stack, cliqueConfig, lyra2Config, nil, nil, false, chainDb)
 	if gcmode := ctx.String(GCModeFlag.Name); gcmode != gcModeFull && gcmode != gcModeArchive {
 		Fatalf("--%s must be either 'full' or 'archive'", GCModeFlag.Name)
 	}

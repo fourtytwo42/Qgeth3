@@ -64,7 +64,6 @@ var (
 		TerminalTotalDifficultyPassed: true,
 		ShanghaiTime:                  newUint64(1681338455),
 		CancunTime:                    newUint64(1710338135),
-		Ethash:                        new(ctypes.EthashConfig),
 	}
 	// HoleskyChainConfig contains the chain parameters to run a node on the Holesky test network.
 	HoleskyChainConfig = &goethereum.ChainConfig{
@@ -89,7 +88,6 @@ var (
 		MergeNetsplitBlock:            nil,
 		ShanghaiTime:                  newUint64(1696000704),
 		CancunTime:                    newUint64(1707305664),
-		Ethash:                        new(ctypes.EthashConfig),
 	}
 	// SepoliaChainConfig contains the chain parameters to run a node on the Sepolia test network.
 	SepoliaChainConfig = &goethereum.ChainConfig{
@@ -114,7 +112,6 @@ var (
 		MergeNetsplitBlock:            big.NewInt(1735371),
 		ShanghaiTime:                  newUint64(1677557088),
 		CancunTime:                    newUint64(1706655072),
-		Ethash:                        new(ctypes.EthashConfig),
 	}
 
 	// QCoinTestnetChainConfig contains the chain parameters to run a node on the Q Coin test network.
@@ -137,38 +134,10 @@ var (
 		GrayGlacierBlock:              nil,
 		TerminalTotalDifficulty:       nil,
 		TerminalTotalDifficultyPassed: false,
-		QMPoW:                         new(ctypes.QMPoWConfig),
 	}
 
-	// AllEthashProtocolChanges contains every protocol change (EIPs) introduced
-	// and accepted by the Ethereum core developers into the Ethash consensus.
-	AllEthashProtocolChanges = &goethereum.ChainConfig{
-		ChainID:                       big.NewInt(1337),
-		HomesteadBlock:                big.NewInt(0),
-		DAOForkBlock:                  nil,
-		DAOForkSupport:                false,
-		EIP150Block:                   big.NewInt(0),
-		EIP155Block:                   big.NewInt(0),
-		EIP158Block:                   big.NewInt(0),
-		ByzantiumBlock:                big.NewInt(0),
-		ConstantinopleBlock:           big.NewInt(0),
-		PetersburgBlock:               big.NewInt(0),
-		IstanbulBlock:                 big.NewInt(0),
-		MuirGlacierBlock:              big.NewInt(0),
-		BerlinBlock:                   big.NewInt(0),
-		LondonBlock:                   big.NewInt(0),
-		ArrowGlacierBlock:             big.NewInt(0),
-		GrayGlacierBlock:              big.NewInt(0),
-		MergeNetsplitBlock:            nil,
-		ShanghaiTime:                  nil,
-		CancunTime:                    nil,
-		PragueTime:                    nil,
-		VerkleTime:                    nil,
-		TerminalTotalDifficulty:       nil,
-		TerminalTotalDifficultyPassed: false,
-		Ethash:                        new(ctypes.EthashConfig),
-		Clique:                        nil,
-	}
+	// AllEthashProtocolChanges removed - Q Coin uses QMPoW consensus, not Ethash
+	AllEthashProtocolChanges = (*goethereum.ChainConfig)(nil)
 
 	AllDevChainProtocolChanges = &goethereum.ChainConfig{
 		ChainID:                       big.NewInt(1337),
@@ -216,7 +185,6 @@ var (
 		VerkleTime:                    nil,
 		TerminalTotalDifficulty:       nil,
 		TerminalTotalDifficultyPassed: false,
-		Ethash:                        nil,
 		Clique: &ctypes.CliqueConfig{
 			Period: 0,
 			Epoch:  30000,
@@ -249,7 +217,6 @@ var (
 		VerkleTime:                    nil,
 		TerminalTotalDifficulty:       nil,
 		TerminalTotalDifficultyPassed: false,
-		Ethash:                        new(ctypes.EthashConfig),
 		Clique:                        nil,
 	}
 
@@ -279,7 +246,6 @@ var (
 		VerkleTime:                    nil,
 		TerminalTotalDifficulty:       big.NewInt(0),
 		TerminalTotalDifficultyPassed: true,
-		Ethash:                        new(ctypes.EthashConfig),
 		Clique:                        nil,
 	}
 
@@ -309,33 +275,11 @@ var (
 		VerkleTime:                    nil,
 		TerminalTotalDifficulty:       nil,
 		TerminalTotalDifficultyPassed: false,
-		Ethash:                        new(ctypes.EthashConfig),
 		Clique:                        nil,
 	}
 )
 
-// QCoinTestnetChainConfig contains the chain parameters to run a node on the Q Coin test network.
-var QCoinTestnetChainConfig = &goethereum.ChainConfig{
-	ChainID:                       big.NewInt(73235),
-	HomesteadBlock:                big.NewInt(0),
-	DAOForkBlock:                  nil,
-	DAOForkSupport:                false,
-	EIP150Block:                   big.NewInt(0),
-	EIP155Block:                   big.NewInt(0),
-	EIP158Block:                   big.NewInt(0),
-	ByzantiumBlock:                big.NewInt(0),
-	ConstantinopleBlock:           big.NewInt(0),
-	PetersburgBlock:               big.NewInt(0),
-	IstanbulBlock:                 big.NewInt(0),
-	MuirGlacierBlock:              big.NewInt(0),
-	BerlinBlock:                   big.NewInt(0),
-	LondonBlock:                   big.NewInt(0),
-	ArrowGlacierBlock:             nil,
-	GrayGlacierBlock:              nil,
-	TerminalTotalDifficulty:       nil,
-	TerminalTotalDifficultyPassed: false,
-	Ethash:                        new(ctypes.EthashConfig),
-}
+// Duplicate QCoinTestnetChainConfig removed - using the CoreGeth version above
 
 // NetworkNames are user friendly names to use in the chain spec banner.
 var NetworkNames = map[string]string{

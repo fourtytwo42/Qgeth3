@@ -20,11 +20,8 @@ import (
 	"fmt"
 	"os"
 	"runtime"
-	"strconv"
 	"strings"
 
-	"github.com/ethereum/go-ethereum/cmd/utils"
-	"github.com/ethereum/go-ethereum/consensus/ethash"
 	"github.com/ethereum/go-ethereum/internal/version"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/urfave/cli/v2"
@@ -41,38 +38,7 @@ var (
 		Usage: "Version to check",
 		Value: version.ClientName(clientIdentifier),
 	}
-	makecacheCommand = &cli.Command{
-		Action:    makecache,
-		Name:      "makecache",
-		Usage:     "Generate ethash verification cache (for testing)",
-		ArgsUsage: "<blockNum> <outputDir>",
-		Flags: []cli.Flag{
-			utils.EthashEpochLengthFlag,
-		},
-		Category: "MISCELLANEOUS COMMANDS",
-		Description: `
-The makecache command generates an ethash cache in <outputDir>.
-
-This command exists to support the system testing project.
-Regular users do not need to execute it.
-`,
-	}
-	makedagCommand = &cli.Command{
-		Action:    makedag,
-		Name:      "makedag",
-		Usage:     "Generate ethash mining DAG (for testing)",
-		ArgsUsage: "<blockNum> <outputDir>",
-		Flags: []cli.Flag{
-			utils.EthashEpochLengthFlag,
-		},
-		Category: "MISCELLANEOUS COMMANDS",
-		Description: `
-The makedag command generates an ethash DAG in <outputDir>.
-
-This command exists to support the system testing project.
-Regular users do not need to execute it.
-`,
-	}
+	// makecache and makedag commands removed - Q Coin uses QMPoW consensus, not Ethash
 	versionCommand = &cli.Command{
 		Action:    printVersion,
 		Name:      "version",
@@ -104,41 +70,7 @@ and displays information about any security vulnerabilities that affect the curr
 	}
 )
 
-// makecache generates an ethash verification cache into the provided folder.
-func makecache(ctx *cli.Context) error {
-	args := ctx.Args().Slice()
-	if len(args) != 2 {
-		utils.Fatalf(`Usage: geth makecache <block number> <outputdir>`)
-	}
-	block, err := strconv.ParseUint(args[0], 0, 64)
-	if err != nil {
-		utils.Fatalf("Invalid block number: %v", err)
-	}
-
-	epochLength := ctx.Uint64(utils.EthashEpochLengthFlag.Name)
-
-	ethash.MakeCache(block, epochLength, args[1])
-
-	return nil
-}
-
-// makedag generates an ethash mining DAG into the provided folder.
-func makedag(ctx *cli.Context) error {
-	args := ctx.Args().Slice()
-	if len(args) != 2 {
-		utils.Fatalf(`Usage: geth makedag <block number> <outputdir>`)
-	}
-	block, err := strconv.ParseUint(args[0], 0, 64)
-	if err != nil {
-		utils.Fatalf("Invalid block number: %v", err)
-	}
-
-	epochLength := ctx.Uint64(utils.EthashEpochLengthFlag.Name)
-
-	ethash.MakeDataset(block, epochLength, args[1])
-
-	return nil
-}
+// makecache and makedag functions removed - Q Coin uses QMPoW consensus, not Ethash
 
 func printVersion(ctx *cli.Context) error {
 	git, _ := version.VCS()
