@@ -9,7 +9,7 @@ set -e  # Exit on any error
 DIFFICULTY=100
 FORCE=false
 DATADIR="qdata_quantum"
-NETWORKID=73235
+NETWORKID=73234
 ETHERBASE="0x8b61271473f14c80f2B1381Db9CB13b2d5306200"
 BALANCE="300000000000000000000000"
 
@@ -28,7 +28,7 @@ show_usage() {
     echo "  --difficulty DIFF    Set starting difficulty (default: 100)"
     echo "  --force             Skip confirmation prompt"
     echo "  --datadir DIR       Set data directory (default: qdata_quantum)"
-    echo "  --networkid ID      Set network ID (default: 73428)"
+    echo "  --networkid ID      Set network ID (default: 73234)"
     echo "  --etherbase ADDR    Set etherbase address"
     echo "  --help              Show this help message"
     echo ""
