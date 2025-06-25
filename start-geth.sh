@@ -52,14 +52,24 @@ if [ "$HELP" = true ]; then
     exit 0
 fi
 
-# Build if geth doesn't exist
-if [ ! -f "./geth" ] || [ ! -f "./geth.bin" ]; then
-    echo -e "\033[1;33m🔨 Building Q Coin Geth...\033[0m"
+# Check for geth binary
+if [ ! -f "./geth" ]; then
+    echo -e "\033[1;33m🔨 Q Coin Geth binary not found. Building...\033[0m"
+    if [ ! -f "./build-linux.sh" ]; then
+        echo -e "\033[1;31m❌ build-linux.sh not found! Are you in the correct directory?\033[0m"
+        exit 1
+    fi
     ./build-linux.sh geth
     if [ $? -ne 0 ]; then
         echo -e "\033[1;31m❌ Build failed!\033[0m"
         exit 1
     fi
+fi
+
+# Make sure geth is executable
+if [ ! -x "./geth" ]; then
+    chmod +x "./geth"
+    echo -e "\033[1;32m✅ Made geth executable\033[0m"
 fi
 
 # Network configurations
@@ -100,9 +110,23 @@ fi
 # Initialize with genesis if needed
 if [ ! -d "$DATADIR/geth/chaindata" ]; then
     echo -e "\033[1;33m🔧 Initializing blockchain with genesis file...\033[0m"
-    ./geth init "$GENESIS" --datadir "$DATADIR"
+    
+    # Check if genesis file exists
+    if [ ! -f "$GENESIS" ]; then
+        echo -e "\033[1;31m❌ Genesis file not found: $GENESIS\033[0m"
+        echo -e "\033[1;33m📋 Available genesis files:\033[0m"
+        ls -la genesis_quantum_*.json 2>/dev/null || echo "No genesis files found!"
+        exit 1
+    fi
+    
+    # Initialize with correct argument order
+    ./geth --datadir "$DATADIR" init "$GENESIS"
     if [ $? -ne 0 ]; then
         echo -e "\033[1;31m❌ Genesis initialization failed!\033[0m"
+        echo -e "\033[1;33m💡 Debug info:\033[0m"
+        echo "  Genesis file: $GENESIS"
+        echo "  Data directory: $DATADIR"
+        echo "  Command: ./geth --datadir \"$DATADIR\" init \"$GENESIS\""
         exit 1
     fi
     echo -e "\033[1;32m✅ Blockchain initialized successfully\033[0m"
@@ -132,22 +156,44 @@ GETH_ARGS=(
     "--verbosity" "3"
 )
 
-# Add mining if requested
+# Add mining configuration
 if [ "$MINING" = true ]; then
-    GETH_ARGS+=("--mine" "--miner.threads" "1")
+    GETH_ARGS+=("--mine" "--miner.threads" "1" "--miner.etherbase" "0x1234567890123456789012345678901234567890")
     echo -e "\033[1;33m⛏️  Mining enabled with 1 thread\033[0m"
 else
-    GETH_ARGS+=("--miner.threads" "-1")
-    echo -e "\033[1;33m🚫 Local mining disabled (external miners only)\033[0m"
+    # Enable mining interface for external miners but don't mine locally
+    GETH_ARGS+=("--mine" "--miner.threads" "0" "--miner.etherbase" "0x1234567890123456789012345678901234567890")
+    echo -e "\033[1;33m🔌 Mining interface enabled for external miners\033[0m"
+fi
+
+# Create JWT file if it doesn't exist
+if [ ! -f "jwt.hex" ]; then
+    echo "0x$(openssl rand -hex 32)" > jwt.hex
+    echo -e "\033[1;32m🔑 Created JWT secret file\033[0m"
 fi
 
 echo -e "\033[1;37m🌐 Network: $NAME\033[0m"
 echo -e "\033[1;37m🔗 Chain ID: $CHAINID\033[0m"
 echo -e "\033[1;37m📁 Data Directory: $DATADIR\033[0m"
 echo -e "\033[1;37m🌍 Port: $PORT\033[0m"
+echo -e "\033[1;37m🌐 HTTP RPC: http://0.0.0.0:8545\033[0m"
+echo -e "\033[1;37m🌐 WebSocket: ws://0.0.0.0:8546\033[0m"
 echo -e "\033[1;37m📡 Bootnodes: $BOOTNODES\033[0m"
 echo ""
 echo -e "\033[1;32m🎯 Starting Q Coin Geth node...\033[0m"
+echo -e "\033[1;33m💡 Use Ctrl+C to stop the node\033[0m"
+echo ""
 
-# Start geth
-./geth "${GETH_ARGS[@]}" 
+# Start geth with error handling
+./geth "${GETH_ARGS[@]}"
+EXIT_CODE=$?
+
+if [ $EXIT_CODE -ne 0 ]; then
+    echo ""
+    echo -e "\033[1;31m❌ Geth exited with error code: $EXIT_CODE\033[0m"
+    echo -e "\033[1;33m💡 Common solutions:\033[0m"
+    echo "  - Check if ports 8545, 8546, $PORT are available"
+    echo "  - Make sure you have enough disk space"
+    echo "  - Try deleting the data directory and restarting"
+    exit $EXIT_CODE
+fi 
