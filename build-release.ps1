@@ -25,6 +25,8 @@ if ($Component -eq "geth" -or $Component -eq "both") {
     # Build to regular location first
     Push-Location "quantum-geth"
     try {
+        # Disable CGO for geth (not needed on Windows)
+        $env:CGO_ENABLED = "0"
         & go build -o "build/bin/geth.exe" "./cmd/geth"
         
         if ($LASTEXITCODE -eq 0) {
@@ -66,7 +68,8 @@ if ($Component -eq "miner" -or $Component -eq "both") {
     # Build to regular location first
     Push-Location "quantum-miner"
     try {
-        $env:CGO_ENABLED = "1"
+        # Disable CGO for Windows miner (uses CuPy instead of native CUDA)
+        $env:CGO_ENABLED = "0"
         & go build -o "quantum-miner.exe" "."
         
         if ($LASTEXITCODE -eq 0) {

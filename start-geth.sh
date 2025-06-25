@@ -108,15 +108,11 @@ if [ ! -d "$DATADIR/geth/chaindata" ]; then
     echo -e "\033[1;32m✅ Blockchain initialized successfully\033[0m"
 fi
 
-# Auto-detect local IP address
-LOCAL_IP=$(ip route get 1.1.1.1 | grep -oP 'src \K\S+' 2>/dev/null || echo "192.168.50.254")
-
 # Prepare geth arguments
 GETH_ARGS=(
     "--datadir" "$DATADIR"
     "--networkid" "$CHAINID"
     "--port" "$PORT"
-    "--nat" "extip:$LOCAL_IP"
     "--http"
     "--http.addr" "0.0.0.0"
     "--http.port" "8545"
@@ -149,7 +145,6 @@ echo -e "\033[1;37m🌐 Network: $NAME\033[0m"
 echo -e "\033[1;37m🔗 Chain ID: $CHAINID\033[0m"
 echo -e "\033[1;37m📁 Data Directory: $DATADIR\033[0m"
 echo -e "\033[1;37m🌍 Port: $PORT\033[0m"
-echo -e "\033[1;37m🏠 Local IP: $LOCAL_IP\033[0m"
 echo -e "\033[1;37m📡 Bootnodes: $BOOTNODES\033[0m"
 echo ""
 echo -e "\033[1;32m🎯 Starting Q Coin Geth node...\033[0m"
