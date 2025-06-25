@@ -24,7 +24,8 @@ cd scripts/
 ### 1. Build Everything
 ```bash
 cd scripts/
-./build-release.sh both          # Build both geth and miner
+./build-release.sh both          # Build timestamped releases (old approach)
+./build-linux.sh                # 🆕 Build to root directory (new approach)
 ```
 
 ### 2. Start Q Coin Node 
@@ -51,6 +52,7 @@ cd scripts/
 
 ### Build Scripts
 - `build-release.sh` - Build distributable releases (geth/miner/both)
+- `build-linux.sh` - 🆕 Build binaries to root directory (calls `../build-linux.sh`)
 
 ### Node Scripts  
 - `start-geth.sh` - Start Q Coin node (testnet/mainnet)
@@ -77,10 +79,15 @@ Qgeth3/
 ├── quantum-miner/         # Quantum-Miner source code  
 ├── genesis_quantum_testnet.json
 ├── genesis_quantum_mainnet.json
-├── releases/              # Build outputs
+├── build-linux.sh        # 🆕 Root Linux build script
+├── geth                   # 🆕 Linux binary (from build-linux.sh)
+├── quantum-miner          # 🆕 Linux binary (from build-linux.sh)
+├── quantum_solver.py      # 🆕 Linux helper script
+├── releases/              # Timestamped build outputs
 └── scripts/               # ← Run scripts from here
     ├── start-geth.sh
     ├── build-release.sh
+    ├── build-linux.sh     # 🆕 Calls ../build-linux.sh
     └── ...
 ```
 

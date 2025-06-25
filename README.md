@@ -84,6 +84,66 @@ The project now features a professional release system that creates distributabl
 - ✅ **Auto-Detection** - Root scripts automatically use newest releases
 - ✅ **Cross-Platform** - Windows PowerShell and Linux bash launchers
 
+## 🐧 Linux Compilation
+
+For Linux users, Q Coin provides a streamlined build system that compiles binaries directly to the root directory:
+
+```bash
+# Build both geth and miner to root directory (recommended)
+./build-linux.sh
+
+# Build specific components
+./build-linux.sh geth     # Build only quantum-geth -> ./geth
+./build-linux.sh miner    # Build only quantum-miner -> ./quantum-miner
+
+# Clean build both
+./build-linux.sh both --clean
+
+# Alternative: build from scripts directory
+cd scripts/
+./build-linux.sh          # Calls root build script
+```
+
+**Linux Build Features:**
+- ✅ **Root Directory Output** - Binaries compile to `./geth` and `./quantum-miner`
+- ✅ **No Release Packages** - Direct executable approach for easier usage
+- ✅ **Automatic Dependencies** - Creates `./quantum_solver.py` helper script
+- ✅ **Quick Start Commands** - Shows exact commands to run after build
+- ✅ **Both Scripts Work** - Root and scripts versions produce same result
+
+### Linux Quick Start
+```bash
+# 1. Build everything
+./build-linux.sh
+
+# 2. Initialize blockchain
+./geth --datadir qdata init genesis_quantum_testnet.json
+
+# 3. Start node (external mining)
+./geth --datadir qdata --networkid 73235 --mine --miner.threads 0 \
+       --http --http.api eth,net,web3,personal,admin,miner \
+       --miner.etherbase 0x742d35C6C4e6d8de6f10E7FF75DD98dd25b02C3A
+
+# 4. Start mining (in another terminal)
+./quantum-miner -rpc-url http://127.0.0.1:8545 \
+                -address 0x742d35C6C4e6d8de6f10E7FF75DD98dd25b02C3A
+```
+
+### Linux Script Management
+Use the scripts directory for full blockchain management:
+```bash
+cd scripts/
+
+# Initialize fresh blockchain
+./dev-reset-blockchain.sh --difficulty 1 --force
+
+# Start development node
+./dev-start-geth.sh
+
+# Start mining (in another terminal)
+./start-cpu-miner.sh --address 0x742d35C6C4e6d8de6f10E7FF75DD98dd25b02C3A
+```
+
 ## 📊 Performance Comparison
 
 | Mining Method | Performance | Dependencies | Best For |
@@ -97,11 +157,15 @@ The project now features a professional release system that creates distributabl
 Qgeth3/
 ├── quantum-geth/          # Quantum-enhanced Ethereum client source
 ├── quantum-miner/         # Unified quantum miner source (CPU/GPU)
-├── releases/              # 🆕 Built release packages
+├── releases/              # 🆕 Built release packages (Windows)
 │   ├── quantum-geth-*/   # Standalone geth distributions
 │   └── quantum-miner-*/  # Standalone miner distributions
 ├── scripts/               # Blockchain management scripts
-├── build-release.ps1     # 🆕 Professional build system
+├── build-release.ps1     # 🆕 Professional build system (Windows)
+├── build-linux.sh        # 🆕 Linux build system (outputs to root)
+├── geth                   # 🐧 Linux binary (created by build-linux.sh)
+├── quantum-miner          # 🐧 Linux binary (created by build-linux.sh)
+├── quantum_solver.py      # 🐧 Linux helper script
 ├── run-gpu-miner.ps1     # GPU mining launcher (auto-detects releases)
 ├── run-cpu-miner.ps1     # CPU mining launcher (auto-detects releases)
 ├── start-geth.ps1        # Blockchain node launcher (auto-detects releases)
@@ -130,15 +194,25 @@ Qgeth3/
 ## 🛠️ Setup Instructions
 
 ### Prerequisites
+
+**Windows:**
 - **Windows 10/11** (PowerShell scripts)
 - **Visual Studio 2022 Build Tools** or **MinGW-w64** (for building from source)
 - **Go 1.21+** (for building from source)
 - **Python 3.8+** (for GPU mining only)
 
-### Option 1: Use Pre-Built Releases (Recommended)
+**Linux:**
+- **Linux** (Ubuntu 20.04+, CentOS 8+, or similar)
+- **Go 1.21+** (required for building)
+- **Python 3.8+** (for GPU mining only)
+- **Basic build tools** (`gcc`, `make`)
+
+### Windows Setup
+
+**Option 1: Use Pre-Built Releases (Recommended)**
 All root scripts automatically detect and use the newest releases. If no releases exist, they'll build them automatically.
 
-### Option 2: Build Releases Manually
+**Option 2: Build Releases Manually**
 ```powershell
 # Build both quantum-geth and quantum-miner releases
 .\build-release.ps1
@@ -150,9 +224,27 @@ All root scripts automatically detect and use the newest releases. If no release
 # - Includes launchers for Windows and Linux
 ```
 
+### Linux Setup
+
+**Build and Use (Recommended)**
+```bash
+# Build both binaries to root directory
+./build-linux.sh
+
+# Start using immediately
+./geth --datadir qdata init genesis_quantum_testnet.json
+./geth --datadir qdata --networkid 73235 --mine --miner.threads 0 --http
+
+# Start mining in another terminal
+./quantum-miner -rpc-url http://127.0.0.1:8545 -address 0xYourAddress
+```
+
 ### GPU Mining Setup (Optional)
-```powershell
-# Install Python dependencies for GPU acceleration
+```bash
+# Linux
+pip3 install qiskit qiskit-aer numpy
+
+# Windows
 pip install qiskit qiskit-aer numpy
 ```
 

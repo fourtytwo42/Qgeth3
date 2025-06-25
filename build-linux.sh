@@ -1,36 +1,34 @@
 #!/bin/bash
-# Build script for Quantum-Geth Standalone Miner (Linux)
-# Builds the quantum miner for Linux x64
+# Build script for Q Coin Linux Binaries
+# Builds quantum-geth and quantum-miner binaries to the root directory for easy access
+# Usage: ./build-linux.sh [geth|miner|both] [--clean]
 
-OUTPUT_NAME=${1:-quantum-miner}
-VERSION=${2:-1.0.0}
-CLEAN=${3:-false}
+TARGET=${1:-both}
+CLEAN=${2:-false}
+VERSION="1.0.0"
 
-echo "🔨 Building Quantum-Geth Standalone Miner for Linux..."
+echo "🔨 Building Q Coin Linux Binaries..."
+echo "Target: $TARGET"
 echo "Version: $VERSION"
 echo ""
 
-# Check if we're in the right directory
-if [ ! -d "quantum-miner" ]; then
-    echo "❌ Error: quantum-miner directory not found!"
+# Clean previous builds if requested
+if [ "$CLEAN" = "--clean" ] || [ "$2" = "--clean" ]; then
+    echo "🧹 Cleaning previous builds..."
+    rm -f geth quantum-miner quantum_solver.py
+    echo "  Previous binaries removed"
+fi
+
+# Check directories exist
+if [ ! -d "quantum-geth" ]; then
+    echo "❌ Error: quantum-geth directory not found!"
     echo "Please run this script from the root of the Qgeth3 project."
     exit 1
 fi
 
-# Change to quantum-miner directory
-cd quantum-miner
-
-# Clean previous builds if requested
-if [ "$CLEAN" = "true" ]; then
-    echo "🧹 Cleaning previous builds..."
-    rm -f quantum-miner
-    rm -f ../quantum_solver.py
-fi
-
-# Check if go.mod exists
-if [ ! -f "go.mod" ]; then
-    echo "❌ Error: go.mod not found in quantum-miner directory!"
-    echo "The Go module file is missing."
+if [ ! -d "quantum-miner" ]; then
+    echo "❌ Error: quantum-miner directory not found!"
+    echo "Please run this script from the root of the Qgeth3 project."
     exit 1
 fi
 
@@ -43,44 +41,65 @@ export CGO_ENABLED=0
 BUILD_TIME=$(date "+%Y-%m-%d %H:%M:%S")
 GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 
-echo "🏗️  Compiling Go binary..."
-echo "  Target: linux/amd64"
-echo "  Output: $OUTPUT_NAME"
+echo "🏗️  Build Environment:"
+echo "  Target OS: linux/amd64"
 echo "  Build Time: $BUILD_TIME"
 echo "  Git Commit: $GIT_COMMIT"
-echo "  Working Directory: $(pwd)"
+echo "  Output Directory: $(pwd)"
 echo ""
 
-# Build the binary with version info
-go build \
-    -ldflags "-s -w -X 'main.VERSION=$VERSION' -X 'main.BUILD_TIME=$BUILD_TIME' -X 'main.GIT_COMMIT=$GIT_COMMIT'" \
-    -o "$OUTPUT_NAME" \
-    .
+# Function to build quantum-geth
+build_geth() {
+    echo "🔗 Building Quantum-Geth..."
+    
+    # Check if go.mod exists
+    if [ ! -f "quantum-geth/go.mod" ]; then
+        echo "❌ Error: go.mod not found in quantum-geth directory!"
+        exit 1
+    fi
+    
+    cd quantum-geth/cmd/geth
+    if go build -ldflags "-s -w -X 'main.VERSION=$VERSION' -X 'main.BUILD_TIME=$BUILD_TIME' -X 'main.GIT_COMMIT=$GIT_COMMIT'" -o ../../../geth .; then
+        cd ../../..
+        echo "✅ Quantum-Geth built successfully: ./geth"
+        ls -lh geth
+    else
+        cd ../../..
+        echo "❌ Error: Failed to build quantum-geth"
+        exit 1
+    fi
+}
 
-if [ $? -eq 0 ]; then
-    echo "✅ Build successful!"
+# Function to build quantum-miner
+build_miner() {
+    echo "⚡ Building Quantum-Miner..."
     
-    # Show binary info
-    echo ""
-    echo "📦 Binary Information:"
-    ls -lh "$OUTPUT_NAME"
-    echo "  Executable: $OUTPUT_NAME"
-    echo "  Size: $(du -h $OUTPUT_NAME | cut -f1)"
-    echo ""
+    # Check if go.mod exists
+    if [ ! -f "quantum-miner/go.mod" ]; then
+        echo "❌ Error: go.mod not found in quantum-miner directory!"
+        exit 1
+    fi
     
-    # Make executable
-    chmod +x "$OUTPUT_NAME"
-    
-    # Go back to root directory for creating scripts
-    cd ..
-    
-    # Create quantum solver Python script
-    echo "🔬 Creating quantum solver script..."
+    cd quantum-miner
+    if go build -ldflags "-s -w -X 'main.VERSION=$VERSION' -X 'main.BUILD_TIME=$BUILD_TIME' -X 'main.GIT_COMMIT=$GIT_COMMIT'" -o ../quantum-miner .; then
+        cd ..
+        echo "✅ Quantum-Miner built successfully: ./quantum-miner"
+        ls -lh quantum-miner
+    else
+        cd ..
+        echo "❌ Error: Failed to build quantum-miner"
+        exit 1
+    fi
+}
+
+# Function to create quantum solver Python script
+create_solver() {
+    echo "🔬 Creating quantum solver helper script..."
     
     cat > quantum_solver.py << 'EOF'
 #!/usr/bin/env python3
 """
-Quantum circuit solver for quantum-geth mining
+Quantum circuit solver for Q Coin mining
 Compatible with the quantum-geth consensus algorithm
 """
 
@@ -180,21 +199,64 @@ if __name__ == "__main__":
 EOF
     
     chmod +x quantum_solver.py
-    
-    echo "✅ Quantum solver script created!"
-    echo ""
-    echo "🚀 Build complete! Ready to mine quantum blocks."
-    echo ""
-    echo "Usage examples:"
-    echo "  Solo mining:  ./quantum-miner/$OUTPUT_NAME -coinbase 0x... -node http://localhost:8545"
-    echo "  Pool mining:  ./quantum-miner/$OUTPUT_NAME -pool stratum+tcp://pool.example.com:4444"
-    echo "  Show config:  ./quantum-miner/$OUTPUT_NAME -show-config"
-    echo "  Show version: ./quantum-miner/$OUTPUT_NAME -version"
-    
-else
-    echo "❌ Build failed!"
-    cd ..  # Go back to root even if build failed
-    exit 1
-fi
+    echo "✅ Quantum solver script created: ./quantum_solver.py"
+}
 
+# Build based on target
+case "$TARGET" in
+    geth)
+        build_geth
+        ;;
+    miner)
+        build_miner
+        create_solver
+        ;;
+    both)
+        build_geth
+        echo ""
+        build_miner
+        echo ""
+        create_solver
+        ;;
+    *)
+        echo "❌ Error: Invalid target '$TARGET'"
+        echo "Valid targets: geth, miner, both"
+        echo ""
+        echo "Usage examples:"
+        echo "  ./build-linux.sh          # Build both (default)"
+        echo "  ./build-linux.sh geth     # Build only geth"
+        echo "  ./build-linux.sh miner    # Build only miner"
+        echo "  ./build-linux.sh both --clean  # Clean build both"
+        exit 1
+        ;;
+esac
+
+echo ""
+echo "🚀 Build Complete!"
+echo ""
+echo "📦 Binaries created in root directory:"
+if [ "$TARGET" = "geth" ] || [ "$TARGET" = "both" ]; then
+    echo "  ./geth              - Quantum-Geth node"
+fi
+if [ "$TARGET" = "miner" ] || [ "$TARGET" = "both" ]; then
+    echo "  ./quantum-miner     - Quantum Miner"
+    echo "  ./quantum_solver.py - Python quantum solver helper"
+fi
+echo ""
+echo "🎯 Quick Start:"
+if [ "$TARGET" = "geth" ] || [ "$TARGET" = "both" ]; then
+    echo "  # Initialize blockchain:"
+    echo "  ./geth --datadir qdata init genesis_quantum_testnet.json"
+    echo ""
+    echo "  # Start node (testnet, external mining):"
+    echo "  ./geth --datadir qdata --networkid 73235 --mine --miner.threads 0 \\"
+    echo "         --http --http.api eth,net,web3,personal,admin,miner \\"
+    echo "         --miner.etherbase 0x742d35C6C4e6d8de6f10E7FF75DD98dd25b02C3A"
+fi
+if [ "$TARGET" = "miner" ] || [ "$TARGET" = "both" ]; then
+    echo ""
+    echo "  # Start mining (in another terminal):"
+    echo "  ./quantum-miner -rpc-url http://127.0.0.1:8545 \\"
+    echo "                  -address 0x742d35C6C4e6d8de6f10E7FF75DD98dd25b02C3A"
+fi
 echo "" 
