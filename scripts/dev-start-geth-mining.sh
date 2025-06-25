@@ -6,7 +6,7 @@
 # Default parameters
 THREADS=1
 DATADIR="qdata"
-NETWORKID=1337
+NETWORKID=73235
 ETHERBASE="0x742d35C6C4e6d8de6f10E7FF75DD98dd25b02C3A"
 VERBOSITY=4
 QUANTUM_SOLVER="cpu"
@@ -48,7 +48,7 @@ while [[ $# -gt 0 ]]; do
             echo "Options:"
             echo "  --threads NUM       Mining threads (default: 1)"
             echo "  --datadir DIR       Data directory (default: qdata)"
-            echo "  --networkid ID      Network ID (default: 1337)"
+            echo "  --networkid ID      Network ID (default: 73235)"
             echo "  --etherbase ADDR    Coinbase address"
             echo "  --verbosity LEVEL   Log verbosity (default: 4)"
             echo "  --quantum-solver    Quantum solver (default: cpu)"

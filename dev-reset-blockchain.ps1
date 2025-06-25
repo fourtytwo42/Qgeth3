@@ -1,19 +1,19 @@
-# Reset Blockchain - Quantum-Geth v0.9 BareBones+Halving
+# Reset Blockchain - Quantum-Geth with Halving
 # Cleans the blockchain data, builds latest release binaries, and creates a new genesis block
 # Usage: .\reset-blockchain.ps1 -difficulty 1 -force
 
 param(
     [float]$difficulty = 0.0005,  # Starting difficulty (quantum-optimized: 0.0005 based on real testing)
     [string]$datadir = "qdata",
-    [int]$networkid = 73428,
-    [int]$chainid = 73428,
+    [int]$networkid = 73235,
+    [int]$chainid = 73235,
     [string]$etherbase = "0x8b61271473f14c80f2B1381Db9CB13b2d5306200",
     [string]$balance = "300000000000000000000000", # 300000 QGC
     [switch]$force = $false,     # Skip confirmation prompt
     [switch]$nobuild = $false    # Skip building new release packages
 )
 
-Write-Host "*** QUANTUM-GETH v0.9 BareBones+Halving COMPLETE RESET ***" -ForegroundColor Yellow
+Write-Host "*** QUANTUM-GETH COMPLETE RESET ***" -ForegroundColor Yellow
 Write-Host "This will COMPLETELY WIPE the existing blockchain and build new release packages!" -ForegroundColor Red
 Write-Host ""
 Write-Host "Configuration:" -ForegroundColor Cyan
@@ -24,11 +24,11 @@ Write-Host "  Etherbase: $etherbase"
 Write-Host "  Balance: $balance wei - 300000 QGC" -ForegroundColor Yellow
   Write-Host "  Build Releases: $(if ($nobuild) { 'NO' } else { 'YES' })" -ForegroundColor $(if ($nobuild) { 'Yellow' } else { 'Green' })
 Write-Host ""
-Write-Host "v0.9 BareBones+Halving Features:" -ForegroundColor Magenta
+Write-Host "Quantum-Geth Features:" -ForegroundColor Magenta
 Write-Host "  * Initial Subsidy: 50 QGC per block" -ForegroundColor Gray
 Write-Host "  * Halving Interval: 600000 blocks - 6 months" -ForegroundColor Gray
 Write-Host "  * Target Block Time: 12 seconds - ASERT-Q (per-block adjustment)" -ForegroundColor Gray
-Write-Host "  * Quantum Puzzles: 32 chained per block - 16 qubits x 20 T-gates" -ForegroundColor Gray
+Write-Host "  * Quantum Puzzles: 128 chained per block - 16 qubits x 20 T-gates" -ForegroundColor Gray
 Write-Host "  * Proof Stack: Mahadev-CAPSS-Nova" -ForegroundColor Gray
 Write-Host "  * Self-Attestation: Dilithium-2" -ForegroundColor Gray
 Write-Host ""
@@ -54,7 +54,7 @@ try {
 
 # Build latest release packages (unless skipped)
 if (-not $nobuild) {
-    Write-Host "Building new Quantum-Geth v0.9 BareBones+Halving release packages..." -ForegroundColor Cyan
+    Write-Host "Building new Quantum-Geth release packages..." -ForegroundColor Cyan
     
     try {
         Write-Host "  Building both quantum-geth and quantum-miner releases..." -ForegroundColor Yellow
@@ -141,7 +141,7 @@ $genesisJson = @"
     "qmpow": {
       "qbits": 16,
       "tcount": 20,
-      "lnet": 32,
+      "lnet": 128,
       "epochLen": 100,
       "testMode": false
     }
@@ -208,8 +208,8 @@ try {
         Remove-Item $tempGenesisFile -Force
         Write-Host "  Temporary genesis file removed" -ForegroundColor Green
     }
-    if (Test-Path "genesis_quantum_v09.json") {
-        Remove-Item genesis_quantum_v09.json -Force
+    if (Test-Path "genesis_quantum.json") {
+        Remove-Item genesis_quantum.json -Force
         Write-Host "  Old genesis file removed" -ForegroundColor Green
     }
 } catch {
@@ -217,7 +217,7 @@ try {
 }
 
 Write-Host ""
-Write-Host "v0.9 BareBones+Halving BLOCKCHAIN RESET COMPLETE!" -ForegroundColor Green
+Write-Host "QUANTUM-GETH BLOCKCHAIN RESET COMPLETE!" -ForegroundColor Green
 Write-Host ""
 Write-Host "Summary:" -ForegroundColor Cyan
 Write-Host "  Binary: $(if ($nobuild) { 'Used existing' } else { 'Rebuilt from source' })"
@@ -232,11 +232,11 @@ Write-Host ""
 Write-Host "You can now start mining with:" -ForegroundColor Yellow
 Write-Host "   .\start-geth-mining.ps1" -ForegroundColor White
 Write-Host ""
-Write-Host "Pro Tips for v0.9:" -ForegroundColor Cyan
-Write-Host "  * Use difficulty=1 for instant testing - 32 chained puzzles still execute"
+Write-Host "Pro Tips:" -ForegroundColor Cyan
+Write-Host "  * Use difficulty=1 for instant testing - 128 chained puzzles still execute"
 Write-Host "  * Use difficulty=10-100 for normal testing"
 Write-Host "  * Use difficulty=1000+ for realistic mining"
 Write-Host "  * Monitor halving events at blocks 600k, 1200k, 1800k..."
-Write-Host "  * Each block executes 32 sequential chained quantum puzzles"
+Write-Host "  * Each block executes 128 sequential chained quantum puzzles"
 Write-Host "  * ASERT-Q targets 12-second blocks automatically"
 Write-Host "" 
