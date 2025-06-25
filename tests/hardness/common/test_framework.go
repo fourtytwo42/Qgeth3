@@ -238,16 +238,16 @@ func ValidateQuantumHeader(t *testing.T, header *qmpow.QuantumHeader) bool {
 	if header.TCount == nil {
 		t.Error("TCount field is nil")
 		valid = false
-	} else if *header.TCount != 8192 {
-		t.Errorf("Invalid TCount: expected 8192, got %d", *header.TCount)
+	} else if *header.TCount != 20 {
+		t.Errorf("Invalid TCount: expected 20, got %d", *header.TCount)
 		valid = false
 	}
 
 	if header.LNet == nil {
 		t.Error("LNet field is nil")
 		valid = false
-	} else if *header.LNet != 48 {
-		t.Errorf("Invalid LNet: expected 48, got %d", *header.LNet)
+	} else if *header.LNet != 128 {
+		t.Errorf("Invalid LNet: expected 128, got %d", *header.LNet)
 		valid = false
 	}
 
@@ -266,8 +266,8 @@ func ValidateQuantumHeader(t *testing.T, header *qmpow.QuantumHeader) bool {
 		valid = false
 	}
 
-	if len(header.BranchNibbles) != 48 {
-		t.Errorf("Invalid BranchNibbles length: expected 48, got %d", len(header.BranchNibbles))
+	if len(header.BranchNibbles) != 32 {
+		t.Errorf("Invalid BranchNibbles length: expected 32, got %d", len(header.BranchNibbles))
 		valid = false
 	}
 
@@ -312,8 +312,8 @@ func CreateTestMiningInput() *qmpow.MiningInput {
 		QNonce64:     GoldenValues.QNonce,
 		BlockHeight:  100,
 		QBits:        16,
-		TCount:       8192,
-		LNet:         48,
+		TCount:       20,
+		LNet:         128,
 	}
 }
 

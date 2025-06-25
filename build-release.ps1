@@ -171,8 +171,8 @@ function Build-QuantumGeth {
     "verkleTime": null,
     "qmpow": {
       "qbits": 16,
-      "tcount": 8192,
-      "lnet": 48,
+      "tcount": 20,
+      "lnet": 32,
       "epochLen": 100,
       "testMode": false
     }
@@ -334,6 +334,16 @@ Write-Host ""
 
 ## Mining
 Use the **optimized quantum-miner package** for high-performance GPU mining (10-100x faster), or use start-geth-mining scripts for basic built-in mining.
+
+Quantum-Geth v0.9 BareBones+Halving Features:
+  * 32 chained quantum puzzles (16 qubits x 20 T-gates)
+  * Bitcoin-style halving (50 QGC -> 25 QGC -> 12.5 QGC...)
+  * 600,000 block epochs (approximately 6 months)
+  * Branch-serial quantum circuit execution
+  * Mahadev->CAPSS->Nova proof stack
+  * Dilithium-2 self-attestation
+  * ASERT-Q difficulty adjustment (12s target)
+  * Single RLP quantum blob (197 bytes)
 "@ | Out-File -FilePath "$releaseDir\README.md" -Encoding UTF8
 
     Write-Host "Quantum-Geth release created: $releaseDir" -ForegroundColor Green

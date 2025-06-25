@@ -28,7 +28,7 @@ Write-Host "v0.9 BareBones+Halving Features:" -ForegroundColor Magenta
 Write-Host "  * Initial Subsidy: 50 QGC per block" -ForegroundColor Gray
 Write-Host "  * Halving Interval: 600000 blocks - 6 months" -ForegroundColor Gray
 Write-Host "  * Target Block Time: 12 seconds - ASERT-Q" -ForegroundColor Gray
-Write-Host "  * Quantum Puzzles: 48 per block - 16 qubits x 8192 T-gates" -ForegroundColor Gray
+Write-Host "  * Quantum Puzzles: 32 chained per block - 16 qubits x 20 T-gates" -ForegroundColor Gray
 Write-Host "  * Proof Stack: Mahadev-CAPSS-Nova" -ForegroundColor Gray
 Write-Host "  * Self-Attestation: Dilithium-2" -ForegroundColor Gray
 Write-Host ""
@@ -119,8 +119,8 @@ if (Test-Path $datadir) {
 # Create genesis file with specified difficulty
 Write-Host "Creating genesis file with difficulty $difficulty..." -ForegroundColor Yellow
 
-# Convert difficulty to hex (multiply by 1000000 to convert from decimal to fixed-point)
-$difficultyInt = [math]::Round($difficulty * 1000000)
+# Convert difficulty to hex (direct conversion without scaling)
+$difficultyInt = [math]::Round($difficulty)
 $difficultyHex = "0x" + [Convert]::ToString($difficultyInt, 16).ToUpper()
 
 Write-Host "  Converting difficulty: $difficulty -> $difficultyInt -> $difficultyHex" -ForegroundColor Gray
@@ -140,8 +140,8 @@ $genesisJson = @"
     "eip170FBlock": 0,
     "qmpow": {
       "qbits": 16,
-      "tcount": 8192,
-      "lnet": 48,
+      "tcount": 20,
+      "lnet": 32,
       "epochLen": 100,
       "testMode": false
     }
@@ -233,10 +233,10 @@ Write-Host "You can now start mining with:" -ForegroundColor Yellow
 Write-Host "   .\start-geth-mining.ps1" -ForegroundColor White
 Write-Host ""
 Write-Host "Pro Tips for v0.9:" -ForegroundColor Cyan
-Write-Host "  * Use difficulty=1 for instant testing - 48 puzzles still execute"
+Write-Host "  * Use difficulty=1 for instant testing - 32 chained puzzles still execute"
 Write-Host "  * Use difficulty=10-100 for normal testing"
 Write-Host "  * Use difficulty=1000+ for realistic mining"
 Write-Host "  * Monitor halving events at blocks 600k, 1200k, 1800k..."
-Write-Host "  * Each block executes 48 sequential quantum puzzles"
+Write-Host "  * Each block executes 32 sequential chained quantum puzzles"
 Write-Host "  * ASERT-Q targets 12-second blocks automatically"
 Write-Host "" 

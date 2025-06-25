@@ -221,6 +221,23 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 							"tcount", qmpowConfig.TCount,
 							"lnet", qmpowConfig.LNet,
 							"epochLen", qmpowConfig.EpochLen)
+						
+						// OVERRIDE: Force new configuration if database has old values
+						if qmpowConfig.LNet == 128 || qmpowConfig.TCount == 8192 || qmpowConfig.QBits == 12 {
+							log.Warn("🔄 OVERRIDE: Database has old QMPoW config, forcing new 32-puzzle configuration")
+							qmpowConfig = &ctypes.QMPoWConfig{
+								QBits:    16,  // 16 qubits per puzzle
+								TCount:   20,  // 20 T-gates per puzzle (ENFORCED MINIMUM)
+								LNet:     32,  // 32 chained puzzles per block
+								EpochLen: 100,
+								TestMode: false, // ENABLE REAL QUANTUM MINING
+							}
+							log.Info("🚀 OVERRIDE: New QMPoW config applied",
+								"qbits", qmpowConfig.QBits,
+								"tcount", qmpowConfig.TCount,
+								"lnet", qmpowConfig.LNet,
+								"epochLen", qmpowConfig.EpochLen)
+						}
 					}
 				} else {
 					log.Error("🔬 DEBUG: Failed to cast database config to CoreGethChainConfig")
@@ -235,9 +252,9 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 	if qmpowConfig == nil && config.NetworkId == 73428 {
 		log.Warn("🚀 FALLBACK: Forcing QMPoW for Quantum-Geth network (networkId 73428)")
 		qmpowConfig = &ctypes.QMPoWConfig{
-			QBits:    12,
-			TCount:   4096,
-			LNet:     48,
+			QBits:    16,  // 16 qubits per puzzle
+			TCount:   20,  // 20 T-gates per puzzle (ENFORCED MINIMUM)
+			LNet:     32,  // 32 chained puzzles per block
 			EpochLen: 100,
 			TestMode: false, // ENABLE REAL QUANTUM MINING
 		}
@@ -247,6 +264,19 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 			"lnet", qmpowConfig.LNet,
 			"epochLen", qmpowConfig.EpochLen,
 			"testMode", qmpowConfig.TestMode)
+	}
+
+	// FINAL OVERRIDE: Always ensure 32-puzzle configuration regardless of source
+	if qmpowConfig != nil && (qmpowConfig.LNet != 32 || qmpowConfig.QBits != 16 || qmpowConfig.TCount != 20) {
+		log.Warn("🔄 FINAL OVERRIDE: Forcing correct 32-puzzle configuration",
+			"oldQBits", qmpowConfig.QBits, "newQBits", 16,
+			"oldTCount", qmpowConfig.TCount, "newTCount", 20,
+			"oldLNet", qmpowConfig.LNet, "newLNet", 32)
+		qmpowConfig.QBits = 16
+		qmpowConfig.TCount = 20
+		qmpowConfig.LNet = 32
+		qmpowConfig.TestMode = false
+		log.Info("✅ FINAL OVERRIDE: QMPoW config corrected to 32-puzzle configuration")
 	}
 
 	engine := ethconfig.CreateConsensusEngine(stack, &ethashConfig, cliqueConfig, lyra2Config, qmpowConfig, config.Miner.Notify, config.Miner.Noverify, chainDb)
@@ -322,13 +352,13 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Set blockchain reference for QMPoW remote mining
 	if qmpowEngine, ok := eth.engine.(*qmpow.QMPoW); ok {
 		qmpowEngine.SetChain(eth.blockchain)
 		log.Info("✅ QMPoW remote mining enabled - external miners can connect")
 	}
-	
+
 	eth.bloomIndexer.Start(eth.blockchain)
 	// Handle artificial finality config override cases.
 	if n := config.OverrideECBP1100; n != nil {

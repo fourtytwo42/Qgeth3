@@ -23,7 +23,7 @@ import random
 
 # Quantum PoW Constants
 FIXED_TCOUNT = 4096  # 4,096 T-gates per puzzle
-FIXED_LNET = 48      # 48 puzzles providing 1,152-bit security
+FIXED_LNET = 128     # 128 chained puzzles providing enhanced security
 STARTING_QBITS = 12  # Start with 12 qubits
 GLIDE_BLOCKS = 12500 # Add +1 qubit every 12,500 blocks
 
@@ -297,8 +297,8 @@ def main():
             print(json.dumps({'error': f'Invalid tcount: {tcount} (must be 1-10000)'}))
             sys.exit(1)
             
-        if not (1 <= lnet <= 48):
-            print(json.dumps({'error': f'Invalid lnet: {lnet} (must be 1-48)'}))
+        if not (1 <= lnet <= 128):
+            print(json.dumps({'error': f'Invalid lnet: {lnet} (must be 1-128)'}))
             sys.exit(1)
         
         # Validate seed format
