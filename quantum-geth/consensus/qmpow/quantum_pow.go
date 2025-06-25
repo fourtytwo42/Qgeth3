@@ -22,9 +22,9 @@ import (
 
 // FIXED QUANTUM PARAMETERS - These are now ENFORCED and cannot be reduced by miners
 const (
-	FixedQBits  = 16 // ENFORCED: Exactly 16 qubits per puzzle
-	FixedTCount = 20 // ENFORCED: Minimum 20 T-gates per puzzle (was 8192)
-	FixedLNet   = 32 // ENFORCED: Exactly 32 chained puzzles per block (was 128)
+	FixedQBits  = 16  // ENFORCED: Exactly 16 qubits per puzzle
+	FixedTCount = 20  // ENFORCED: Minimum 20 T-gates per puzzle (was 8192)
+	FixedLNet   = 128 // ENFORCED: Exactly 128 chained puzzles per block for maximum entropy
 )
 
 // QuantumConstants defines the constants for quantum proof-of-work
@@ -108,7 +108,7 @@ func GenerateBranchNibbles(header *types.Header, outcomes [][]byte) error {
 	return nil
 }
 
-// CalculateOutcomeRoot computes the Merkle root of 48 × QBits bits
+// CalculateOutcomeRoot computes the Merkle root of 128 × QBits bits
 func CalculateOutcomeRoot(outcomes [][]byte) common.Hash {
 	// Simple implementation - in production would use proper Merkle tree
 	h := sha256.New()
@@ -168,7 +168,7 @@ func CalculateProofRoot(outcomes [][]byte, gateHash common.Hash) common.Hash {
 		batchHash := sha256.New()
 		batchHash.Write([]byte{byte(batchIdx)})
 
-		// Each batch covers 16 puzzles (48/3 = 16)
+		// Each batch covers 16 puzzles (128/8 = 16)
 		startPuzzle := batchIdx * 16
 		endPuzzle := startPuzzle + 16
 		if endPuzzle > len(outcomes) {

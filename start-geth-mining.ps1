@@ -1,4 +1,4 @@
-# Start Geth with Mining - Quantum-Geth v0.9–BareBones+Halving
+# Start Geth with Mining - Quantum-Geth with Halving
 # Starts the quantum geth node with quantum proof-of-work mining
 # Usage: .\start-geth-mining.ps1 -threads 1 -verbosity 4
 
@@ -15,7 +15,7 @@ param(
     [switch]$isolated = $true  # Run in isolated mode (no peers)
 )
 
-Write-Host "*** QUANTUM-GETH v0.9 BareBones+Halving MINING STARTUP ***" -ForegroundColor Green
+Write-Host "*** QUANTUM-GETH MINING STARTUP ***" -ForegroundColor Green
 Write-Host "48-Puzzle Sequential Quantum Proof-of-Work with Bitcoin-Style Halving" -ForegroundColor Cyan
 Write-Host ""
 
@@ -39,7 +39,7 @@ Write-Host "  Quantum Solver: $quantumSolver"
 Write-Host "  Isolated Mode: $isolated"
 Write-Host ""
 
-Write-Host "v0.9 BareBones+Halving Mining Features:" -ForegroundColor Magenta
+Write-Host "Quantum Mining Features:" -ForegroundColor Magenta
 Write-Host "  * 48 sequential quantum puzzles per block" -ForegroundColor Gray
 Write-Host "  * 16 qubits x 8,192 T-gates per puzzle" -ForegroundColor Gray
 Write-Host "  * Seed chaining: Seed_{i+1} = SHA256(Seed_i || Outcome_i)" -ForegroundColor Gray
@@ -89,7 +89,7 @@ if ($isolated) {
 }
 
 Write-Host ""
-Write-Host "Expected v0.9 Mining Behavior:" -ForegroundColor Cyan
+Write-Host "Expected Mining Behavior:" -ForegroundColor Cyan
 Write-Host "  • Sequential 48-puzzle execution with seed chaining" -ForegroundColor Gray
 Write-Host "  • OutcomeRoot = MerkleRoot(Outcome_0...Outcome_47)" -ForegroundColor Gray
 Write-Host "  • GateHash = SHA256(stream_0 || ... || stream_47)" -ForegroundColor Gray
@@ -99,7 +99,7 @@ Write-Host "  • ASERT-Q difficulty adjustment every block" -ForegroundColor Gr
 Write-Host "  • Block rewards: 50 QGC + transaction fees" -ForegroundColor Gray
 Write-Host ""
 
-Write-Host "Starting Quantum-Geth v0.9 mining..." -ForegroundColor Green
+Write-Host "Starting Quantum-Geth mining..." -ForegroundColor Green
 Write-Host "   Use Ctrl+C to stop mining" -ForegroundColor Gray
 Write-Host ""
 
@@ -144,11 +144,11 @@ try {
     Write-Host "     .\geth.exe"
     Write-Host "  3. Verify the quantum solver exists:"
     Write-Host "     $quantumSolver"
-    Write-Host "  4. Check if v0.9 genesis was used:"
+    Write-Host "  4. Check if quantum genesis was used:"
     Write-Host "     Should contain 'qmpow' config section"
     Write-Host ""
     exit 1
 }
 
 Write-Host ""
-Write-Host "v0.9 Mining stopped." -ForegroundColor Yellow 
+Write-Host "Quantum mining stopped." -ForegroundColor Yellow 

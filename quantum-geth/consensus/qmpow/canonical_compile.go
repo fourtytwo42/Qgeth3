@@ -1,7 +1,7 @@
 // Copyright 2025 Quantum-Geth Authors
 // This file is part of the quantum-geth library.
 
-// Package qmpow implements canonical compilation for Quantum-Geth v0.9–BareBones+Halving
+// Package qmpow implements canonical compilation for Quantum-Geth
 // Canonical compilation ensures deterministic QASM-lite → gate stream transformation
 
 package qmpow

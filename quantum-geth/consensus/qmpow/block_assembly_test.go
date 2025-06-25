@@ -372,7 +372,7 @@ func createTestQuantumHeader() *types.Header {
 		QNonce64:      &qnonce,
 		AttestMode:    &attestMode,
 		ExtraNonce32:  make([]byte, 32),
-		BranchNibbles: make([]byte, 48),
+		BranchNibbles: make([]byte, 128),
 	}
 }
 

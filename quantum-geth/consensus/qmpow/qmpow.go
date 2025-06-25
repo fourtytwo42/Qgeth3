@@ -1,7 +1,7 @@
 // Copyright 2025 Quantum-Geth Authors
 // This file is part of the quantum-geth library.
 
-// Package qmpow implements the Quantum-Geth v0.9-rc3-hw0 quantum proof-of-work consensus engine.
+// Package qmpow implements the Quantum-Geth quantum proof-of-work consensus engine.
 // Unified, Branch-Serial Quantum Proof-of-Work — Canonical-Compile Edition
 package qmpow
 
@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"sync"
 	"time"
@@ -25,7 +26,7 @@ import (
 	"github.com/holiman/uint256"
 )
 
-// Quantum-Geth v0.9–BareBones+Halving Constants
+// Quantum-Geth Constants
 const (
 	// Halving epoch parameters (Section 11)
 	EpochBlocks   = HalvingEpochLength // Epoch = ⌊Height / 600,000⌋
@@ -35,11 +36,11 @@ const (
 	// These are now calculated dynamically based on height
 
 	// Proof system sizes
-	OutcomeRootSize   = 32 // Merkle root of outcomes
-	BranchNibblesSize = 32 // One high-nibble per puzzle (was 48)
-	GateHashSize      = 32 // SHA-256 of gate streams
-	ProofRootSize     = 32 // Merkle root of Nova proofs
-	ExtraNonce32Size  = 32 // Entropy field size
+	OutcomeRootSize   = 32  // Merkle root of outcomes
+	BranchNibblesSize = 128 // One full byte per puzzle for maximum entropy
+	GateHashSize      = 32  // SHA-256 of gate streams
+	ProofRootSize     = 32  // Merkle root of Nova proofs
+	ExtraNonce32Size  = 32  // Entropy field size
 
 	// Attestation modes
 	AttestModeDilithium = 0x00 // Deterministic Dilithium attestation
@@ -139,7 +140,7 @@ type remoteSealer struct {
 	mu sync.RWMutex
 }
 
-// QMPoW is the v0.9-rc3-hw0 quantum mining engine
+// QMPoW is the quantum mining engine
 type QMPoW struct {
 	config   Config
 	threads  int
@@ -260,8 +261,8 @@ func (q *QMPoW) VerifyHeader(chain consensus.ChainHeaderReader, header *types.He
 		return nil
 	}
 
-	// Verify quantum proof according to v0.9-rc3-hw0 specification
-	log.Debug("🔍 Quantum-Geth v0.9-rc3-hw0 proof verification",
+	// Verify quantum proof according to specification
+	log.Debug("🔍 Quantum-Geth proof verification",
 		"blockNumber", header.Number.Uint64(),
 		"epoch", *header.Epoch,
 		"qbits", *header.QBits,
@@ -352,11 +353,11 @@ func (q *QMPoW) VerifyUncles(chain consensus.ChainReader, block *types.Block) er
 
 // Prepare initializes the consensus fields of a block header
 func (q *QMPoW) Prepare(chain consensus.ChainHeaderReader, header *types.Header) error {
-	log.Info("🎯 QMPoW Prepare called (v0.9-rc3-hw0)", "blockNumber", header.Number.Uint64(), "parentHash", header.ParentHash.Hex())
+	log.Info("🎯 QMPoW Prepare called", "blockNumber", header.Number.Uint64(), "parentHash", header.ParentHash.Hex())
 
 	params := q.ParamsForHeight(header.Number.Uint64())
 
-	// Set quantum parameters according to v0.9-rc3-hw0 specification
+	// Set quantum parameters according to specification
 	header.Epoch = &params.Epoch
 	header.QBits = &params.QBits
 	header.TCount = &params.TCount
@@ -523,7 +524,7 @@ func (q *QMPoW) Seal(chain consensus.ChainHeaderReader, block *types.Block, resu
 	return nil
 }
 
-// seal is the v0.9-rc3-hw0 quantum mining function
+// seal is the quantum mining function
 // This implements the unified, branch-serial quantum proof-of-work
 func (q *QMPoW) seal(chain consensus.ChainHeaderReader, block *types.Block, results chan<- *types.Block, stop <-chan struct{}) {
 	header := types.CopyHeader(block.Header())
@@ -609,7 +610,7 @@ func (q *QMPoW) seal(chain consensus.ChainHeaderReader, block *types.Block, resu
 		"difficulty", header.Difficulty)
 }
 
-// SealHashWithNonce returns hash including nonce (v0.9-rc3-hw0 seed generation)
+// SealHashWithNonce returns hash including nonce for seed generation
 func (q *QMPoW) SealHashWithNonce(header *types.Header) common.Hash {
 	// Create header copy for seed generation
 	headerCopy := types.CopyHeader(header)
@@ -673,7 +674,7 @@ func (q *QMPoW) CalcDifficulty(chain consensus.ChainHeaderReader, time uint64, p
 		"parentDifficulty", FormatDifficulty(parentDifficulty))
 
 	// For the first few blocks, maintain genesis difficulty to allow stabilization
-	if blockNumber <= 5 {
+	if blockNumber <= 3 {
 		log.Info("🚀 Early block - maintaining genesis difficulty", "blockNumber", blockNumber)
 		return parentDifficulty
 	}
@@ -685,8 +686,8 @@ func (q *QMPoW) CalcDifficulty(chain consensus.ChainHeaderReader, time uint64, p
 	if actualBlockTime <= 0 {
 		actualBlockTime = 1 // Prevent division issues
 	}
-	if actualBlockTime > 300 { // Cap at 5 minutes
-		actualBlockTime = 300
+	if actualBlockTime > 120 { // Cap at 2 minutes
+		actualBlockTime = 120
 	}
 
 	// Target block time is 12 seconds
@@ -701,10 +702,10 @@ func (q *QMPoW) CalcDifficulty(chain consensus.ChainHeaderReader, time uint64, p
 		"timeDiff", timeDiff,
 		"blockNumber", blockNumber)
 
-	// Apply ASERT adjustment
-	newDifficulty := q.applyASERTAdjustment(parentDifficulty, timeDiff, blockNumber)
+	// Apply ASERT adjustment with high-precision arithmetic
+	newDifficulty := q.applyASERTAdjustmentPrecise(parentDifficulty, timeDiff, blockNumber)
 
-	// Ensure minimum difficulty (prevent difficulty from going to zero)
+	// Ensure minimum difficulty (use 1 as minimum for maximum granularity)
 	minDiff := big.NewInt(1)
 	if newDifficulty.Cmp(minDiff) < 0 {
 		newDifficulty.Set(minDiff)
@@ -714,9 +715,9 @@ func (q *QMPoW) CalcDifficulty(chain consensus.ChainHeaderReader, time uint64, p
 	// Log the adjustment
 	direction := "STABLE"
 	if timeDiff > 1 {
-		direction = "EASIER (slower blocks)"
+		direction = "EASIER (slower blocks - decreasing difficulty)"
 	} else if timeDiff < -1 {
-		direction = "HARDER (faster blocks)"
+		direction = "HARDER (faster blocks - increasing difficulty)"
 	}
 
 	log.Info("✅ ASERT-Q difficulty adjusted",
@@ -728,110 +729,61 @@ func (q *QMPoW) CalcDifficulty(chain consensus.ChainHeaderReader, time uint64, p
 	return newDifficulty
 }
 
-// applyASERTAdjustment applies the ASERT formula to adjust difficulty
+// applyASERTAdjustmentPrecise applies the ASERT formula with high precision and faster response
 // Formula: newDifficulty = oldDifficulty * 2^(timeDiff / halfLife)
-// halfLife = 300 seconds (5 minutes) - time for 50% difficulty change
-func (q *QMPoW) applyASERTAdjustment(baseDifficulty *big.Int, timeDiff int64, blockNumber uint64) *big.Int {
-	// ASERT parameters
-	const halfLife = 300  // 5 minutes in seconds
-	const fixedPoint = 16 // Q16 fixed-point arithmetic
+// halfLife = 120 seconds (10 blocks) - gradual but responsive
+func (q *QMPoW) applyASERTAdjustmentPrecise(baseDifficulty *big.Int, timeDiff int64, blockNumber uint64) *big.Int {
+	// ASERT parameters - more gradual for stable mining
+	const halfLife = 120   // 120 seconds (10 blocks) - gradual adjustment
+	const precision = 1000 // Use 1000x precision to avoid rounding issues
 
 	// If no time difference, return original difficulty
 	if timeDiff == 0 {
 		return new(big.Int).Set(baseDifficulty)
 	}
 
-	// Calculate exponent in Q16 fixed-point: exponent = timeDiff / halfLife
-	// exponentQ16 = (timeDiff << 16) / halfLife
-	exponentQ16 := (timeDiff << fixedPoint) / halfLife
+	// Use floating point for precise calculation, then convert back to big.Int
+	// This avoids the rounding issues we had with integer arithmetic
 
-	// Apply 2^exponent using fixed-point arithmetic
-	adjustedDifficulty := q.applyPowerOfTwo(baseDifficulty, exponentQ16, fixedPoint)
+	// Convert to float64 for calculation
+	diffFloat := float64(baseDifficulty.Uint64())
 
-	// Clamp the adjustment to prevent extreme changes (max 4x change per block)
-	maxIncrease := new(big.Int).Set(baseDifficulty)
-	maxIncrease.Mul(maxIncrease, big.NewInt(4))
+	// Calculate the exponent: -timeDiff / halfLife (inverted for proper difficulty direction)
+	// Fast blocks (timeDiff < 0) should INCREASE difficulty (bigger numbers)
+	// Slow blocks (timeDiff > 0) should DECREASE difficulty (smaller numbers)
+	exponent := float64(-timeDiff) / float64(halfLife)
 
-	maxDecrease := new(big.Int).Set(baseDifficulty)
-	maxDecrease.Div(maxDecrease, big.NewInt(4))
+	// Apply 2^exponent using math.Pow
+	multiplier := math.Pow(2.0, exponent)
 
-	if adjustedDifficulty.Cmp(maxIncrease) > 0 {
-		adjustedDifficulty.Set(maxIncrease)
-		log.Info("🔒 ASERT-Q adjustment clamped to 4x increase")
-	} else if adjustedDifficulty.Cmp(maxDecrease) < 0 {
-		adjustedDifficulty.Set(maxDecrease)
-		log.Info("🔒 ASERT-Q adjustment clamped to 4x decrease")
+	// Calculate new difficulty
+	newDiffFloat := diffFloat * multiplier
+
+	// Apply much more conservative bounds to prevent extreme changes
+	// Allow up to 2x increase or 2x decrease per block for stability
+	maxIncrease := diffFloat * 2.0
+	maxDecrease := diffFloat / 2.0
+
+	if newDiffFloat > maxIncrease {
+		newDiffFloat = maxIncrease
+		log.Info("🔒 ASERT-Q adjustment clamped to 2x increase")
+	} else if newDiffFloat < maxDecrease {
+		newDiffFloat = maxDecrease
+		log.Info("🔒 ASERT-Q adjustment clamped to 2x decrease")
 	}
 
-	return adjustedDifficulty
-}
-
-// applyPowerOfTwo applies 2^(exponentQ16) to a big.Int using Q16 fixed-point arithmetic
-// This implements smooth exponential adjustment for ASERT-Q
-func (q *QMPoW) applyPowerOfTwo(value *big.Int, exponentQ16 int64, fixedPoint int) *big.Int {
-	if exponentQ16 == 0 {
-		return new(big.Int).Set(value)
+	// Use much lower minimum difficulty for better granularity
+	if newDiffFloat < 1.0 {
+		newDiffFloat = 1.0
 	}
 
-	// Handle negative exponents (making difficulty higher)
-	isNegative := exponentQ16 < 0
-	if isNegative {
-		exponentQ16 = -exponentQ16
-	}
+	// Convert back to big.Int with high precision
+	result := big.NewInt(int64(newDiffFloat * precision))
+	result.Div(result, big.NewInt(precision))
 
-	// Extract integer and fractional parts
-	integerPart := exponentQ16 >> fixedPoint
-	fractionalPart := exponentQ16 & ((1 << fixedPoint) - 1)
-
-	result := new(big.Int).Set(value)
-
-	// Apply integer part: multiply by 2^integerPart
-	if integerPart > 0 {
-		// Clamp integer part to prevent overflow
-		if integerPart > 10 {
-			integerPart = 10 // Max 1024x change
-		}
-		shift := big.NewInt(1)
-		shift.Lsh(shift, uint(integerPart))
-		result.Mul(result, shift)
-	}
-
-	// Apply fractional part using Taylor series approximation
-	// 2^(x/65536) ≈ 1 + x*ln(2)/65536 + (x*ln(2)/65536)^2/2 for small x
-	if fractionalPart > 0 {
-		// ln(2) in Q16: 0.693147 * 65536 ≈ 45426
-		ln2Q16 := int64(45426)
-
-		// First-order term: x*ln(2)/65536
-		firstOrder := (fractionalPart * ln2Q16) >> fixedPoint
-		adjustment1 := new(big.Int).SetInt64(firstOrder)
-		adjustment1.Mul(adjustment1, result)
-		adjustment1.Div(adjustment1, big.NewInt(1<<fixedPoint))
-
-		// Second-order term: (x*ln(2)/65536)^2/2
-		secondOrder := (firstOrder * firstOrder) >> (fixedPoint + 1) // divide by 2
-		adjustment2 := new(big.Int).SetInt64(secondOrder)
-		adjustment2.Mul(adjustment2, result)
-		adjustment2.Div(adjustment2, big.NewInt(1<<fixedPoint))
-
-		// Apply adjustments
-		result.Add(result, adjustment1)
-		result.Add(result, adjustment2)
-	}
-
-	// Handle negative exponent (division for increasing difficulty)
-	if isNegative && result.Cmp(big.NewInt(1)) > 0 {
-		// For negative exponent: result = value / (2^|exponent|)
-		divisor := new(big.Int).Set(result)
-		result.Set(value)
-		result.Mul(result, big.NewInt(1<<fixedPoint)) // Scale up to maintain precision
-		result.Div(result, divisor)
-		result.Div(result, big.NewInt(1<<fixedPoint)) // Scale back down
-
-		// Prevent difficulty from becoming zero
-		if result.Cmp(big.NewInt(1)) < 0 {
-			result.Set(big.NewInt(1))
-		}
+	// Ensure we have at least minimum difficulty (much lower than before)
+	if result.Cmp(big.NewInt(1)) < 0 {
+		result.Set(big.NewInt(1))
 	}
 
 	return result

@@ -842,9 +842,9 @@ func (m *QuantumMiner) fetchWork() error {
 
 	work := &QuantumWork{
 		WorkHash:  workArray[0].(string),
-		QBits:     16, // Default quantum params
-		TCount:    20, // ENFORCED MINIMUM
-		LNet:      32, // ENFORCED - 32 chained puzzles
+		QBits:     16,  // Default quantum params
+		TCount:    20,  // ENFORCED MINIMUM
+		LNet:      128, // ENFORCED - 128 chained puzzles
 		FetchTime: time.Now(),
 	}
 
@@ -852,8 +852,8 @@ func (m *QuantumMiner) fetchWork() error {
 	if work.TCount < 20 {
 		return fmt.Errorf("SECURITY VIOLATION: Work TCount %d is below enforced minimum of 20", work.TCount)
 	}
-	if work.LNet != 32 {
-		return fmt.Errorf("SECURITY VIOLATION: Work LNet %d must be exactly 32 chained puzzles", work.LNet)
+	if work.LNet != 128 {
+		return fmt.Errorf("SECURITY VIOLATION: Work LNet %d must be exactly 128 chained puzzles", work.LNet)
 	}
 
 	// Parse block number
@@ -1016,8 +1016,8 @@ func (m *QuantumMiner) processWorkChunk(ctx context.Context, work *WorkPackage, 
 	// Update statistics with chunk information
 	m.updateStats(len(work.PuzzleHashes), processingTime, chunkID, totalChunks)
 
-	// Submit result if valid
-	if m.isValidResult(result, work.Target) {
+	// Submit result if valid (pass qnonce for proper quality calculation)
+	if m.isValidResultWithQNonce(result, work.Target, qnonce) {
 		logInfo("🎉 FOUND VALID SOLUTION! QNonce: %016x, Block: %d", qnonce, work.BlockNumber)
 		return m.submitResult(work, result, qnonce)
 	}
@@ -1049,19 +1049,90 @@ func (m *QuantumMiner) updateStats(puzzleCount int, processingTime time.Duration
 	}
 }
 
-// Check if result meets difficulty target
+// Check if result meets difficulty target using geth-compatible quality calculation
 func (m *QuantumMiner) isValidResult(result *QuantumProofSubmission, target *big.Int) bool {
 	// Implement difficulty check based on result hash
-	if result == nil || len(result.BranchNibbles) == 0 {
+	if result == nil {
 		return false
 	}
 
-	// Use the target directly from geth (simple Bitcoin-style calculation)
-	hash := sha256.Sum256(result.BranchNibbles)
-	resultInt := new(big.Int).SetBytes(hash[:])
+	// Use the SAME quality calculation as geth for compatibility
+	quality := m.calculateQuantumProofQuality(result, 0) // qnonce will be set during submission
 
-	// Bitcoin-style comparison: success when resultInt < target
-	return resultInt.Cmp(target) <= 0
+	// Bitcoin-style comparison: success when quality < target
+	return quality.Cmp(target) < 0
+}
+
+// Check if result meets difficulty target with specific qnonce
+func (m *QuantumMiner) isValidResultWithQNonce(result *QuantumProofSubmission, target *big.Int, qnonce uint64) bool {
+	// Implement difficulty check based on result hash
+	if result == nil {
+		return false
+	}
+
+	// Use the SAME quality calculation as geth for compatibility
+	quality := m.calculateQuantumProofQuality(result, qnonce)
+
+	// Bitcoin-style comparison: success when quality < target
+	return quality.Cmp(target) < 0
+}
+
+// calculateQuantumProofQuality implements the same algorithm as geth's CalculateQuantumProofQuality
+func (m *QuantumMiner) calculateQuantumProofQuality(result *QuantumProofSubmission, qnonce uint64) *big.Int {
+	// Enhanced Bitcoin-style hash-based quality calculation
+	// Multiple rounds of hashing for better nonce sensitivity
+	h := sha256.New()
+
+	// First, hash the nonce alone to create base entropy
+	nonceBytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(nonceBytes, qnonce)
+	h.Write(nonceBytes)
+	h.Write([]byte("QUANTUM_NONCE_SEED"))
+	nonceSeed := h.Sum(nil)
+
+	// Reset hasher and combine nonce seed with quantum data
+	h.Reset()
+	h.Write(nonceSeed)
+
+	// Convert outcome root from hex string to bytes
+	outcomeBytes, err := hex.DecodeString(strings.TrimPrefix(result.OutcomeRoot, "0x"))
+	if err != nil {
+		outcomeBytes = make([]byte, 32) // fallback to zeros
+	}
+	h.Write(outcomeBytes)
+
+	// Combine gate hash and proof root as "proof" data
+	gateBytes, err := hex.DecodeString(strings.TrimPrefix(result.GateHash, "0x"))
+	if err != nil {
+		gateBytes = make([]byte, 32) // fallback to zeros
+	}
+	proofBytes, err := hex.DecodeString(strings.TrimPrefix(result.ProofRoot, "0x"))
+	if err != nil {
+		proofBytes = make([]byte, 32) // fallback to zeros
+	}
+	h.Write(gateBytes)
+	h.Write(proofBytes)
+
+	// Add nonce again for extra sensitivity
+	h.Write(nonceBytes)
+
+	// Multiple rounds of hashing for better distribution
+	for i := 0; i < 3; i++ {
+		h.Write([]byte(fmt.Sprintf("QUANTUM_ROUND_%d", i)))
+		intermediate := h.Sum(nil)
+		h.Reset()
+		h.Write(intermediate)
+		h.Write(nonceBytes) // Nonce in every round
+	}
+
+	// Final hash with entropy marker
+	h.Write([]byte("QUANTUM_BITCOIN_FINAL"))
+	hash := h.Sum(nil)
+
+	// Convert hash to big integer (full 256-bit range)
+	quality := new(big.Int).SetBytes(hash)
+
+	return quality
 }
 
 // Submit mining result
@@ -1351,7 +1422,7 @@ func (m *QuantumMiner) buildQuantumProofFromMemory(memory *PuzzleMemory, lnet in
 	branchNibbles := make([]byte, lnet)
 	for i := 0; i < lnet; i++ {
 		if len(memory.Outcomes[i]) > 0 {
-			branchNibbles[i] = memory.Outcomes[i][0] & 0xF0 // High nibble
+			branchNibbles[i] = memory.Outcomes[i][0] // Full byte for maximum entropy
 		}
 	}
 
@@ -1382,7 +1453,7 @@ func (m *QuantumMiner) buildQuantumProof(outcomes, gateHashes [][]byte, lnet int
 	branchNibbles := make([]byte, lnet)
 	for i := 0; i < lnet; i++ {
 		if len(outcomes[i]) > 0 {
-			branchNibbles[i] = outcomes[i][0] & 0xF0 // High nibble
+			branchNibbles[i] = outcomes[i][0] // Full byte for maximum entropy
 		}
 	}
 
@@ -1466,10 +1537,8 @@ func (m *QuantumMiner) updateDashboard() {
 	m.workMutex.RUnlock()
 
 	blockNumber := uint64(0)
-	blocksToRetarget := uint64(0)
 	if work != nil {
 		blockNumber = work.BlockNumber
-		blocksToRetarget = 100 - (blockNumber % 100) // Retarget every 100 blocks
 	}
 
 	// Move cursor to top and clear screen content (but keep same size)
@@ -1497,17 +1566,17 @@ func (m *QuantumMiner) updateDashboard() {
 
 	// Enhanced thread status display
 	activeCount := atomic.LoadInt32(&m.activeThreads)
-	fmt.Printf("│ 🧵 Thread Status   │ Active: %d/%-2d │ Max Concurrent: %-2d │ Pool: %d/%d │\n",
+	fmt.Printf("│ 🧵 Thread Status   │ Active: %d/%-2d │ Max Concurrent: %-2d │ Pool: %d/%d    │\n",
 		activeCount, m.threads, m.maxActiveThreads, len(m.puzzleMemoryPool), m.memoryPoolSize)
 	fmt.Println("├─────────────────────────────────────────────────────────────────────────────────┤")
-	fmt.Printf("│ 🔗 Current Block   │ Block: %-10d │ Difficulty: %-15d │\n",
+	fmt.Printf("│ 🔗 Current Block   │ Block: %-10d │ Difficulty: %-15d       │\n",
 		blockNumber, m.currentDifficulty)
 	if avgBlockTime > 0 {
-		fmt.Printf("│ ⏱️  Block Timing    │ Average: %6.1fs │ Target: %6.1fs │ To Retarget: %-3d │\n",
-			avgBlockTime, m.targetBlockTime.Seconds(), blocksToRetarget)
+		fmt.Printf("│ ⏱️  Block Timing    │ Average: %6.1fs │ Target: %6.1fs │ ASERT-Q Adjust │\n",
+			avgBlockTime, m.targetBlockTime.Seconds())
 	} else {
-		fmt.Printf("│ ⏱️  Block Timing    │ Average: %-8s │ Target: %6.1fs │ To Retarget: %-3d │\n",
-			"N/A", m.targetBlockTime.Seconds(), blocksToRetarget)
+		fmt.Printf("│ ⏱️  Block Timing    │ Average: %-8s │ Target: %6.1fs │ ASERT-Q Adjust │\n",
+			"N/A", m.targetBlockTime.Seconds())
 	}
 	fmt.Println("└─────────────────────────────────────────────────────────────────────────────────┘")
 	fmt.Printf("Last Update: %s | Press Ctrl+C to stop\n", now.Format("15:04:05"))
@@ -1609,9 +1678,9 @@ func showHelp() {
 	fmt.Println("  - Network connectivity to the quantum-geth node")
 	fmt.Println("")
 	fmt.Println("QUANTUM MINING DETAILS:")
-	fmt.Println("  - Each block requires 32 chained quantum puzzle solutions")
+	fmt.Println("  - Each block requires 128 chained quantum puzzle solutions")
 	fmt.Println("  - Each puzzle uses 16 qubits with minimum 20 T-gates (ENFORCED)")
-	fmt.Println("  - Difficulty adjusts every 100 blocks (like Bitcoin)")
+	fmt.Println("  - Difficulty adjusts every block using ASERT-Q algorithm")
 	fmt.Println("  - Target block time: 12 seconds")
 	fmt.Println("")
 }

@@ -1,7 +1,7 @@
 // Copyright 2025 Quantum-Geth Authors
 // This file is part of the quantum-geth library.
 
-// Package qmpow implements the Quantum-Geth v0.9–BareBones+Halving quantum proof-of-work consensus engine.
+// Package qmpow implements the Quantum-Geth quantum proof-of-work consensus engine.
 package qmpow
 
 import (
@@ -11,7 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 )
 
-// Quantum-Geth v0.9–BareBones+Halving Genesis Constants (Section 16)
+// Quantum-Geth Genesis Constants (Section 16)
 const (
 	// Genesis Constants & Configuration Hashes (immutable)
 	ProofSystemHash      = "0xA1B2C3D41234567890ABCDEF1234567890ABCDEF1234567890ABCDEF12341234"
@@ -21,10 +21,10 @@ const (
 	ChainIDHash          = "0xFEEDFACECAFEFEEDFACECAFEFEEDFACECAFEFEEDFACECAFEFEEDFACECAFECAFE"
 
 	// v0.9 Quantum Parameters (Section 9)
-	DefaultStartingQBits uint16 = 16  // Start n = 16 at epoch 0 (126-bit security)
-	DefaultTCount        uint32 = 20  // ENFORCED MINIMUM: 20 T-gates per puzzle (was 8192)
-	DefaultLNet          uint16 = 32  // 32 chained puzzles per block (was 128)
-	TargetBlockTime      uint64 = 12  // Target block time in seconds
+	DefaultStartingQBits uint16 = 16 // Start n = 16 at epoch 0 (126-bit security)
+	DefaultTCount        uint32 = 20 // ENFORCED MINIMUM: 20 T-gates per puzzle (was 8192)
+	DefaultLNet          uint16 = 32 // 32 chained puzzles per block (was 128)
+	TargetBlockTime      uint64 = 12 // Target block time in seconds
 
 	// Halving Schedule (Section 11)
 	InitialBlockSubsidy = 50.0   // 50 QGCoins per block at epoch 0
@@ -50,7 +50,7 @@ const (
 	ComplexityScaleFactor = 1.5 // How much complexity increases per puzzle
 )
 
-// QMPoWParams represents the configuration parameters for Quantum-Geth v0.9–BareBones+Halving
+// QMPoWParams represents the configuration parameters for Quantum-Geth
 type QMPoWParams struct {
 	Epoch        uint32  // Current epoch ⌊Height / 600,000⌋
 	QBits        uint16  // Qubits per puzzle (from glide schedule)
@@ -119,7 +119,7 @@ func (q *QMPoW) ParamsForHeight(height uint64) QMPoWParams {
 }
 
 // EstimateNextDifficulty estimates the difficulty for the next block
-// In v0.9–BareBones+Halving, difficulty is handled via ASERT-Q targeting
+// Difficulty is handled via ASERT-Q targeting
 func (q *QMPoW) EstimateNextDifficulty(chain consensus.ChainHeaderReader, header *types.Header) uint16 {
 	params := DefaultParams(header.Number.Uint64())
 

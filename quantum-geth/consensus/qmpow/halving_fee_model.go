@@ -2,7 +2,7 @@
 // This file is part of the quantum-geth library.
 
 // Package qmpow implements Halving & Fee Model Implementation
-// Task 13: Halving & Fee Model Implementation - v0.9–BareBones+Halving Specification
+// Task 13: Halving & Fee Model Implementation - Quantum-Geth Specification
 package qmpow
 
 import (

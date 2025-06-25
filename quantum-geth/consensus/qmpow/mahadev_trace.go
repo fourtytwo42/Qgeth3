@@ -74,7 +74,7 @@ type ProverStats struct {
 
 // TraceProofPair represents a trace-proof pair for a single puzzle
 type TraceProofPair struct {
-	PuzzleIndex int          // Index in the 48-puzzle chain
+	PuzzleIndex int          // Index in the 128-puzzle chain
 	Trace       MahadevTrace // Mahadev interactive trace
 	Proof       CAPSSProof   // CAPSS SNARK proof
 	Valid       bool         // Whether the pair is valid

@@ -16,7 +16,7 @@ import (
 type NovaLiteProof struct {
 	ProofID      uint32    // Unique proof identifier
 	Tier         int       // Proof tier (always B for our use case)
-	BatchIndex   int       // Which batch this proof covers (0, 1, or 2)
+	BatchIndex   int       // Which batch this proof covers (0-7)
 	ProofData    []byte    // Nova-Lite proof data (≤ 6 kB)
 	PublicInputs []byte    // Public inputs for verification
 	ProofHash    []byte    // Hash of the proof for integrity
@@ -28,7 +28,7 @@ type NovaLiteProof struct {
 
 // ProofBatch represents a batch of CAPSS proofs for aggregation
 type ProofBatch struct {
-	BatchID     int           // Batch identifier (0, 1, or 2)
+	BatchID     int           // Batch identifier (0-7)
 	CAPSSProofs []*CAPSSProof // CAPSS proofs in this batch
 	MerkleRoot  []byte        // Merkle root of CAPSS proofs
 	ProofHashes [][]byte      // Individual proof hashes
@@ -56,8 +56,8 @@ type AggregatorStats struct {
 
 // ProofRoot represents the Merkle root of all Nova-Lite proofs
 type ProofRoot struct {
-	Root        []byte           // Merkle root of 3 Nova-Lite proofs
-	NovaProofs  []*NovaLiteProof // The 3 Nova-Lite proofs
+	Root        []byte           // Merkle root of 8 Nova-Lite proofs
+	NovaProofs  []*NovaLiteProof // The 8 Nova-Lite proofs
 	TotalSize   int              // Total size of all proofs
 	GeneratedAt time.Time        // Timestamp of generation
 }
@@ -71,14 +71,14 @@ func NewNovaLiteAggregator() *NovaLiteAggregator {
 	}
 }
 
-// AggregateCAPSSProofs aggregates 48 CAPSS proofs into 3 Nova-Lite proofs
+// AggregateCAPSSProofs aggregates 128 CAPSS proofs into 8 Nova-Lite proofs
 func (nla *NovaLiteAggregator) AggregateCAPSSProofs(capssProofs []*CAPSSProof) (*ProofRoot, error) {
 	if !nla.available {
 		return nil, fmt.Errorf("Nova-Lite aggregator not available")
 	}
 
-	if len(capssProofs) != 48 {
-		return nil, fmt.Errorf("expected 48 CAPSS proofs, got %d", len(capssProofs))
+	if len(capssProofs) != 128 {
+		return nil, fmt.Errorf("expected 128 CAPSS proofs, got %d", len(capssProofs))
 	}
 
 	startTime := time.Now()
@@ -88,7 +88,7 @@ func (nla *NovaLiteAggregator) AggregateCAPSSProofs(capssProofs []*CAPSSProof) (
 		"capss_proofs", len(capssProofs),
 		"total_capss_size", nla.calculateTotalSize(capssProofs))
 
-	// Split CAPSS proofs into 3 batches of 16 each
+	// Split CAPSS proofs into 8 batches of 16 each
 	batches, err := nla.createProofBatches(capssProofs)
 	if err != nil {
 		nla.stats.FailedAggs++
@@ -96,7 +96,7 @@ func (nla *NovaLiteAggregator) AggregateCAPSSProofs(capssProofs []*CAPSSProof) (
 	}
 
 	// Generate Nova-Lite proofs for each batch
-	novaProofs := make([]*NovaLiteProof, 3)
+	novaProofs := make([]*NovaLiteProof, 8)
 	for i, batch := range batches {
 		proof, err := nla.generateNovaLiteProof(batch, uint32(i))
 		if err != nil {
@@ -106,7 +106,7 @@ func (nla *NovaLiteAggregator) AggregateCAPSSProofs(capssProofs []*CAPSSProof) (
 		novaProofs[i] = proof
 	}
 
-	// Compute ProofRoot (Merkle root of the 3 Nova-Lite proofs)
+	// Compute ProofRoot (Merkle root of the 8 Nova-Lite proofs)
 	proofRoot, err := nla.computeProofRoot(novaProofs)
 	if err != nil {
 		nla.stats.FailedAggs++
@@ -129,15 +129,15 @@ func (nla *NovaLiteAggregator) AggregateCAPSSProofs(capssProofs []*CAPSSProof) (
 	return proofRoot, nil
 }
 
-// createProofBatches splits 48 CAPSS proofs into 3 batches of 16 each
+// createProofBatches splits 128 CAPSS proofs into 8 batches of 16 each
 func (nla *NovaLiteAggregator) createProofBatches(capssProofs []*CAPSSProof) ([]*ProofBatch, error) {
-	if len(capssProofs) != 48 {
-		return nil, fmt.Errorf("expected 48 CAPSS proofs, got %d", len(capssProofs))
+	if len(capssProofs) != 128 {
+		return nil, fmt.Errorf("expected 128 CAPSS proofs, got %d", len(capssProofs))
 	}
 
-	batches := make([]*ProofBatch, 3)
+	batches := make([]*ProofBatch, 8)
 
-	for batchIdx := 0; batchIdx < 3; batchIdx++ {
+	for batchIdx := 0; batchIdx < 8; batchIdx++ {
 		startIdx := batchIdx * 16
 		endIdx := startIdx + 16
 
@@ -268,22 +268,22 @@ func (nla *NovaLiteAggregator) generateNovaProofData(batch *ProofBatch) ([]byte,
 	return proof, publicInputs, nil
 }
 
-// computeProofRoot computes the Merkle root of 3 Nova-Lite proofs
+// computeProofRoot computes the Merkle root of 8 Nova-Lite proofs
 func (nla *NovaLiteAggregator) computeProofRoot(novaProofs []*NovaLiteProof) (*ProofRoot, error) {
-	if len(novaProofs) != 3 {
-		return nil, fmt.Errorf("expected 3 Nova-Lite proofs, got %d", len(novaProofs))
+	if len(novaProofs) != 8 {
+		return nil, fmt.Errorf("expected 8 Nova-Lite proofs, got %d", len(novaProofs))
 	}
 
 	// Calculate total size
 	totalSize := 0
-	proofHashes := make([][]byte, 3)
+	proofHashes := make([][]byte, 8)
 
 	for i, proof := range novaProofs {
 		totalSize += proof.Size
 		proofHashes[i] = proof.ProofHash
 	}
 
-	// Compute Merkle root of the 3 Nova-Lite proofs
+	// Compute Merkle root of the 8 Nova-Lite proofs
 	merkleRoot := nla.computeMerkleRoot(proofHashes)
 
 	proofRoot := &ProofRoot{

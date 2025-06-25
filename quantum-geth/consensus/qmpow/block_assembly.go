@@ -69,7 +69,7 @@ func (ba *BlockAssembler) AssembleQuantumBlock(
 		"tcount", *header.TCount,
 		"lnet", *header.LNet)
 
-	// Step 1: Execute the 48-puzzle chain to generate outcomes
+	// Step 1: Execute the 128-puzzle chain to generate outcomes
 	proofStart := time.Now()
 
 	miningInput := &MiningInput{

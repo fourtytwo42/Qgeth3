@@ -13,8 +13,8 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 )
 
-// PuzzleOrchestrator manages the sequential execution of 48 quantum puzzles
-// for the Quantum-Geth v0.9–BareBones+Halving mining process
+// PuzzleOrchestrator manages the sequential execution of 128 quantum puzzles
+// for the Quantum-Geth mining process
 type PuzzleOrchestrator struct {
 	templateEngine *BranchTemplateEngine
 	compiler       *CanonicalCompiler
@@ -23,7 +23,7 @@ type PuzzleOrchestrator struct {
 
 // PuzzleResult represents the result of executing a single quantum puzzle
 type PuzzleResult struct {
-	PuzzleIndex int    // Puzzle index (0-31)
+	PuzzleIndex int    // Puzzle index (0-127)
 	Seed        []byte // Input seed for this puzzle
 	NextSeed    []byte // Chained seed for next puzzle
 	QASM        string // Instantiated QASM circuit
@@ -35,13 +35,13 @@ type PuzzleResult struct {
 	ExecutionMS int64  // Execution time in milliseconds
 }
 
-// PuzzleChainResult represents the complete result of executing all 48 puzzles
+// PuzzleChainResult represents the complete result of executing all 128 puzzles
 type PuzzleChainResult struct {
 	InitialSeed   []byte         // Seed₀
-	Results       []PuzzleResult // Results for puzzles 0-31
-	Outcomes      []uint16       // All 32 outcomes
+	Results       []PuzzleResult // Results for puzzles 0-127
+	Outcomes      []uint16       // All 128 outcomes
 	OutcomeRoot   common.Hash    // Merkle root of outcomes
-	BranchNibbles []byte         // High nibbles of outcomes (32 bytes)
+	BranchNibbles []byte         // Full bytes of outcomes (128 bytes)
 	GateHash      common.Hash    // SHA256 of concatenated gate streams
 	TotalGates    int            // Total gates across all puzzles
 	TotalDepth    int            // Maximum depth across puzzles
@@ -57,7 +57,7 @@ type MiningInput struct {
 	BlockHeight  uint64      // Current block height
 	QBits        uint16      // Qubits per puzzle
 	TCount       uint32      // T-gates per puzzle
-	LNet         uint16      // Number of chained puzzles (MUST be exactly 32)
+	LNet         uint16      // Number of chained puzzles (MUST be exactly 128)
 }
 
 // NewPuzzleOrchestrator creates a new puzzle orchestrator
@@ -69,10 +69,10 @@ func NewPuzzleOrchestrator() *PuzzleOrchestrator {
 	}
 }
 
-// ExecutePuzzleChain executes the complete 32-puzzle chain according to v0.9 spec
+// ExecutePuzzleChain executes the complete 128-puzzle chain according to v0.9 spec
 func (po *PuzzleOrchestrator) ExecutePuzzleChain(input *MiningInput) (*PuzzleChainResult, error) {
-	if input.LNet != 32 {
-		return nil, fmt.Errorf("SECURITY VIOLATION: LNet must be exactly 32 chained puzzles, got %d", input.LNet)
+	if input.LNet != 128 {
+		return nil, fmt.Errorf("SECURITY VIOLATION: LNet must be exactly 128 chained puzzles, got %d", input.LNet)
 	}
 
 	if input.TCount < 20 {
@@ -89,13 +89,13 @@ func (po *PuzzleOrchestrator) ExecutePuzzleChain(input *MiningInput) (*PuzzleCha
 	// Step 1: Compute Seed₀
 	seed0 := po.computeInitialSeed(input)
 
-	// Step 2: Execute 32 sequential puzzles
-	results := make([]PuzzleResult, 32)
-	outcomes := make([]uint16, 32)
-	gateStreams := make([][]byte, 32)
+	// Step 2: Execute 128 sequential puzzles
+	results := make([]PuzzleResult, 128)
+	outcomes := make([]uint16, 128)
+	gateStreams := make([][]byte, 128)
 	currentSeed := seed0
 
-	for i := 0; i < 32; i++ {
+	for i := 0; i < 128; i++ {
 		result, err := po.executeSinglePuzzle(i, currentSeed, input)
 		if err != nil {
 			return nil, fmt.Errorf("puzzle %d failed: %v", i, err)
@@ -106,7 +106,7 @@ func (po *PuzzleOrchestrator) ExecutePuzzleChain(input *MiningInput) (*PuzzleCha
 		gateStreams[i] = result.GateStream
 		currentSeed = result.NextSeed
 
-		if i%8 == 7 {
+		if i%16 == 15 {
 			log.Debug("🔗 Puzzle chain progress",
 				"completed", i+1,
 				"latest_outcome", fmt.Sprintf("0x%04x", result.Outcome),
@@ -255,7 +255,7 @@ func (po *PuzzleOrchestrator) chainSeed(currentSeed []byte, outcome uint16) []by
 	return hasher.Sum(nil)
 }
 
-// buildOutcomeRoot builds Merkle root of 32 outcomes
+// buildOutcomeRoot builds Merkle root of 128 outcomes
 func (po *PuzzleOrchestrator) buildOutcomeRoot(outcomes []uint16) common.Hash {
 	// Convert outcomes to 32-byte leaves for Merkle tree
 	leaves := make([][]byte, len(outcomes))
@@ -269,14 +269,14 @@ func (po *PuzzleOrchestrator) buildOutcomeRoot(outcomes []uint16) common.Hash {
 	return buildMerkleRoot(leaves)
 }
 
-// extractBranchNibbles extracts high 4 bits of each outcome (32 bytes)
+// extractBranchNibbles extracts full low byte of each outcome (128 bytes)
 func (po *PuzzleOrchestrator) extractBranchNibbles(outcomes []uint16) []byte {
-	nibbles := make([]byte, 32)
+	bytes := make([]byte, 128)
 	for i, outcome := range outcomes {
-		// Extract high 4 bits of the 16-bit outcome
-		nibbles[i] = byte((outcome >> 12) & 0xF)
+		// Extract full low byte of the 16-bit outcome for maximum entropy
+		bytes[i] = byte(outcome & 0xFF)
 	}
-	return nibbles
+	return bytes
 }
 
 // computeGateHash computes SHA256 of concatenated gate streams

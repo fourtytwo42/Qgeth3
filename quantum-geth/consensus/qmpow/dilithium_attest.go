@@ -2,7 +2,7 @@
 // This file is part of the quantum-geth library.
 
 // Package qmpow implements Dilithium-2 Self-Attestation Module
-// Section 8: Dilithium Self-Attestation - v0.9–BareBones+Halving Specification
+// Section 8: Dilithium Self-Attestation - Quantum-Geth Specification
 package qmpow
 
 import (
