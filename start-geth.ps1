@@ -6,10 +6,11 @@
 param(
     [switch]$mine = $false,                    # Enable mining
     [string]$etherbase = "",                   # Mining address (optional)
-    [int]$port = 30303,                        # P2P port
+    [int]$port = 4294,                         # P2P port (Q Coin testnet)
     [int]$rpcport = 8545,                      # RPC port
     [int]$wsport = 8546,                       # WebSocket port
     [string]$datadir = "",                     # Data directory (empty = default)
+    [switch]$mainnet = $false,                 # Use mainnet (default: testnet)
     [switch]$help = $false                     # Show help
 )
 
@@ -22,10 +23,11 @@ if ($help) {
     Write-Host "Options:" -ForegroundColor Green
     Write-Host "  -mine              Enable mining (disabled by default)"
     Write-Host "  -etherbase <addr>  Mining reward address (required if mining)"
-    Write-Host "  -port <port>       P2P network port (default: 30303)"
+    Write-Host "  -port <port>       P2P network port (default: 4294 testnet, 4295 mainnet)"
     Write-Host "  -rpcport <port>    HTTP-RPC server port (default: 8545)"
     Write-Host "  -wsport <port>     WebSocket server port (default: 8546)"
     Write-Host "  -datadir <path>    Custom data directory (default: system default)"
+    Write-Host "  -mainnet           Use mainnet instead of testnet"
     Write-Host "  -help              Show this help message"
     Write-Host ""
     Write-Host "Examples:" -ForegroundColor Yellow
@@ -40,6 +42,20 @@ if ($help) {
     exit 0
 }
 
+# Determine network configuration
+if ($mainnet) {
+    $networkName = "Q Coin Mainnet"
+    $chainId = "73236"
+    $genesisFile = "genesis_quantum_mainnet.json"
+    $defaultDataDir = "$env:APPDATA\Qcoin\mainnet"
+    if ($port -eq 4294) { $port = 4295 }  # Switch to mainnet port if using default
+} else {
+    $networkName = "Q Coin Testnet"
+    $chainId = "73235"
+    $genesisFile = "genesis_quantum_testnet.json"
+    $defaultDataDir = "$env:APPDATA\Qcoin\testnet"
+}
+
 # Validate mining parameters
 if ($mine -and $etherbase -eq "") {
     Write-Host "ERROR: Mining requires an etherbase address!" -ForegroundColor Red
@@ -48,7 +64,7 @@ if ($mine -and $etherbase -eq "") {
 }
 
 # Find the latest quantum-geth release
-Write-Host "Q Coin Testnet - Starting Geth Node" -ForegroundColor Cyan
+Write-Host "$networkName - Starting Geth Node" -ForegroundColor Cyan
 Write-Host ""
 
 $GethReleaseDir = Get-ChildItem -Path "releases\quantum-geth-*" -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
@@ -63,8 +79,7 @@ Write-Host "Using geth from: $($GethReleaseDir.Name)" -ForegroundColor Green
 
 # Determine data directory
 if ($datadir -eq "") {
-    # Use default geth data directory
-    $defaultDataDir = "$env:APPDATA\Qcoin"
+    # Use network-specific default directory
     $datadir = $defaultDataDir
     Write-Host "Using default data directory: $datadir" -ForegroundColor Green
 } else {
@@ -72,10 +87,9 @@ if ($datadir -eq "") {
 }
 
 # Check if blockchain is initialized
-$genesisFile = "genesis_quantum_testnet.json"
 if (-not (Test-Path "$datadir\geth\chaindata")) {
     Write-Host ""
-    Write-Host "Initializing Q Coin testnet blockchain..." -ForegroundColor Yellow
+    Write-Host "Initializing $networkName blockchain..." -ForegroundColor Yellow
     
     # Create data directory if it doesn't exist
     if (-not (Test-Path $datadir)) {
@@ -86,7 +100,7 @@ if (-not (Test-Path "$datadir\geth\chaindata")) {
     try {
         & "$GethExecutable" --datadir "$datadir" init "$genesisFile" 2>&1
         if ($LASTEXITCODE -eq 0) {
-            Write-Host "Q Coin testnet blockchain initialized successfully!" -ForegroundColor Green
+            Write-Host "$networkName blockchain initialized successfully!" -ForegroundColor Green
         } else {
             Write-Host "ERROR: Failed to initialize blockchain!" -ForegroundColor Red
             exit 1
@@ -100,7 +114,7 @@ if (-not (Test-Path "$datadir\geth\chaindata")) {
 # Build geth command
 $gethArgs = @(
     "--datadir", "$datadir",
-    "--networkid", "73235",
+    "--networkid", "$chainId",
     "--port", "$port",
     "--http",
     "--http.addr", "0.0.0.0",
@@ -112,6 +126,8 @@ $gethArgs = @(
     "--ws.port", "$wsport",
     "--ws.api", "eth,net,web3,personal,admin,miner,debug,txpool",
     "--ws.origins", "*",
+    "--nat", "any",
+    "--maxpeers", "50",
     "--allow-insecure-unlock",
     "--syncmode", "full",
     "--gcmode", "archive"
@@ -125,8 +141,8 @@ if ($mine) {
 
 # Display startup information
 Write-Host ""
-Write-Host "Q Coin Testnet Configuration:" -ForegroundColor Cyan
-Write-Host "  Chain ID: 73235" -ForegroundColor Gray
+Write-Host "$networkName Configuration:" -ForegroundColor Cyan
+Write-Host "  Chain ID: $chainId" -ForegroundColor Gray
 Write-Host "  Currency: Q (Q Coin)" -ForegroundColor Gray
 Write-Host "  Data Directory: $datadir" -ForegroundColor Gray
 Write-Host "  P2P Port: $port" -ForegroundColor Gray
@@ -134,7 +150,7 @@ Write-Host "  RPC Port: $rpcport" -ForegroundColor Gray
 Write-Host "  WebSocket Port: $wsport" -ForegroundColor Gray
 Write-Host "  Mining: $(if ($mine) { 'ENABLED' } else { 'DISABLED' })" -ForegroundColor $(if ($mine) { 'Green' } else { 'Yellow' })
 Write-Host ""
-Write-Host "Starting Q Coin testnet node..." -ForegroundColor Green
+Write-Host "Starting $networkName node..." -ForegroundColor Green
 Write-Host "Press Ctrl+C to stop" -ForegroundColor Yellow
 Write-Host ""
 
