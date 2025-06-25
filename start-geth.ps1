@@ -1,7 +1,7 @@
 # Q Coin Testnet - Start Geth Node
-# Starts a Q Coin testnet node with external mining enabled (0 internal threads)
-# Uses default blockchain location like standard geth
-# Usage: .\start-geth.ps1 [-etherbase <address>]
+# DEPRECATED: Use .\qcoin-geth.ps1 instead for unified Q Coin startup
+# This script starts Q Coin testnet node with external mining enabled
+# Usage: .\start-geth.ps1 [-etherbase <address>] [-mainnet]
 
 param(
     [string]$etherbase = "0x1234567890123456789012345678901234567890", # Mining address (default provided)
@@ -12,6 +12,10 @@ param(
     [switch]$mainnet = $false,                 # Use mainnet (default: testnet)
     [switch]$help = $false                     # Show help
 )
+
+# Show deprecation warning
+Write-Host "⚠️  NOTICE: Consider using qcoin-geth.ps1 for unified Q Coin startup!" -ForegroundColor Yellow
+Write-Host ""
 
 # Show help
 if ($help) {
