@@ -87,16 +87,42 @@ echo "  * ASERT-Q difficulty adjustment (12s target)"
 echo "  * Single RLP quantum blob (197 bytes)"
 echo ""
 
-# Check if data directory exists
+# Check if data directory exists, initialize if needed
 if [ ! -d "$DATADIR" ]; then
     echo "Data directory '$DATADIR' not found!"
-    echo "Initializing with quantum genesis..."
-    echo "  ./dev-reset-blockchain.sh --difficulty 1 --force"
+    echo "Initializing with Q Coin Dev genesis..."
+    
+    # Create data directory
+    mkdir -p "$DATADIR"
+    
+    # Find geth executable for initialization
+    GETH_FOR_INIT=""
+    GETH_RELEASE_DIR=$(find ../releases -name "quantum-geth-*" -type d 2>/dev/null | sort -V | tail -1)
+    
+    if [ -n "$GETH_RELEASE_DIR" ] && [ -f "$GETH_RELEASE_DIR/geth" ]; then
+        GETH_FOR_INIT="$GETH_RELEASE_DIR/geth"
+    elif [ -f "../geth" ]; then
+        GETH_FOR_INIT="../geth"
+    elif [ -f "./geth" ]; then
+        GETH_FOR_INIT="./geth"
+    else
+        echo "ERROR: No geth executable found for initialization"
+        echo "Please build geth first with: ../build-linux.sh"
+        exit 1
+    fi
+    
+    # Initialize with genesis
+    echo "Initializing blockchain with genesis file: ../genesis_quantum_dev.json"
+    "$GETH_FOR_INIT" --datadir "$DATADIR" init ../genesis_quantum_dev.json
+    
+    if [ $? -eq 0 ]; then
+        echo "✅ Genesis initialization successful!"
+        echo "Node will now start and sync with Q Coin Dev network peers..."
+    else
+        echo "❌ Genesis initialization failed!"
+        exit 1
+    fi
     echo ""
-    echo "Please run the reset script first to initialize the blockchain:"
-    echo "   ./dev-reset-blockchain.sh --difficulty 1 --force"
-    echo ""
-    exit 1
 fi
 
 echo "Starting quantum geth node (NO MINING)..."
@@ -149,4 +175,5 @@ exec "$GETH_PATH" \
     --ws.origins "*" \
     --miner.etherbase "$ETHERBASE" \
     --mine.threads 0 \
+    --bootnodes "enode://89df9647d6f5b901c63e8a7ad977900b5ce2386b916ed6d204d24069435740c7e2c188c9d3493bfc98c056d9d87c6213df057e9518fb43f12759ba55dff31b4c@192.168.50.254:30305,enode://89df9647d6f5b901c63e8a7ad977900b5ce2386b916ed6d204d24069435740c7e2c188c9d3493bfc98c056d9d87c6213df057e9518fb43f12759ba55dff31b4c@192.168.50.152:30305" \
     --verbosity "$VERBOSITY" 

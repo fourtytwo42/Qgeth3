@@ -36,17 +36,48 @@ Write-Host "  * ASERT-Q difficulty adjustment (12s target)" -ForegroundColor Gra
 Write-Host "  * Single RLP quantum blob (197 bytes)" -ForegroundColor Gray
 Write-Host ""
 
-# Check if data directory exists
-if (-not (Test-Path $datadir)) {
-    Write-Host "Data directory '$datadir' not found!" -ForegroundColor Red
-    Write-Host "Initializing with quantum genesis..." -ForegroundColor Yellow
-    Write-Host "  .\reset-blockchain.ps1 -difficulty 1 -force" -ForegroundColor Gray
+# Check if data directory exists, initialize if needed
+if (-not (Test-Path "$datadir\geth\chaindata")) {
+    Write-Host "🏗️  Initializing Q Coin Dev blockchain..." -ForegroundColor Yellow
+    Write-Host "   Data Directory: $datadir" -ForegroundColor Gray
+    Write-Host "   Genesis File: genesis_quantum_dev.json" -ForegroundColor Gray
+    Write-Host ""
     
+    # Create data directory
+    if (-not (Test-Path $datadir)) {
+        New-Item -ItemType Directory -Path $datadir -Force | Out-Null
+    }
+    
+    # Find geth executable for initialization
+    $GethForInit = $null
+    $GethReleaseDir = Get-ChildItem -Path "releases\quantum-geth-*" -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
+    if ($GethReleaseDir) {
+        $GethForInit = "$($GethReleaseDir.FullName)\geth.exe"
+    } elseif (Test-Path ".\geth.exe") {
+        $GethForInit = ".\geth.exe"
+    } else {
+        Write-Host "❌ ERROR: No geth executable found for initialization" -ForegroundColor Red
+        Write-Host "   Please build geth first with: .\build-linux.ps1" -ForegroundColor Yellow
+        exit 1
+    }
+    
+    # Initialize with genesis
+    try {
+        & "$GethForInit" --datadir "$datadir" init "genesis_quantum_dev.json" 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "✅ Q Coin Dev blockchain initialized successfully!" -ForegroundColor Green
+            Write-Host "   Node will now start and sync with Q Coin Dev network peers..." -ForegroundColor Green
+        } else {
+            Write-Host "❌ ERROR: Failed to initialize blockchain!" -ForegroundColor Red
+            exit 1
+        }
+    } catch {
+        Write-Host "❌ ERROR: Failed to run geth init: $_" -ForegroundColor Red
+        exit 1
+    }
     Write-Host ""
-    Write-Host "Please run the reset script first to initialize the blockchain:" -ForegroundColor Yellow
-    Write-Host "   .\reset-blockchain.ps1 -difficulty 1 -force" -ForegroundColor White
-    Write-Host ""
-    exit 1
+} else {
+    Write-Host "✅ Dev blockchain already initialized" -ForegroundColor Green
 }
 
 Write-Host "Starting quantum geth node (NO MINING)..." -ForegroundColor Magenta
@@ -97,6 +128,7 @@ if ($GethReleaseDir) {
     --miner.threads 0 `
     --miner.etherbase $etherbase `
     --authrpc.port $authrpcport `
+    --bootnodes "enode://89df9647d6f5b901c63e8a7ad977900b5ce2386b916ed6d204d24069435740c7e2c188c9d3493bfc98c056d9d87c6213df057e9518fb43f12759ba55dff31b4c@192.168.50.254:30305,enode://89df9647d6f5b901c63e8a7ad977900b5ce2386b916ed6d204d24069435740c7e2c188c9d3493bfc98c056d9d87c6213df057e9518fb43f12759ba55dff31b4c@192.168.50.152:30305" `
     --verbosity $verbosity `
     --log.vmodule "rpc=1" `
     --allow-insecure-unlock
