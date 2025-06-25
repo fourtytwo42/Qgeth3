@@ -1,5 +1,6 @@
-# Start Geth (No Mining) - Quantum-Geth with Halving
-# Starts the quantum geth node without mining enabled - serves work to external miners
+# Q Coin Dev Network - Start Geth (No Mining)
+# Starts Q Coin dev network node (Chain ID 73234) without mining - serves work to external miners
+# This script ONLY connects to Q Coin Dev network, never Ethereum!
 
 param(
     [string]$datadir = "qdata",
@@ -11,10 +12,11 @@ param(
     [int]$verbosity = 3
 )
 
-Write-Host "*** STARTING QUANTUM-GETH NODE (EXTERNAL MINING) ***" -ForegroundColor Cyan
+Write-Host "🪙 Q COIN DEV NETWORK - STARTING NODE (EXTERNAL MINING) 🪙" -ForegroundColor Cyan
 Write-Host "Configuration:" -ForegroundColor Green
+Write-Host "  * Network: Q Coin Dev/Staging" -ForegroundColor Yellow
+Write-Host "  * Chain ID: $networkid (Dev Network)" -ForegroundColor Yellow
 Write-Host "  * Data Directory: $datadir" -ForegroundColor Yellow
-Write-Host "  * Network ID: $networkid" -ForegroundColor Yellow
 Write-Host "  * Port: $port" -ForegroundColor Yellow
 Write-Host "  * HTTP Port: $httpport" -ForegroundColor Yellow
 Write-Host "  * Auth RPC Port: $authrpcport" -ForegroundColor Yellow

@@ -1,6 +1,7 @@
 #!/bin/bash
-# Start Geth (No Mining) - Quantum-Geth with Halving
-# Starts the quantum geth node without mining enabled - serves work to external miners
+# Q Coin Dev Network - Start Geth (No Mining)  
+# Starts Q Coin dev network node (Chain ID 73234) without mining - serves work to external miners
+# This script ONLY connects to Q Coin Dev network, never Ethereum!
 
 # Default parameters
 DATADIR="qdata"
@@ -62,10 +63,11 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-echo "*** STARTING QUANTUM-GETH NODE (EXTERNAL MINING) ***"
+echo "🪙 Q COIN DEV NETWORK - STARTING NODE (EXTERNAL MINING) 🪙"
 echo "Configuration:"
+echo "  * Network: Q Coin Dev/Staging"
+echo "  * Chain ID: $NETWORKID (Dev Network)"
 echo "  * Data Directory: $DATADIR"
-echo "  * Network ID: $NETWORKID"
 echo "  * Port: $PORT"
 echo "  * HTTP Port: $HTTPPORT"
 echo "  * Auth RPC Port: $AUTHRPCPORT"

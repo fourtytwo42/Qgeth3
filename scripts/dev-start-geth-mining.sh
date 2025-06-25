@@ -1,12 +1,13 @@
 #!/bin/bash
-# Start Geth with Mining - Quantum-Geth with Halving
-# Starts the quantum geth node with quantum proof-of-work mining
-# Usage: ./start-geth-mining.sh --threads 1 --verbosity 4
+# Q Coin Dev Network - Start Geth with Mining
+# Starts Q Coin dev network node (Chain ID 73234) with quantum proof-of-work mining
+# This script ONLY connects to Q Coin Dev network, never Ethereum!
+# Usage: ./dev-start-geth-mining.sh --threads 1 --verbosity 4
 
 # Default parameters
 THREADS=1
 DATADIR="qdata"
-NETWORKID=73235
+NETWORKID=73234
 ETHERBASE="0x742d35C6C4e6d8de6f10E7FF75DD98dd25b02C3A"
 VERBOSITY=4
 QUANTUM_SOLVER="cpu"
@@ -48,7 +49,7 @@ while [[ $# -gt 0 ]]; do
             echo "Options:"
             echo "  --threads NUM       Mining threads (default: 1)"
             echo "  --datadir DIR       Data directory (default: qdata)"
-            echo "  --networkid ID      Network ID (default: 73235)"
+            echo "  --networkid ID      Network ID (default: 73234)"
             echo "  --etherbase ADDR    Coinbase address"
             echo "  --verbosity LEVEL   Log verbosity (default: 4)"
             echo "  --quantum-solver    Quantum solver (default: cpu)"
@@ -63,8 +64,9 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-echo "*** QUANTUM-GETH MINING STARTUP ***"
+echo "🪙 Q COIN DEV NETWORK - MINING STARTUP 🪙"
 echo "128-Puzzle Sequential Quantum Proof-of-Work with Bitcoin-Style Halving"
+echo "Chain ID 73234 - Development/Staging Environment"
 echo ""
 
 # Check if blockchain exists
@@ -78,9 +80,10 @@ if [ ! -d "$DATADIR" ]; then
 fi
 
 echo "Configuration:"
+echo "  Network: Q Coin Dev/Staging"
+echo "  Chain ID: $NETWORKID (Dev Network)"
 echo "  Data Directory: $DATADIR"
 echo "  Mining Threads: $THREADS"
-echo "  Network ID: $NETWORKID"
 echo "  Etherbase: $ETHERBASE"
 echo "  Verbosity: $VERBOSITY"
 echo "  Quantum Solver: $QUANTUM_SOLVER"
@@ -109,7 +112,7 @@ fi
 GETH_ARGS=(
     "--datadir" "$DATADIR"
     "--networkid" "$NETWORKID"
-    "--port" "30303"
+    "--port" "30305"
     "--http"
     "--http.addr" "0.0.0.0"
     "--http.port" "8545"
