@@ -1,167 +1,116 @@
 #!/bin/bash
-# Get Q Coin Node Information for Peer Connections
-# This script retrieves your local node's enode info so other nodes can connect
+# Q Coin Node Info Tool
+# Usage: ./get-node-info.sh [options]
 
-echo -e "\033[36m🔍 Q COIN NODE INFO RETRIEVAL\033[0m"
-echo -e "\033[36m==============================\033[0m"
+GETH_RPC="http://localhost:8545"
+HELP=false
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --geth-rpc)
+            GETH_RPC="$2"
+            shift 2
+            ;;
+        --help|-h)
+            HELP=true
+            shift
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Use --help for usage information"
+            exit 1
+            ;;
+    esac
+done
+
+if [ "$HELP" = true ]; then
+    echo -e "\033[1;36mQ Coin Node Info Tool\033[0m"
+    echo ""
+    echo -e "\033[1;37mUsage: ./get-node-info.sh [options]\033[0m"
+    echo ""
+    echo -e "\033[1;33mOptions:\033[0m"
+    echo "  --geth-rpc <url>  - Geth RPC endpoint (default: http://localhost:8545)"
+    echo "  --help            - Show this help message"
+    echo ""
+    echo -e "\033[1;32mExample:\033[0m"
+    echo "  ./get-node-info.sh                           # Get local node info"
+    echo "  ./get-node-info.sh --geth-rpc http://192.168.1.100:8545"
+    exit 0
+fi
+
+echo -e "\033[1;36m🔍 Q Coin Node Information\033[0m"
 echo ""
 
-# Configuration
-RPC_URL="http://127.0.0.1:8545"
+# Test connection
+echo -e "\033[1;33m📡 Testing connection to Geth RPC...\033[0m"
+RESPONSE=$(curl -s -X POST -H "Content-Type: application/json" \
+    --data '{"jsonrpc":"2.0","method":"net_version","params":[],"id":1}' \
+    "$GETH_RPC" 2>/dev/null)
 
-echo -e "\033[33m📡 Checking for running Q Coin nodes...\033[0m"
-
-# Function to make RPC call
-make_rpc_call() {
-    local method=$1
-    local params=${2:-"[]"}
-    
-    curl -s -X POST \
-        -H "Content-Type: application/json" \
-        -d "{\"jsonrpc\":\"2.0\",\"method\":\"$method\",\"params\":$params,\"id\":1}" \
-        $RPC_URL 2>/dev/null | jq -r '.result // empty' 2>/dev/null
-}
-
-# Check if jq is available
-if ! command -v jq &> /dev/null; then
-    echo -e "\033[31m❌ ERROR: jq is required but not installed\033[0m"
-    echo -e "\033[33m   Install with: sudo apt install jq\033[0m"
+if [ $? -ne 0 ] || ! echo "$RESPONSE" | grep -q '"result"'; then
+    echo -e "\033[1;31m❌ Cannot connect to Geth RPC at $GETH_RPC\033[0m"
+    echo -e "\033[1;33m   Make sure Geth is running and RPC is enabled!\033[0m"
     exit 1
 fi
 
-# Check for running node
-echo -e "\033[37m🔍 Checking for Q Coin node on port 8545...\033[0m"
-chain_id=$(make_rpc_call "eth_chainId")
+echo -e "\033[1;32m✅ Connected to Geth RPC\033[0m"
+echo ""
 
-if [ -z "$chain_id" ] || [ "$chain_id" = "null" ]; then
-    echo -e "\033[31m   ❌ No Q Coin node detected on port 8545\033[0m"
-    echo ""
-    echo -e "\033[33m🚀 Start a Q Coin node first:\033[0m"
-    echo -e "\033[37m   Dev Network:  ./dev-quick-start.sh\033[0m"
-    echo -e "\033[37m   Testnet:      ./start-linux-geth.sh\033[0m"
-    echo -e "\033[37m   Mainnet:      ./start-linux-geth.sh --mainnet\033[0m"
-    exit 1
-fi
-
-# Convert hex chain ID to decimal
-chain_id_decimal=$((16#${chain_id#0x}))
-echo -e "\033[32m   Found network with Chain ID: $chain_id_decimal\033[0m"
-
-# Determine network name
-case $chain_id_decimal in
-    73234)
-        network_name="Q Coin Dev Network"
-        echo -e "\033[32m   ✅ Q Coin Dev Network detected!\033[0m"
-        ;;
-    73235)
-        network_name="Q Coin Testnet"
-        echo -e "\033[32m   ✅ Q Coin Testnet detected!\033[0m"
-        ;;
-    73236)
-        network_name="Q Coin Mainnet"
-        echo -e "\033[32m   ✅ Q Coin Mainnet detected!\033[0m"
-        ;;
-    *)
-        network_name="Unknown Q Coin Network"
-        echo -e "\033[33m   ⚠️  Unknown network (Chain ID: $chain_id_decimal)\033[0m"
-        ;;
+# Get network info
+NETWORK_ID=$(echo "$RESPONSE" | grep -o '"[0-9]*"' | tr -d '"')
+case $NETWORK_ID in
+    73234) NETWORK_NAME="Q Coin Dev Network" ;;
+    73235) NETWORK_NAME="Q Coin Testnet" ;;
+    73236) NETWORK_NAME="Q Coin Mainnet" ;;
+    *) NETWORK_NAME="Unknown Network" ;;
 esac
 
-echo ""
-echo -e "\033[36m🌐 Network: $network_name\033[0m"
-echo ""
-
 # Get node info
-echo -e "\033[33m📋 Retrieving node information...\033[0m"
+NODEINFO_RESPONSE=$(curl -s -X POST -H "Content-Type: application/json" \
+    --data '{"jsonrpc":"2.0","method":"admin_nodeInfo","params":[],"id":1}' \
+    "$GETH_RPC" 2>/dev/null)
 
-# Get enode info
-node_info=$(make_rpc_call "admin_nodeInfo")
-if [ -n "$node_info" ] && [ "$node_info" != "null" ]; then
-    enode=$(echo "$node_info" | jq -r '.enode // empty')
-    node_id=$(echo "$node_info" | jq -r '.id // empty')
-    
-    if [ -n "$enode" ] && [ "$enode" != "null" ]; then
-        echo -e "\033[32m✅ Node enode retrieved!\033[0m"
-        
-        # Get peer count
-        peer_count_hex=$(make_rpc_call "net_peerCount")
-        peer_count=$((16#${peer_count_hex#0x}))
-        
-        # Get listening status
-        listening=$(make_rpc_call "net_listening")
-        
-        # Display results
-        echo ""
-        echo -e "\033[32m🔗 NODE CONNECTION INFO\033[0m"
-        echo -e "\033[32m========================\033[0m"
-        echo ""
-        echo -e "\033[37mNetwork:     $network_name\033[0m"
-        echo -e "\033[37mChain ID:    $chain_id_decimal\033[0m"
-        echo -e "\033[37mNode ID:     $node_id\033[0m"
-        echo -e "\033[37mListening:   $listening\033[0m"
-        echo -e "\033[37mPeers:       $peer_count connected\033[0m"
-        echo ""
-        echo -e "\033[36m🌐 ENODE (for remote connections):\033[0m"
-        echo -e "\033[33m$enode\033[0m"
-        echo ""
-        
-        # Extract IP and port for convenience
-        if [[ $enode =~ enode://([^@]+)@([^:]+):([0-9]+) ]]; then
-            extracted_node_id="${BASH_REMATCH[1]}"
-            ip="${BASH_REMATCH[2]}"
-            port="${BASH_REMATCH[3]}"
-            
-            echo -e "\033[36m📡 Connection Details:\033[0m"
-            echo -e "\033[37m   Node ID: $extracted_node_id\033[0m"
-            echo -e "\033[37m   IP:      $ip\033[0m"
-            echo -e "\033[37m   Port:    $port\033[0m"
-            echo ""
-            
-            # Show commands for remote connection
-            echo -e "\033[32m🔧 REMOTE CONNECTION COMMANDS\033[0m"
-            echo -e "\033[32m==============================\033[0m"
-            echo ""
-            echo -e "\033[33mTo connect a remote node to this one, use:\033[0m"
-            echo ""
-            
-            # Replace localhost/127.0.0.1 with actual IP if needed
-            if [[ "$ip" == "127.0.0.1" || "$ip" == "localhost" ]]; then
-                echo -e "\033[31m⚠️  Note: Replace 127.0.0.1 with your actual IP address!\033[0m"
-                echo ""
-                echo -e "\033[33mFind your IP with: ip addr show or hostname -I\033[0m"
-                echo ""
-            fi
-            
-            echo -e "\033[36mLinux (add to bootnode):\033[0m"
-            echo -e "\033[37m   --bootnodes '$enode'\033[0m"
-            echo ""
-            echo -e "\033[36mWindows (add to bootnode):\033[0m"
-            echo -e "\033[37m   --bootnodes \"$enode\"\033[0m"
-            echo ""
-            echo -e "\033[36mOr add peer manually via console:\033[0m"
-            echo -e "\033[37m   admin.addPeer('$enode')\033[0m"
-            echo ""
-        fi
-        
-        # Show current peers if any
-        if [ $peer_count -gt 0 ]; then
-            echo -e "\033[32m👥 CURRENT PEERS\033[0m"
-            echo -e "\033[32m=================\033[0m"
-            
-            peers=$(make_rpc_call "admin_peers")
-            if [ -n "$peers" ] && [ "$peers" != "null" ]; then
-                echo "$peers" | jq -r '.[] | "\n\u001b[37mPeer: \(.name // "Unknown")\u001b[0m\n\u001b[90m   Enode: \(.enode // "N/A")\u001b[0m\n\u001b[90m   Network: \(.network.remoteAddress // "N/A")\u001b[0m"'
-            fi
-        fi
-        
-    else
-        echo -e "\033[31m❌ Failed to retrieve enode information\033[0m"
-    fi
+# Get peer count
+PEER_RESPONSE=$(curl -s -X POST -H "Content-Type: application/json" \
+    --data '{"jsonrpc":"2.0","method":"net_peerCount","params":[],"id":1}' \
+    "$GETH_RPC" 2>/dev/null)
+
+# Extract node info
+if echo "$NODEINFO_RESPONSE" | grep -q '"enode"'; then
+    ENODE=$(echo "$NODEINFO_RESPONSE" | grep -o '"enode://[^"]*"' | tr -d '"')
+    NODE_ID=$(echo "$ENODE" | cut -d'@' -f1 | cut -d'/' -f3)
+    IP_PORT=$(echo "$ENODE" | cut -d'@' -f2)
+    IP=$(echo "$IP_PORT" | cut -d':' -f1)
+    PORT=$(echo "$IP_PORT" | cut -d':' -f2)
 else
-    echo -e "\033[31m❌ Failed to retrieve node information\033[0m"
-    echo -e "\033[33m   Make sure your Q Coin node is running with RPC enabled\033[0m"
+    ENODE="Not available"
+    NODE_ID="Not available"
+    IP="Not available"
+    PORT="Not available"
 fi
 
+# Extract peer count
+if echo "$PEER_RESPONSE" | grep -q '"result"'; then
+    PEER_COUNT_HEX=$(echo "$PEER_RESPONSE" | grep -o '"0x[0-9a-fA-F]*"' | tr -d '"')
+    PEER_COUNT=$((16#${PEER_COUNT_HEX#0x}))
+else
+    PEER_COUNT="Unknown"
+fi
+
+# Display information
+echo -e "\033[1;36m📊 Node Information:\033[0m"
+echo -e "\033[1;37m  Network: $NETWORK_NAME (ID: $NETWORK_ID)\033[0m"
+echo -e "\033[1;37m  Node ID: $NODE_ID\033[0m"
+echo -e "\033[1;37m  IP Address: $IP\033[0m"
+echo -e "\033[1;37m  Port: $PORT\033[0m"
+echo -e "\033[1;37m  Connected Peers: $PEER_COUNT\033[0m"
 echo ""
-echo -e "\033[34m💡 TIP: Save this enode info to connect other Q Coin nodes!\033[0m"
-echo "" 
+echo -e "\033[1;36m🔗 Full Enode URL:\033[0m"
+echo -e "\033[1;32m$ENODE\033[0m"
+echo ""
+echo -e "\033[1;36m📡 Default Bootnode:\033[0m"
+echo -e "\033[1;35menode://0bc243936ebc13ebf57895dff1321695064ae4b0ac0c1e047d52d695c396b64c52847f852a9738f0d079af4ba109dfceafd1cf0924587b151765834caf13e5fd@69.243.132.233:30305\033[0m"
+echo ""
+echo -e "\033[1;33m💡 To connect other nodes to this one, use:\033[0m"
+echo -e "\033[1;37m   ./connect-peers.sh '$ENODE'\033[0m" 

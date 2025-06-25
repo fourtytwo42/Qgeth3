@@ -1,167 +1,137 @@
-# Q Coin Testnet - Start Geth Node
-# DEPRECATED: Use .\qcoin-geth.ps1 instead for unified Q Coin startup
-# This script starts Q Coin testnet node with external mining enabled
-# Usage: .\start-geth.ps1 [-etherbase <address>] [-mainnet]
+﻿# Q Coin Geth Node Starter
+# Usage: ./start-geth.ps1 [network] [options]
+# Networks: mainnet, testnet, devnet (default: testnet)
+# Options: -mining (enable mining with single thread)
 
 param(
-    [string]$etherbase = "0x1234567890123456789012345678901234567890", # Mining address (default provided)
-    [int]$port = 4294,                         # P2P port (Q Coin testnet)
-    [int]$rpcport = 8545,                      # RPC port
-    [int]$wsport = 8546,                       # WebSocket port
-    [string]$datadir = "",                     # Data directory (empty = default)
-    [switch]$mainnet = $false,                 # Use mainnet (default: testnet)
-    [switch]$help = $false                     # Show help
+    [Parameter(Position=0)]
+    [ValidateSet("mainnet", "testnet", "devnet")]
+    [string]$Network = "testnet",
+    
+    [switch]$Mining,
+    [switch]$Help
 )
 
-# Show deprecation warning
-Write-Host "⚠️  NOTICE: Consider using qcoin-geth.ps1 for unified Q Coin startup!" -ForegroundColor Yellow
-Write-Host ""
-
-# Show help
-if ($help) {
-    Write-Host "Q Coin Testnet - Geth Node" -ForegroundColor Cyan
+if ($Help) {
+    Write-Host "Q Coin Geth Node Starter" -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "Usage: .\start-geth.ps1 [options]" -ForegroundColor Yellow
+    Write-Host "Usage: ./start-geth.ps1 [network] [options]" -ForegroundColor White
     Write-Host ""
-    Write-Host "Options:" -ForegroundColor Green
-    Write-Host "  -etherbase <addr>  Mining reward address (default: 0x1234...)"
-    Write-Host "  -port <port>       P2P network port (default: 4294 testnet, 4295 mainnet)"
-    Write-Host "  -rpcport <port>    HTTP-RPC server port (default: 8545)"
-    Write-Host "  -wsport <port>     WebSocket server port (default: 8546)"
-    Write-Host "  -datadir <path>    Custom data directory (default: system default)"
-    Write-Host "  -mainnet           Use mainnet instead of testnet"
-    Write-Host "  -help              Show this help message"
+    Write-Host "Networks:" -ForegroundColor Yellow
+    Write-Host "  mainnet   - Q Coin Mainnet (Chain ID 73236)"
+    Write-Host "  testnet   - Q Coin Testnet (Chain ID 73235) [DEFAULT]"
+    Write-Host "  devnet    - Q Coin Dev Network (Chain ID 73234)"
     Write-Host ""
-    Write-Host "Examples:" -ForegroundColor Yellow
-    Write-Host "  .\start-geth.ps1                                    # Start with external mining"
-    Write-Host "  .\start-geth.ps1 -etherbase 0x123...               # Custom mining address"
+    Write-Host "Options:" -ForegroundColor Yellow
+    Write-Host "  -mining   - Enable mining with single thread"
+    Write-Host "  -help     - Show this help message"
     Write-Host ""
-    Write-Host "Q Coin Testnet Details:" -ForegroundColor Magenta
-    Write-Host "  Chain ID: 73235"
-    Write-Host "  Currency: Q (Q Coin)"
-    Write-Host "  Block Time: 12 seconds"
-    Write-Host "  Consensus: QMPoW (Quantum Proof of Work)"
-    Write-Host "  Mining: External miners only (0 internal threads)"
-    Write-Host "  Puzzles: 128 chained quantum puzzles per block"
+    Write-Host "Examples:" -ForegroundColor Green
+    Write-Host "  ./start-geth.ps1                 # Start testnet node"
+    Write-Host "  ./start-geth.ps1 mainnet         # Start mainnet node"
+    Write-Host "  ./start-geth.ps1 devnet -mining  # Start dev node with mining"
     exit 0
 }
 
-# Determine network configuration
-if ($mainnet) {
-    $networkName = "Q Coin Mainnet"
-    $chainId = "73236"
-    $genesisFile = "genesis_quantum_mainnet.json"
-    $defaultDataDir = "$env:APPDATA\Qcoin\mainnet"
-    if ($port -eq 4294) { $port = 4295 }  # Switch to mainnet port if using default
-} else {
-    $networkName = "Q Coin Testnet"
-    $chainId = "73235"
-    $genesisFile = "genesis_quantum_testnet.json"
-    $defaultDataDir = "$env:APPDATA\Qcoin\testnet"
-}
-
-# Validate etherbase address format (basic check)
-if ($etherbase -notmatch "^0x[0-9a-fA-F]{40}$") {
-    Write-Host "ERROR: Invalid etherbase address format!" -ForegroundColor Red
-    Write-Host "Expected format: 0x followed by 40 hex characters" -ForegroundColor Yellow
-    Write-Host "Example: 0x1234567890123456789012345678901234567890" -ForegroundColor Yellow
-    exit 1
-}
-
-# Find the latest quantum-geth release
-Write-Host "$networkName - Starting Geth Node" -ForegroundColor Cyan
-Write-Host ""
-
-$GethReleaseDir = Get-ChildItem -Path "releases\quantum-geth-*" -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
-if (-not $GethReleaseDir) {
-    Write-Host "ERROR: No quantum-geth release found!" -ForegroundColor Red
-    Write-Host "Please run: .\build-release.ps1 geth" -ForegroundColor Yellow
-    exit 1
-}
-
-$GethExecutable = "$($GethReleaseDir.FullName)\geth.exe"
-Write-Host "Using geth from: $($GethReleaseDir.Name)" -ForegroundColor Green
-
-# Determine data directory
-if ($datadir -eq "") {
-    # Use network-specific default directory
-    $datadir = $defaultDataDir
-    Write-Host "Using default data directory: $datadir" -ForegroundColor Green
-} else {
-    Write-Host "Using custom data directory: $datadir" -ForegroundColor Green
-}
-
-# Check if blockchain is initialized
-if (-not (Test-Path "$datadir\geth\chaindata")) {
-    Write-Host ""
-    Write-Host "Initializing $networkName blockchain..." -ForegroundColor Yellow
-    
-    # Create data directory if it doesn't exist
-    if (-not (Test-Path $datadir)) {
-        New-Item -ItemType Directory -Path $datadir -Force | Out-Null
-    }
-    
-    # Initialize with testnet genesis
-    try {
-        & "$GethExecutable" --datadir "$datadir" init "$genesisFile" 2>&1
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "$networkName blockchain initialized successfully!" -ForegroundColor Green
-        } else {
-            Write-Host "ERROR: Failed to initialize blockchain!" -ForegroundColor Red
-            exit 1
-        }
-    } catch {
-        Write-Host "ERROR: Failed to run geth init: $_" -ForegroundColor Red
+# Build if geth doesn't exist
+if (-not (Test-Path "quantum-geth\build\bin\geth.exe")) {
+    Write-Host "🔨 Building Q Coin Geth..." -ForegroundColor Yellow
+    & .\build-linux.sh
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "❌ Build failed!" -ForegroundColor Red
         exit 1
     }
 }
 
-# Build geth command with external mining enabled
-# For other nodes to connect to this one, use:
-# --bootnodes "enode://89df9647d6f5b901c63e8a7ad977900b5ce2386b916ed6d204d24069435740c7e2c188c9d3493bfc98c056d9d87c6213df057e9518fb43f12759ba55dff31b4c@69.243.132.233:4294"
+# Network configurations
+$configs = @{
+    "mainnet" = @{
+        chainid = 73236
+        datadir = "$env:APPDATA\Qcoin\mainnet"
+        genesis = "genesis_quantum_mainnet.json"
+        port = 30303
+        name = "Q Coin Mainnet"
+        bootnodes = "enode://0bc243936ebc13ebf57895dff1321695064ae4b0ac0c1e047d52d695c396b64c52847f852a9738f0d079af4ba109dfceafd1cf0924587b151765834caf13e5fd@69.243.132.233:30305"
+    }
+    "testnet" = @{
+        chainid = 73235
+        datadir = "$env:APPDATA\Qcoin"
+        genesis = "genesis_quantum_testnet.json"
+        port = 30303
+        name = "Q Coin Testnet"
+        bootnodes = "enode://0bc243936ebc13ebf57895dff1321695064ae4b0ac0c1e047d52d695c396b64c52847f852a9738f0d079af4ba109dfceafd1cf0924587b151765834caf13e5fd@69.243.132.233:30305"
+    }
+    "devnet" = @{
+        chainid = 73234
+        datadir = "qdata"
+        genesis = "genesis_quantum_dev.json"
+        port = 30305
+        name = "Q Coin Dev Network"
+        bootnodes = "enode://0bc243936ebc13ebf57895dff1321695064ae4b0ac0c1e047d52d695c396b64c52847f852a9738f0d079af4ba109dfceafd1cf0924587b151765834caf13e5fd@69.243.132.233:30305"
+    }
+}
+
+$config = $configs[$Network]
+Write-Host "🚀 Starting $($config.name) (Chain ID: $($config.chainid))" -ForegroundColor Cyan
+
+# Create data directory if it doesn't exist
+if (-not (Test-Path $config.datadir)) {
+    New-Item -ItemType Directory -Path $config.datadir -Force | Out-Null
+    Write-Host "📁 Created data directory: $($config.datadir)" -ForegroundColor Green
+}
+
+# Initialize with genesis if needed
+$genesisPath = Join-Path $config.datadir "geth\chaindata"
+if (-not (Test-Path $genesisPath)) {
+    Write-Host "🔧 Initializing blockchain with genesis file..." -ForegroundColor Yellow
+    & "quantum-geth\build\bin\geth.exe" init $config.genesis --datadir $config.datadir
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "❌ Genesis initialization failed!" -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "✅ Blockchain initialized successfully" -ForegroundColor Green
+}
+
+# Prepare geth arguments
 $gethArgs = @(
-    "--datadir", "$datadir",
-    "--networkid", "$chainId",
-    "--port", "$port",
+    "--datadir", $config.datadir,
+    "--networkid", $config.chainid,
+    "--port", $config.port,
     "--http",
     "--http.addr", "0.0.0.0",
-    "--http.port", "$rpcport",
-    "--http.api", "eth,net,web3,personal,admin,miner,debug,txpool,qmpow",
+    "--http.port", "8545",
     "--http.corsdomain", "*",
+    "--http.api", "eth,net,web3,personal,admin,txpool",
     "--ws",
-    "--ws.addr", "0.0.0.0",
-    "--ws.port", "$wsport",
-    "--ws.api", "eth,net,web3,personal,admin,miner,debug,txpool,qmpow",
+    "--ws.addr", "0.0.0.0", 
+    "--ws.port", "8546",
     "--ws.origins", "*",
-    "--nat", "any",
-    "--maxpeers", "50",
-    "--syncmode", "full",
-    "--gcmode", "archive",
-    "--mine",
-    "--miner.threads", "0",
-    "--miner.etherbase", "$etherbase"
+    "--ws.api", "eth,net,web3,personal,admin,txpool",
+    "--authrpc.addr", "127.0.0.1",
+    "--authrpc.port", "8551",
+    "--authrpc.vhosts", "localhost",
+    "--authrpc.jwtsecret", "jwt.hex",
+    "--bootnodes", $config.bootnodes,
+    "--maxpeers", "25",
+    "--verbosity", "3"
 )
 
-# Display startup information
+# Add mining if requested
+if ($Mining) {
+    $gethArgs += @("--mine", "--miner.threads", "1")
+    Write-Host "⛏️  Mining enabled with 1 thread" -ForegroundColor Yellow
+} else {
+    $gethArgs += @("--miner.threads", "-1")
+    Write-Host "🚫 Local mining disabled (external miners only)" -ForegroundColor Yellow
+}
+
+Write-Host "🌐 Network: $($config.name)" -ForegroundColor White
+Write-Host "🔗 Chain ID: $($config.chainid)" -ForegroundColor White
+Write-Host "📁 Data Directory: $($config.datadir)" -ForegroundColor White
+Write-Host "🌍 Port: $($config.port)" -ForegroundColor White
+Write-Host "📡 Bootnodes: $($config.bootnodes)" -ForegroundColor White
 Write-Host ""
-Write-Host "$networkName Configuration:" -ForegroundColor Cyan
-Write-Host "  Chain ID: $chainId" -ForegroundColor Gray
-Write-Host "  Currency: Q (Q Coin)" -ForegroundColor Gray
-Write-Host "  Data Directory: $datadir" -ForegroundColor Gray
-Write-Host "  P2P Port: $port" -ForegroundColor Gray
-Write-Host "  RPC Port: $rpcport" -ForegroundColor Gray
-Write-Host "  WebSocket Port: $wsport" -ForegroundColor Gray
-Write-Host "  Mining: EXTERNAL MINERS (0 internal threads)" -ForegroundColor Green
-Write-Host "  Etherbase: $etherbase" -ForegroundColor Gray
-Write-Host ""
-Write-Host "Starting $networkName node..." -ForegroundColor Green
-Write-Host "Press Ctrl+C to stop" -ForegroundColor Yellow
-Write-Host ""
+Write-Host "🎯 Starting Q Coin Geth node..." -ForegroundColor Green
 
 # Start geth
-try {
-    & "$GethExecutable" $gethArgs
-} catch {
-    Write-Host "ERROR: Failed to start geth: $_" -ForegroundColor Red
-    exit 1
-} 
+& "quantum-geth\build\bin\geth.exe" @gethArgs 
