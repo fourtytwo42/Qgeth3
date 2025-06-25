@@ -117,6 +117,29 @@ var (
 		Ethash:                        new(ctypes.EthashConfig),
 	}
 
+	// QCoinTestnetChainConfig contains the chain parameters to run a node on the Q Coin test network.
+	QCoinTestnetChainConfig = &goethereum.ChainConfig{
+		ChainID:                       big.NewInt(73235),
+		HomesteadBlock:                big.NewInt(0),
+		DAOForkBlock:                  nil,
+		DAOForkSupport:                false,
+		EIP150Block:                   big.NewInt(0),
+		EIP155Block:                   big.NewInt(0),
+		EIP158Block:                   big.NewInt(0),
+		ByzantiumBlock:                big.NewInt(0),
+		ConstantinopleBlock:           big.NewInt(0),
+		PetersburgBlock:               big.NewInt(0),
+		IstanbulBlock:                 big.NewInt(0),
+		MuirGlacierBlock:              big.NewInt(0),
+		BerlinBlock:                   big.NewInt(0),
+		LondonBlock:                   big.NewInt(0),
+		ArrowGlacierBlock:             nil,
+		GrayGlacierBlock:              nil,
+		TerminalTotalDifficulty:       nil,
+		TerminalTotalDifficultyPassed: false,
+		QMPoW:                         new(ctypes.QMPoWConfig),
+	}
+
 	// AllEthashProtocolChanges contains every protocol change (EIPs) introduced
 	// and accepted by the Ethereum core developers into the Ethash consensus.
 	AllEthashProtocolChanges = &goethereum.ChainConfig{
@@ -291,11 +314,35 @@ var (
 	}
 )
 
+// QCoinTestnetChainConfig contains the chain parameters to run a node on the Q Coin test network.
+var QCoinTestnetChainConfig = &goethereum.ChainConfig{
+	ChainID:                       big.NewInt(73235),
+	HomesteadBlock:                big.NewInt(0),
+	DAOForkBlock:                  nil,
+	DAOForkSupport:                false,
+	EIP150Block:                   big.NewInt(0),
+	EIP155Block:                   big.NewInt(0),
+	EIP158Block:                   big.NewInt(0),
+	ByzantiumBlock:                big.NewInt(0),
+	ConstantinopleBlock:           big.NewInt(0),
+	PetersburgBlock:               big.NewInt(0),
+	IstanbulBlock:                 big.NewInt(0),
+	MuirGlacierBlock:              big.NewInt(0),
+	BerlinBlock:                   big.NewInt(0),
+	LondonBlock:                   big.NewInt(0),
+	ArrowGlacierBlock:             nil,
+	GrayGlacierBlock:              nil,
+	TerminalTotalDifficulty:       nil,
+	TerminalTotalDifficultyPassed: false,
+	Ethash:                        new(ctypes.EthashConfig),
+}
+
 // NetworkNames are user friendly names to use in the chain spec banner.
 var NetworkNames = map[string]string{
-	MainnetChainConfig.ChainID.String(): "mainnet",
-	SepoliaChainConfig.ChainID.String(): "sepolia",
-	HoleskyChainConfig.ChainID.String(): "holesky",
+	MainnetChainConfig.ChainID.String():      "mainnet",
+	SepoliaChainConfig.ChainID.String():      "sepolia",
+	HoleskyChainConfig.ChainID.String():      "holesky",
+	QCoinTestnetChainConfig.ChainID.String(): "qcoin-testnet",
 }
 
 /*

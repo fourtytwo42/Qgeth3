@@ -8,10 +8,11 @@
 # Default values
 MINE=false
 ETHERBASE=""
-PORT=30303
+PORT=4294
 RPCPORT=8545
 WSPORT=8546
 DATADIR=""
+MAINNET=false
 HELP=false
 
 # Parse command line arguments
@@ -41,6 +42,10 @@ while [[ $# -gt 0 ]]; do
             DATADIR="$2"
             shift 2
             ;;
+        --mainnet)
+            MAINNET=true
+            shift
+            ;;
         --help|-h)
             HELP=true
             shift
@@ -61,10 +66,11 @@ if [ "$HELP" = true ]; then
     echo -e "\033[32mOptions:\033[0m"
     echo "  --mine               Enable mining (disabled by default)"
     echo "  --etherbase <addr>   Mining reward address (required if mining)"
-    echo "  --port <port>        P2P network port (default: 30303)"
+    echo "  --port <port>        P2P network port (default: 4294 testnet, 4295 mainnet)"
     echo "  --rpcport <port>     HTTP-RPC server port (default: 8545)"
     echo "  --wsport <port>      WebSocket server port (default: 8546)"
     echo "  --datadir <path>     Custom data directory (default: system default)"
+    echo "  --mainnet            Use mainnet instead of testnet"
     echo "  --help, -h           Show this help message"
     echo ""
     echo -e "\033[33mExamples:\033[0m"
@@ -79,6 +85,30 @@ if [ "$HELP" = true ]; then
     exit 0
 fi
 
+# Determine network configuration
+if [ "$MAINNET" = true ]; then
+    NETWORK_NAME="Q Coin Mainnet"
+    CHAIN_ID="73236"
+    GENESIS_FILE="../genesis_quantum_mainnet.json"
+    if [ -n "$HOME" ]; then
+        DEFAULT_DATADIR="$HOME/.qcoin/mainnet"
+    else
+        DEFAULT_DATADIR="/tmp/qcoin/mainnet"
+    fi
+    if [ "$PORT" -eq 4294 ]; then
+        PORT=4295  # Switch to mainnet port if using default
+    fi
+else
+    NETWORK_NAME="Q Coin Testnet"
+    CHAIN_ID="73235"
+    GENESIS_FILE="../genesis_quantum_testnet.json"
+    if [ -n "$HOME" ]; then
+        DEFAULT_DATADIR="$HOME/.qcoin/testnet"
+    else
+        DEFAULT_DATADIR="/tmp/qcoin/testnet"
+    fi
+fi
+
 # Validate mining parameters
 if [ "$MINE" = true ] && [ -z "$ETHERBASE" ]; then
     echo -e "\033[31mERROR: Mining requires an etherbase address!\033[0m"
@@ -87,7 +117,7 @@ if [ "$MINE" = true ] && [ -z "$ETHERBASE" ]; then
 fi
 
 # Find the latest quantum-geth release
-echo -e "\033[36mQ Coin Testnet - Starting Geth Node\033[0m"
+echo -e "\033[36m$NETWORK_NAME - Starting Geth Node\033[0m"
 echo ""
 
 GETH_RELEASE_DIR=$(find ../releases -name "quantum-geth-*" -type d 2>/dev/null | sort -r | head -n 1)
@@ -111,12 +141,7 @@ echo -e "\033[32mUsing geth from: $(basename "$GETH_RELEASE_DIR")\033[0m"
 
 # Determine data directory
 if [ -z "$DATADIR" ]; then
-    # Use default geth data directory
-    if [ -n "$HOME" ]; then
-        DEFAULT_DATADIR="$HOME/.qcoin"
-    else
-        DEFAULT_DATADIR="/tmp/qcoin"
-    fi
+    # Use network-specific default directory
     DATADIR="$DEFAULT_DATADIR"
     echo -e "\033[32mUsing default data directory: $DATADIR\033[0m"
 else
@@ -124,17 +149,16 @@ else
 fi
 
 # Check if blockchain is initialized
-GENESIS_FILE="../genesis_quantum_testnet.json"
 if [ ! -d "$DATADIR/geth/chaindata" ]; then
     echo ""
-    echo -e "\033[33mInitializing Q Coin testnet blockchain...\033[0m"
+    echo -e "\033[33mInitializing $NETWORK_NAME blockchain...\033[0m"
     
     # Create data directory if it doesn't exist
     mkdir -p "$DATADIR"
     
-    # Initialize with testnet genesis
+    # Initialize with genesis
     if "$GETH_EXECUTABLE" --datadir "$DATADIR" init "$GENESIS_FILE"; then
-        echo -e "\033[32mQ Coin testnet blockchain initialized successfully!\033[0m"
+        echo -e "\033[32m$NETWORK_NAME blockchain initialized successfully!\033[0m"
     else
         echo -e "\033[31mERROR: Failed to initialize blockchain!\033[0m"
         exit 1
@@ -144,7 +168,7 @@ fi
 # Build geth command arguments
 GETH_ARGS=(
     --datadir "$DATADIR"
-    --networkid 73235
+    --networkid "$CHAIN_ID"
     --port "$PORT"
     --http
     --http.addr 0.0.0.0
@@ -156,6 +180,8 @@ GETH_ARGS=(
     --ws.port "$WSPORT"
     --ws.api eth,net,web3,personal,admin,miner,debug,txpool
     --ws.origins "*"
+    --nat any
+    --maxpeers 50
     --allow-insecure-unlock
     --syncmode full
     --gcmode archive
@@ -169,8 +195,8 @@ fi
 
 # Display startup information
 echo ""
-echo -e "\033[36mQ Coin Testnet Configuration:\033[0m"
-echo -e "\033[37m  Chain ID: 73235\033[0m"
+echo -e "\033[36m$NETWORK_NAME Configuration:\033[0m"
+echo -e "\033[37m  Chain ID: $CHAIN_ID\033[0m"
 echo -e "\033[37m  Currency: Q (Q Coin)\033[0m"
 echo -e "\033[37m  Data Directory: $DATADIR\033[0m"
 echo -e "\033[37m  P2P Port: $PORT\033[0m"
@@ -182,7 +208,7 @@ else
     echo -e "\033[37m  Mining: \033[33mDISABLED\033[0m"
 fi
 echo ""
-echo -e "\033[32mStarting Q Coin testnet node...\033[0m"
+echo -e "\033[32mStarting $NETWORK_NAME node...\033[0m"
 echo -e "\033[33mPress Ctrl+C to stop\033[0m"
 echo ""
 

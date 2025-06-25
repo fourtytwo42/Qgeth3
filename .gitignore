@@ -167,6 +167,10 @@ THREAD_STARVATION_FIXES.md
 monitor-blockchain.ps1
 test-enhanced-miner.ps1
 
+# Development scripts (local only)
+dev-*.ps1
+scripts/dev-*.sh
+
 # qiskit-aer local folder (use pip package instead)
 qiskit-aer/
 
