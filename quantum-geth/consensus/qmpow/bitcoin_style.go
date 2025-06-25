@@ -11,7 +11,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math/big"
-	"strings"
 
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
@@ -20,8 +19,8 @@ import (
 // Bitcoin-Style Quantum Mining Constants
 const (
 	// Target adjustment parameters (like Bitcoin)
-	TargetAdjustmentFactor = 2   // Maximum adjustment per retarget (max 1x increase/decrease)
-	RetargetBlocks         = 50  // Retarget every 50 blocks (~10 minutes at 12s blocks)
+	TargetAdjustmentFactor = 2  // Maximum adjustment per retarget (max 1x increase/decrease)
+	RetargetBlocks         = 50 // Retarget every 50 blocks (~10 minutes at 12s blocks)
 
 	// Bitcoin-style mining parameters optimized for quantum computation speeds
 	QuantumTargetBits = 248        // Target space size (bits)
@@ -35,24 +34,15 @@ const (
 	ASERTFixedPoint = 16 // Q16 fixed-point arithmetic
 )
 
-// Advanced difficulty formatting with decimal precision
+// Simple difficulty formatting - display raw difficulty values
 func FormatDifficulty(difficulty *big.Int) string {
 	if difficulty == nil {
 		return "0"
 	}
 
-	// Convert fixed-point to decimal representation
-	precisionBig := big.NewInt(DifficultyPrecision)
-	whole := new(big.Int).Div(difficulty, precisionBig)
-	remainder := new(big.Int).Mod(difficulty, precisionBig)
-
-	// Format with up to 6 decimal places, removing trailing zeros
-	decimal := fmt.Sprintf("%06d", remainder.Uint64())
-	decimal = strings.TrimRight(decimal, "0")
-	if decimal == "" {
-		return whole.String()
-	}
-	return fmt.Sprintf("%s.%s", whole.String(), decimal)
+	// Display difficulty as-is (no decimal conversion)
+	// This matches the values set in genesis blocks and reset scripts
+	return difficulty.String()
 }
 
 var (
@@ -109,21 +99,14 @@ func CalculateQuantumProofQuality(outcomes []byte, proof []byte, qnonce uint64) 
 
 // DifficultyToTarget converts difficulty to Bitcoin-style target
 // Like Bitcoin: target = max_target / difficulty
-// But adjusted for quantum mining's unique characteristics
 func DifficultyToTarget(difficulty *big.Int) *big.Int {
 	if difficulty.Cmp(big.NewInt(0)) <= 0 {
 		difficulty = big.NewInt(MinimumDifficulty)
 	}
 
-	// Quantum-optimized target calculation
-	// For quantum mining, we need much larger targets than traditional Bitcoin
-	// Use a quantum-specific scaling factor to make targets achievable
-	quantumScalingFactor := big.NewInt(100000000) // 100M scaling for quantum mining
-
-	// target = (max_target / difficulty) * scaling_factor
+	// Simple Bitcoin-style target calculation: target = max_target / difficulty
 	target := new(big.Int).Set(MaxQuantumTarget)
 	target.Div(target, difficulty)
-	target.Mul(target, quantumScalingFactor)
 
 	// Ensure target doesn't exceed maximum or go below minimum
 	if target.Cmp(MaxQuantumTarget) > 0 {
@@ -144,7 +127,7 @@ func CalculateQuantumTarget(difficulty *big.Int, blockNumber uint64, actualBlock
 		difficulty = big.NewInt(MinimumDifficulty)
 	}
 
-	// Get base target from difficulty
+	// Get base target from difficulty (no scaling factor)
 	baseTarget := DifficultyToTarget(difficulty)
 
 	// Apply ASERT adjustment for smooth per-block difficulty changes

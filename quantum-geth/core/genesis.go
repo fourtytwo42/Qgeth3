@@ -529,9 +529,9 @@ func GenesisToBlock(g *genesisT.Genesis, db ethdb.Database) *types.Block {
 
 		// Initialize quantum fields for genesis block (block 0)
 		epoch := uint32(0)     // Genesis is always epoch 0
-		qbits := uint16(12)    // Starting qubits per v0.9-rc3-hw0 spec
-		tcount := uint32(4096) // Fixed T-count
-		lnet := uint16(48)     // Fixed puzzle count
+		qbits := uint16(16)    // Starting qubits per new spec
+		tcount := uint32(20)   // Fixed T-count (ENFORCED MINIMUM)
+		lnet := uint16(32)     // 32 chained puzzles per block
 		qnonce := uint64(0)    // Genesis nonce
 		attestMode := uint8(0) // Dilithium mode
 
@@ -544,7 +544,7 @@ func GenesisToBlock(g *genesisT.Genesis, db ethdb.Database) *types.Block {
 
 		// Initialize byte arrays
 		head.ExtraNonce32 = make([]byte, 32)
-		head.BranchNibbles = make([]byte, 48)
+		head.BranchNibbles = make([]byte, 32)
 
 		// Initialize hash fields as zero hashes (genesis has no quantum computation)
 		zeroHash := common.Hash{}

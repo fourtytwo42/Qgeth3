@@ -89,6 +89,7 @@ func TestAssembleQuantumBlock(t *testing.T) {
 		t.Error("ProofRoot not set")
 	}
 
+	// Validate BranchNibbles (32 bytes for 32 puzzles)
 	if len(header.BranchNibbles) != BranchNibblesSize {
 		t.Errorf("Invalid BranchNibbles size: got %d, expected %d", len(header.BranchNibbles), BranchNibblesSize)
 	}
@@ -351,9 +352,9 @@ func TestQMPoWFinalizeAndAssembleNonQuantum(t *testing.T) {
 
 func createTestQuantumHeader() *types.Header {
 	epoch := uint32(0)
-	qbits := uint16(12)
-	tcount := uint32(4096)
-	lnet := uint16(48)
+	qbits := uint16(16)
+	tcount := uint32(20)
+	lnet := uint16(128)
 	qnonce := uint64(0)
 	attestMode := uint8(0)
 

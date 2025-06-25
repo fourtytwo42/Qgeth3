@@ -20,13 +20,20 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 )
 
+// FIXED QUANTUM PARAMETERS - These are now ENFORCED and cannot be reduced by miners
+const (
+	FixedQBits  = 16 // ENFORCED: Exactly 16 qubits per puzzle
+	FixedTCount = 20 // ENFORCED: Minimum 20 T-gates per puzzle (was 8192)
+	FixedLNet   = 32 // ENFORCED: Exactly 32 chained puzzles per block (was 128)
+)
+
 // QuantumConstants defines the constants for quantum proof-of-work
 type QuantumConstants struct {
 	EpochBlocks      uint64 // 50,000 blocks per epoch
 	GlideBlocks      uint64 // 12,500 blocks per qubit increase
 	StartingQBits    uint16 // 12 qubits at start
 	FixedTCount      uint32 // 4,096 T-gates constant
-	FixedLNet        uint16 // 48 puzzles constant
+	FixedLNet        uint16 // 128 chained puzzles constant
 	MaxNonceAttempts uint64 // 4 billion nonce attempts
 }
 
@@ -36,7 +43,7 @@ var QuantumSpec = QuantumConstants{
 	GlideBlocks:      12500,
 	StartingQBits:    12,
 	FixedTCount:      4096,
-	FixedLNet:        48,
+	FixedLNet:        128,
 	MaxNonceAttempts: 4000000000,
 }
 

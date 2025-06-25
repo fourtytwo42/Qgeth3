@@ -152,7 +152,7 @@ type Header struct {
 	Epoch         *uint32      `json:"epoch" rlp:"-"`         // ⌊Height / 50,000⌋
 	QBits         *uint16      `json:"qBits" rlp:"-"`         // qubits per puzzle
 	TCount        *uint32      `json:"tCount" rlp:"-"`        // T-gates per puzzle (const 4096)
-	LNet          *uint16      `json:"lNet" rlp:"-"`          // puzzle count (const 48)
+	LNet          *uint16      `json:"lNet" rlp:"-"`          // chained puzzle count (const 128)
 	QNonce64      *uint64      `json:"qNonce64" rlp:"-"`      // primary nonce (Bitcoin-style)
 	ExtraNonce32  []byte       `json:"extraNonce32" rlp:"-"`  // 32-byte entropy
 	OutcomeRoot   *common.Hash `json:"outcomeRoot" rlp:"-"`   // Merkle root of outcomes

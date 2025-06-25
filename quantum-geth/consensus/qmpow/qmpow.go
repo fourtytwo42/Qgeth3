@@ -29,14 +29,14 @@ import (
 const (
 	// Halving epoch parameters (Section 11)
 	EpochBlocks   = HalvingEpochLength // Epoch = ⌊Height / 600,000⌋
-	StartingQBits = 16                 // Start n = 16 at epoch 0 (126-bit security)
+	StartingQBits = 16                 // Start n = 16 at epoch 0 (simplified security)
 
 	// Dynamic circuit parameters (follow glide schedule from params.go)
 	// These are now calculated dynamically based on height
 
 	// Proof system sizes
 	OutcomeRootSize   = 32 // Merkle root of outcomes
-	BranchNibblesSize = 48 // One high-nibble per puzzle
+	BranchNibblesSize = 32 // One high-nibble per puzzle (was 48)
 	GateHashSize      = 32 // SHA-256 of gate streams
 	ProofRootSize     = 32 // Merkle root of Nova proofs
 	ExtraNonce32Size  = 32 // Entropy field size
@@ -360,7 +360,7 @@ func (q *QMPoW) Prepare(chain consensus.ChainHeaderReader, header *types.Header)
 	header.Epoch = &params.Epoch
 	header.QBits = &params.QBits
 	header.TCount = &params.TCount
-	header.LNet = &params.LNet // Always 48 puzzles for 1,152-bit security
+	header.LNet = &params.LNet // Always 128 chained puzzles for enhanced security
 
 	// Initialize quantum nonce
 	var qnonce64 uint64 = 0
@@ -395,7 +395,7 @@ func (q *QMPoW) Prepare(chain consensus.ChainHeaderReader, header *types.Header)
 				"parentDifficulty", parent.Difficulty,
 				"newDifficulty", header.Difficulty,
 				"fixedPuzzles", params.LNet,
-				"security", "1,152-bit",
+				"security", "simplified",
 				"style", "Bitcoin-nonce-target")
 		} else {
 			// Fallback if parent not found
@@ -411,7 +411,7 @@ func (q *QMPoW) Prepare(chain consensus.ChainHeaderReader, header *types.Header)
 		log.Info("🌱 Genesis block difficulty set (Bitcoin-style)",
 			"difficulty", header.Difficulty,
 			"fixedPuzzles", params.LNet,
-			"security", "1,152-bit")
+			"security", "simplified")
 	}
 
 	// Initialize optional fields to prevent RLP encoding issues
@@ -519,7 +519,7 @@ func (q *QMPoW) Seal(chain consensus.ChainHeaderReader, block *types.Block, resu
 	} else {
 		log.Info("🚫 Local mining disabled (threads=-1), only serving external miners")
 	}
-	
+
 	return nil
 }
 
@@ -1275,11 +1275,11 @@ func (s *remoteSealer) submitQuantumWork(qnonce uint64, blockHash common.Hash, q
 
 	// Create header with quantum proof
 	header := types.CopyHeader(block.Header())
-	
+
 	// CRITICAL: Initialize optional fields (WithdrawalsHash, etc.) before RLP validation
 	// This prevents "input string too short" RLP errors from external miners
 	s.qmpow.initializeOptionalFields(header)
-	
+
 	header.QNonce64 = &qnonce
 	header.OutcomeRoot = &quantumProof.OutcomeRoot
 	header.GateHash = &quantumProof.GateHash

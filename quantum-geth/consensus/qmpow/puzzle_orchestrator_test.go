@@ -36,14 +36,14 @@ func TestComputeInitialSeed(t *testing.T) {
 	orchestrator := NewPuzzleOrchestrator()
 
 	input := &MiningInput{
-		ParentHash:   common.HexToHash("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"),
+		ParentHash:   common.HexToHash("0x1111111111111111111111111111111111111111111111111111111111111111"),
 		TxRoot:       common.HexToHash("0xfedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321"),
 		ExtraNonce32: make([]byte, 32),
 		QNonce64:     0x123456789abcdef0,
 		BlockHeight:  1000,
 		QBits:        16,
-		TCount:       8192,
-		LNet:         48,
+		TCount:       20,
+		LNet:         128,
 	}
 
 	// Fill ExtraNonce32 with test pattern
@@ -107,8 +107,8 @@ func TestChainSeed(t *testing.T) {
 func TestBuildOutcomeRoot(t *testing.T) {
 	orchestrator := NewPuzzleOrchestrator()
 
-	// Test with 48 outcomes
-	outcomes := make([]uint16, 48)
+	// Test with 128 outcomes
+	outcomes := make([]uint16, 128)
 	for i := range outcomes {
 		outcomes[i] = uint16(i * 1000) // Varied outcomes
 	}
@@ -139,39 +139,35 @@ func TestBuildOutcomeRoot(t *testing.T) {
 func TestExtractBranchNibbles(t *testing.T) {
 	orchestrator := NewPuzzleOrchestrator()
 
-	// Create 48 outcomes for proper testing
-	outcomes := make([]uint16, 48)
+	// Create 128 outcomes for proper testing
+	outcomes := make([]uint16, 128)
 	for i := range outcomes {
 		// Create test pattern
 		outcomes[i] = uint16(0x1000 + i*0x100) // 0x1000, 0x1100, 0x1200, etc.
 	}
 
-	// Set specific test values for first 8
+	// Set specific test values for first 4
 	outcomes[0] = 0x1234
 	outcomes[1] = 0x5678
 	outcomes[2] = 0x9ABC
 	outcomes[3] = 0xDEF0
-	outcomes[4] = 0x2468
-	outcomes[5] = 0xACE0
-	outcomes[6] = 0x1357
-	outcomes[7] = 0x9BDF
 
 	nibbles := orchestrator.extractBranchNibbles(outcomes)
 
-	// Verify nibbles length (should always be 48)
-	if len(nibbles) != 48 {
-		t.Errorf("Expected nibbles length 48, got %d", len(nibbles))
+	// Verify nibbles length (should always be 128)
+	if len(nibbles) != 128 {
+		t.Errorf("Expected nibbles length 128, got %d", len(nibbles))
 	}
 
-	// Verify nibble extraction for first 8
-	expectedNibbles := []byte{0x1, 0x5, 0x9, 0xD, 0x2, 0xA, 0x1, 0x9}
+	// Verify nibble extraction for first 4
+	expectedNibbles := []byte{0x1, 0x5, 0x9, 0xD}
 	for i, expected := range expectedNibbles {
 		if nibbles[i] != expected {
 			t.Errorf("Nibble %d: expected 0x%X, got 0x%X", i, expected, nibbles[i])
 		}
 	}
 
-	t.Logf("Branch nibbles (first 8): %x", nibbles[:8])
+	t.Logf("Branch nibbles (first 4): %x", nibbles[:4])
 }
 
 func TestComputeGateHash(t *testing.T) {
@@ -217,8 +213,8 @@ func TestExecuteSinglePuzzle(t *testing.T) {
 		QNonce64:     12345,
 		BlockHeight:  1000,
 		QBits:        16,
-		TCount:       8192,
-		LNet:         48,
+		TCount:       20,
+		LNet:         128,
 	}
 
 	result, err := orchestrator.executeSinglePuzzle(0, seed, input)
@@ -273,8 +269,8 @@ func TestExecutePuzzleChain(t *testing.T) {
 		QNonce64:     0xabcdef1234567890,
 		BlockHeight:  2000,
 		QBits:        16,
-		TCount:       8192,
-		LNet:         48,
+		TCount:       20,
+		LNet:         128,
 	}
 
 	// Fill ExtraNonce32 with pattern
@@ -287,17 +283,17 @@ func TestExecutePuzzleChain(t *testing.T) {
 		t.Fatalf("Puzzle chain execution failed: %v", err)
 	}
 
-	// Verify result properties
-	if len(result.Results) != 48 {
-		t.Errorf("Expected 48 puzzle results, got %d", len(result.Results))
+	// Validate result structure
+	if len(result.Results) != 32 {
+		t.Errorf("Expected 32 puzzle results, got %d", len(result.Results))
 	}
 
-	if len(result.Outcomes) != 48 {
-		t.Errorf("Expected 48 outcomes, got %d", len(result.Outcomes))
+	if len(result.Outcomes) != 32 {
+		t.Errorf("Expected 32 outcomes, got %d", len(result.Outcomes))
 	}
 
-	if len(result.BranchNibbles) != 48 {
-		t.Errorf("Expected 48 branch nibbles, got %d", len(result.BranchNibbles))
+	if len(result.BranchNibbles) != 32 {
+		t.Errorf("Expected 32 branch nibbles, got %d", len(result.BranchNibbles))
 	}
 
 	if result.OutcomeRoot == (common.Hash{}) {
@@ -355,8 +351,8 @@ func TestValidatePuzzleChain(t *testing.T) {
 		QNonce64:     0x1122334455667788,
 		BlockHeight:  3000,
 		QBits:        16,
-		TCount:       8192,
-		LNet:         48,
+		TCount:       20,
+		LNet:         128,
 	}
 
 	// Execute puzzle chain
@@ -393,8 +389,8 @@ func TestInvalidLNet(t *testing.T) {
 		QNonce64:     12345,
 		BlockHeight:  1000,
 		QBits:        16,
-		TCount:       8192,
-		LNet:         32, // Invalid: should be 48
+		TCount:       20,
+		LNet:         64, // Invalid: should be 128
 	}
 
 	_, err := orchestrator.ExecutePuzzleChain(input)
@@ -402,7 +398,7 @@ func TestInvalidLNet(t *testing.T) {
 		t.Error("Expected error for invalid LNet")
 	}
 
-	if err.Error() != "invalid LNet: expected 48, got 32" {
+	if err.Error() != "SECURITY VIOLATION: LNet must be exactly 128 chained puzzles, got 64" {
 		t.Errorf("Unexpected error message: %v", err)
 	}
 }
@@ -418,8 +414,8 @@ func TestDeterministicExecution(t *testing.T) {
 		QNonce64:     0x9876543210abcdef,
 		BlockHeight:  4000,
 		QBits:        16,
-		TCount:       8192,
-		LNet:         48,
+		TCount:       20,
+		LNet:         4,
 	}
 
 	result1, err1 := orchestrator1.ExecutePuzzleChain(input)
@@ -533,8 +529,8 @@ func TestKnownSeedOutcomePairs(t *testing.T) {
 				QNonce64:     tc.qnonce,
 				BlockHeight:  1000,
 				QBits:        16,
-				TCount:       8192,
-				LNet:         48,
+				TCount:       20,
+				LNet:         4,
 			}
 
 			seed0 := orchestrator.computeInitialSeed(input)

@@ -23,7 +23,7 @@ type PuzzleOrchestrator struct {
 
 // PuzzleResult represents the result of executing a single quantum puzzle
 type PuzzleResult struct {
-	PuzzleIndex int    // Puzzle index (0-47)
+	PuzzleIndex int    // Puzzle index (0-31)
 	Seed        []byte // Input seed for this puzzle
 	NextSeed    []byte // Chained seed for next puzzle
 	QASM        string // Instantiated QASM circuit
@@ -38,10 +38,10 @@ type PuzzleResult struct {
 // PuzzleChainResult represents the complete result of executing all 48 puzzles
 type PuzzleChainResult struct {
 	InitialSeed   []byte         // Seed₀
-	Results       []PuzzleResult // Results for puzzles 0-47
-	Outcomes      []uint16       // All 48 outcomes
+	Results       []PuzzleResult // Results for puzzles 0-31
+	Outcomes      []uint16       // All 32 outcomes
 	OutcomeRoot   common.Hash    // Merkle root of outcomes
-	BranchNibbles []byte         // High nibbles of outcomes (48 bytes)
+	BranchNibbles []byte         // High nibbles of outcomes (32 bytes)
 	GateHash      common.Hash    // SHA256 of concatenated gate streams
 	TotalGates    int            // Total gates across all puzzles
 	TotalDepth    int            // Maximum depth across puzzles
@@ -57,7 +57,7 @@ type MiningInput struct {
 	BlockHeight  uint64      // Current block height
 	QBits        uint16      // Qubits per puzzle
 	TCount       uint32      // T-gates per puzzle
-	LNet         uint16      // Number of puzzles (should be 48)
+	LNet         uint16      // Number of chained puzzles (MUST be exactly 32)
 }
 
 // NewPuzzleOrchestrator creates a new puzzle orchestrator
@@ -69,10 +69,14 @@ func NewPuzzleOrchestrator() *PuzzleOrchestrator {
 	}
 }
 
-// ExecutePuzzleChain executes the complete 48-puzzle chain according to v0.9 spec
+// ExecutePuzzleChain executes the complete 32-puzzle chain according to v0.9 spec
 func (po *PuzzleOrchestrator) ExecutePuzzleChain(input *MiningInput) (*PuzzleChainResult, error) {
-	if input.LNet != 48 {
-		return nil, fmt.Errorf("invalid LNet: expected 48, got %d", input.LNet)
+	if input.LNet != 32 {
+		return nil, fmt.Errorf("SECURITY VIOLATION: LNet must be exactly 32 chained puzzles, got %d", input.LNet)
+	}
+
+	if input.TCount < 20 {
+		return nil, fmt.Errorf("SECURITY VIOLATION: TCount must be at least 20 T-gates per puzzle, got %d", input.TCount)
 	}
 
 	log.Info("🧩 Starting puzzle chain execution",
@@ -85,13 +89,13 @@ func (po *PuzzleOrchestrator) ExecutePuzzleChain(input *MiningInput) (*PuzzleCha
 	// Step 1: Compute Seed₀
 	seed0 := po.computeInitialSeed(input)
 
-	// Step 2: Execute 48 sequential puzzles
-	results := make([]PuzzleResult, 48)
-	outcomes := make([]uint16, 48)
-	gateStreams := make([][]byte, 48)
+	// Step 2: Execute 32 sequential puzzles
+	results := make([]PuzzleResult, 32)
+	outcomes := make([]uint16, 32)
+	gateStreams := make([][]byte, 32)
 	currentSeed := seed0
 
-	for i := 0; i < 48; i++ {
+	for i := 0; i < 32; i++ {
 		result, err := po.executeSinglePuzzle(i, currentSeed, input)
 		if err != nil {
 			return nil, fmt.Errorf("puzzle %d failed: %v", i, err)
@@ -251,7 +255,7 @@ func (po *PuzzleOrchestrator) chainSeed(currentSeed []byte, outcome uint16) []by
 	return hasher.Sum(nil)
 }
 
-// buildOutcomeRoot builds Merkle root of 48 outcomes
+// buildOutcomeRoot builds Merkle root of 32 outcomes
 func (po *PuzzleOrchestrator) buildOutcomeRoot(outcomes []uint16) common.Hash {
 	// Convert outcomes to 32-byte leaves for Merkle tree
 	leaves := make([][]byte, len(outcomes))
@@ -265,9 +269,9 @@ func (po *PuzzleOrchestrator) buildOutcomeRoot(outcomes []uint16) common.Hash {
 	return buildMerkleRoot(leaves)
 }
 
-// extractBranchNibbles extracts high 4 bits of each outcome (48 bytes)
+// extractBranchNibbles extracts high 4 bits of each outcome (32 bytes)
 func (po *PuzzleOrchestrator) extractBranchNibbles(outcomes []uint16) []byte {
-	nibbles := make([]byte, 48)
+	nibbles := make([]byte, 32)
 	for i, outcome := range outcomes {
 		// Extract high 4 bits of the 16-bit outcome
 		nibbles[i] = byte((outcome >> 12) & 0xF)

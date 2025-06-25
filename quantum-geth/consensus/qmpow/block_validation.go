@@ -395,7 +395,7 @@ func (bvp *BlockValidationPipeline) reconstructCAPSSProofs(header *types.Header)
 		BlockHeight:  header.Number.Uint64(),
 		QBits:        *header.QBits,
 		TCount:       *header.TCount,
-		LNet:         48, // Always 48 puzzles
+		LNet:         32, // Always 32 chained puzzles
 	}
 
 	// Execute the puzzle chain to get quantum execution traces
