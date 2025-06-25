@@ -345,7 +345,7 @@ func main() {
 	} else {
 		fmt.Printf("   🧵 CPU Threads: %d\n", *threads)
 	}
-	fmt.Printf("   ⚛️  Quantum Puzzles: 32 chained per block\n")
+	fmt.Printf("   ⚛️  Quantum Puzzles: 128 chained per block\n")
 	fmt.Printf("   🔬 Qubits per Puzzle: 16\n")
 	fmt.Printf("   🚪 T-Gates per Puzzle: minimum 20 (ENFORCED)\n")
 	fmt.Println("")
@@ -520,7 +520,7 @@ func (m *QuantumMiner) initializeThreadManagement() {
 func (m *QuantumMiner) initializeMemoryPools() {
 	// Calculate memory requirements per puzzle set
 	const bytesPerQubits = 2     // 16 qubits = 2 bytes
-	const maxPuzzlesPerSet = 128 // Maximum puzzle count for safety (expecting 32)
+	const maxPuzzlesPerSet = 128 // Maximum puzzle count for Q Coin (expecting 128)
 	const gateHashSize = 32      // SHA256 hash size
 	const workBufferSize = 1024  // Additional working memory
 

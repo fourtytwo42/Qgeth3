@@ -216,22 +216,7 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 							"lnet", qmpowConfig.LNet,
 							"epochLen", qmpowConfig.EpochLen)
 						
-						// OVERRIDE: Force new configuration if database has old values
-						if qmpowConfig.LNet == 128 || qmpowConfig.TCount == 8192 || qmpowConfig.QBits == 12 {
-							log.Warn("🔄 OVERRIDE: Database has old QMPoW config, forcing new 32-puzzle configuration")
-							qmpowConfig = &ctypes.QMPoWConfig{
-								QBits:    16,  // 16 qubits per puzzle
-								TCount:   20,  // 20 T-gates per puzzle (ENFORCED MINIMUM)
-								LNet:     32,  // 32 chained puzzles per block
-								EpochLen: 100,
-								TestMode: false, // ENABLE REAL QUANTUM MINING
-							}
-							log.Info("🚀 OVERRIDE: New QMPoW config applied",
-								"qbits", qmpowConfig.QBits,
-								"tcount", qmpowConfig.TCount,
-								"lnet", qmpowConfig.LNet,
-								"epochLen", qmpowConfig.EpochLen)
-						}
+						// No override needed - use database configuration directly
 					}
 				} else {
 					log.Error("🔬 DEBUG: Failed to cast database config to CoreGethChainConfig")
@@ -242,13 +227,13 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 		}
 	}
 
-	// FALLBACK: Force QMPoW for Quantum-Geth networks (networkId 73428)
-	if qmpowConfig == nil && config.NetworkId == 73428 {
+	// FALLBACK: Force QMPoW for Quantum-Geth networks (networkId 73428 or 73235)
+	if qmpowConfig == nil && (config.NetworkId == 73428 || config.NetworkId == 73235) {
 		log.Warn("🚀 FALLBACK: Forcing QMPoW for Quantum-Geth network (networkId 73428)")
 		qmpowConfig = &ctypes.QMPoWConfig{
 			QBits:    16,  // 16 qubits per puzzle
 			TCount:   20,  // 20 T-gates per puzzle (ENFORCED MINIMUM)
-			LNet:     32,  // 32 chained puzzles per block
+			LNet:     128, // 128 chained puzzles per block
 			EpochLen: 100,
 			TestMode: false, // ENABLE REAL QUANTUM MINING
 		}
@@ -260,8 +245,8 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 			"testMode", qmpowConfig.TestMode)
 	}
 
-	// FINAL OVERRIDE: Always ensure 32-puzzle configuration regardless of source
-	if qmpowConfig != nil && (qmpowConfig.LNet != 32 || qmpowConfig.QBits != 16 || qmpowConfig.TCount != 20) {
+	// FINAL OVERRIDE: Always ensure 128-puzzle configuration regardless of source
+	if qmpowConfig != nil && (qmpowConfig.LNet != 128 || qmpowConfig.QBits != 16 || qmpowConfig.TCount != 20) {
 		log.Warn("🔄 FINAL OVERRIDE: Forcing correct 128-puzzle configuration",
 			"oldQBits", qmpowConfig.QBits, "newQBits", 16,
 			"oldTCount", qmpowConfig.TCount, "newTCount", 20,

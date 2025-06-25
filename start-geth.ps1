@@ -1,11 +1,10 @@
 # Q Coin Testnet - Start Geth Node
-# Starts a Q Coin testnet node with mining support (mining disabled by default)
+# Starts a Q Coin testnet node with external mining enabled (0 internal threads)
 # Uses default blockchain location like standard geth
-# Usage: .\start-geth.ps1 [-mine] [-etherbase <address>]
+# Usage: .\start-geth.ps1 [-etherbase <address>]
 
 param(
-    [switch]$mine = $false,                    # Enable mining
-    [string]$etherbase = "",                   # Mining address (optional)
+    [string]$etherbase = "0x1234567890123456789012345678901234567890", # Mining address (default provided)
     [int]$port = 4294,                         # P2P port (Q Coin testnet)
     [int]$rpcport = 8545,                      # RPC port
     [int]$wsport = 8546,                       # WebSocket port
@@ -21,8 +20,7 @@ if ($help) {
     Write-Host "Usage: .\start-geth.ps1 [options]" -ForegroundColor Yellow
     Write-Host ""
     Write-Host "Options:" -ForegroundColor Green
-    Write-Host "  -mine              Enable mining (disabled by default)"
-    Write-Host "  -etherbase <addr>  Mining reward address (required if mining)"
+    Write-Host "  -etherbase <addr>  Mining reward address (default: 0x1234...)"
     Write-Host "  -port <port>       P2P network port (default: 4294 testnet, 4295 mainnet)"
     Write-Host "  -rpcport <port>    HTTP-RPC server port (default: 8545)"
     Write-Host "  -wsport <port>     WebSocket server port (default: 8546)"
@@ -31,14 +29,16 @@ if ($help) {
     Write-Host "  -help              Show this help message"
     Write-Host ""
     Write-Host "Examples:" -ForegroundColor Yellow
-    Write-Host "  .\start-geth.ps1                                    # Start node (no mining)"
-    Write-Host "  .\start-geth.ps1 -mine -etherbase 0x123...         # Start with mining"
+    Write-Host "  .\start-geth.ps1                                    # Start with external mining"
+    Write-Host "  .\start-geth.ps1 -etherbase 0x123...               # Custom mining address"
     Write-Host ""
     Write-Host "Q Coin Testnet Details:" -ForegroundColor Magenta
     Write-Host "  Chain ID: 73235"
     Write-Host "  Currency: Q (Q Coin)"
     Write-Host "  Block Time: 12 seconds"
     Write-Host "  Consensus: QMPoW (Quantum Proof of Work)"
+    Write-Host "  Mining: External miners only (0 internal threads)"
+    Write-Host "  Puzzles: 128 chained quantum puzzles per block"
     exit 0
 }
 
@@ -56,10 +56,11 @@ if ($mainnet) {
     $defaultDataDir = "$env:APPDATA\Qcoin\testnet"
 }
 
-# Validate mining parameters
-if ($mine -and $etherbase -eq "") {
-    Write-Host "ERROR: Mining requires an etherbase address!" -ForegroundColor Red
-    Write-Host "Use: .\start-geth.ps1 -mine -etherbase <your_address>" -ForegroundColor Yellow
+# Validate etherbase address format (basic check)
+if ($etherbase -notmatch "^0x[0-9a-fA-F]{40}$") {
+    Write-Host "ERROR: Invalid etherbase address format!" -ForegroundColor Red
+    Write-Host "Expected format: 0x followed by 40 hex characters" -ForegroundColor Yellow
+    Write-Host "Example: 0x1234567890123456789012345678901234567890" -ForegroundColor Yellow
     exit 1
 }
 
@@ -111,7 +112,7 @@ if (-not (Test-Path "$datadir\geth\chaindata")) {
     }
 }
 
-# Build geth command
+# Build geth command with external mining enabled
 $gethArgs = @(
     "--datadir", "$datadir",
     "--networkid", "$chainId",
@@ -119,25 +120,22 @@ $gethArgs = @(
     "--http",
     "--http.addr", "0.0.0.0",
     "--http.port", "$rpcport",
-    "--http.api", "eth,net,web3,personal,admin,miner,debug,txpool",
+    "--http.api", "eth,net,web3,personal,admin,miner,debug,txpool,qmpow",
     "--http.corsdomain", "*",
     "--ws",
     "--ws.addr", "0.0.0.0", 
     "--ws.port", "$wsport",
-    "--ws.api", "eth,net,web3,personal,admin,miner,debug,txpool",
+    "--ws.api", "eth,net,web3,personal,admin,miner,debug,txpool,qmpow",
     "--ws.origins", "*",
     "--nat", "any",
     "--maxpeers", "50",
     "--allow-insecure-unlock",
     "--syncmode", "full",
-    "--gcmode", "archive"
+    "--gcmode", "archive",
+    "--mine",
+    "--miner.threads", "0",
+    "--miner.etherbase", "$etherbase"
 )
-
-# Add mining parameters if enabled
-if ($mine) {
-    $gethArgs += @("--mine", "--miner.etherbase", "$etherbase")
-    Write-Host "Mining enabled - rewards go to: $etherbase" -ForegroundColor Yellow
-}
 
 # Display startup information
 Write-Host ""
@@ -148,7 +146,8 @@ Write-Host "  Data Directory: $datadir" -ForegroundColor Gray
 Write-Host "  P2P Port: $port" -ForegroundColor Gray
 Write-Host "  RPC Port: $rpcport" -ForegroundColor Gray
 Write-Host "  WebSocket Port: $wsport" -ForegroundColor Gray
-Write-Host "  Mining: $(if ($mine) { 'ENABLED' } else { 'DISABLED' })" -ForegroundColor $(if ($mine) { 'Green' } else { 'Yellow' })
+Write-Host "  Mining: EXTERNAL MINERS (0 internal threads)" -ForegroundColor Green
+Write-Host "  Etherbase: $etherbase" -ForegroundColor Gray
 Write-Host ""
 Write-Host "Starting $networkName node..." -ForegroundColor Green
 Write-Host "Press Ctrl+C to stop" -ForegroundColor Yellow
