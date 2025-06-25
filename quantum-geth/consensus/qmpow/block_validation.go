@@ -338,7 +338,7 @@ func (bvp *BlockValidationPipeline) validateNovaProof(header *types.Header) (boo
 		"proofRoot", header.ProofRoot.Hex(),
 		"blockNumber", header.Number.Uint64())
 
-	// Step 1: Reconstruct the 48 CAPSS proofs from quantum execution
+	// Step 1: Reconstruct the 128 CAPSS proofs from quantum execution
 	capssProofs, err := bvp.reconstructCAPSSProofs(header)
 	if err != nil {
 		return false, fmt.Errorf("CAPSS proof reconstruction failed: %v", err)
@@ -384,7 +384,7 @@ func (bvp *BlockValidationPipeline) validateNovaProof(header *types.Header) (boo
 	return true, nil
 }
 
-// reconstructCAPSSProofs reconstructs the 48 CAPSS proofs from the quantum execution
+// reconstructCAPSSProofs reconstructs the 128 CAPSS proofs from the quantum execution
 func (bvp *BlockValidationPipeline) reconstructCAPSSProofs(header *types.Header) ([]*CAPSSProof, error) {
 	// Create mining input for puzzle reconstruction
 	miningInput := &MiningInput{
@@ -404,13 +404,13 @@ func (bvp *BlockValidationPipeline) reconstructCAPSSProofs(header *types.Header)
 		return nil, fmt.Errorf("puzzle chain execution failed: %v", err)
 	}
 
-	// Verify we have exactly 48 puzzle results
-	if len(result.Results) != 48 {
-		return nil, fmt.Errorf("expected 48 quantum puzzle results, got %d", len(result.Results))
+	// Verify we have exactly 128 puzzle results
+	if len(result.Results) != 128 {
+		return nil, fmt.Errorf("expected 128 quantum puzzle results, got %d", len(result.Results))
 	}
 
 	// Generate CAPSS proofs from each puzzle result
-	capssProofs := make([]*CAPSSProof, 48)
+	capssProofs := make([]*CAPSSProof, 128)
 	witness := NewMahadevWitness()
 	prover := NewCAPSSProver()
 

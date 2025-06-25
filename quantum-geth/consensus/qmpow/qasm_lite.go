@@ -1,7 +1,7 @@
 // Copyright 2025 Quantum-Geth Authors
 // This file is part of the quantum-geth library.
 
-// Package qmpow implements QASM-lite grammar and parser for Quantum-Geth v0.9–BareBones+Halving
+// Package qmpow implements QASM-lite grammar and parser for Quantum-Geth
 // QASM-lite is a minimal quantum assembly language subset covering H, S, T, CX, Z-mask directives
 
 package qmpow

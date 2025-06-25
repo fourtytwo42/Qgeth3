@@ -1,7 +1,7 @@
 // Copyright 2025 Quantum-Geth Authors
 // This file is part of the quantum-geth library.
 
-// Package qmpow implements branch template engine for Quantum-Geth v0.9–BareBones+Halving
+// Package qmpow implements branch template engine for Quantum-Geth
 // Branch templates provide 16 iso-hard quantum circuit patterns with PRP instantiation
 
 package qmpow

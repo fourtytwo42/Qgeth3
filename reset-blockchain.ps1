@@ -18,7 +18,7 @@ Write-Host "This will COMPLETELY WIPE the existing blockchain and build new rele
 Write-Host ""
 Write-Host "Configuration:" -ForegroundColor Cyan
 Write-Host "  Data Directory: $datadir"
-Write-Host "  Starting Difficulty: $difficulty (quantum-optimized for ~0.25 H/s)" -ForegroundColor Green
+Write-Host "  Starting Difficulty: $difficulty (ASERT-Q optimized for testing)" -ForegroundColor Green
 Write-Host "  Network ID: $networkid"
 Write-Host "  Etherbase: $etherbase"
 Write-Host "  Balance: $balance wei - 300000 QGC" -ForegroundColor Yellow

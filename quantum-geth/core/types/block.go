@@ -107,7 +107,7 @@ func (n *QuantumNonce) DecodeRLP(s *rlp.Stream) error {
 
 //go:generate go run github.com/fjl/gencodec -type Header -field-override headerMarshaling -out gen_header_json.go
 
-// Quantum-Geth v0.9-rc3-hw0 Header Structure
+// Quantum-Geth Header Structure
 // Implements the unified, branch-serial quantum proof-of-work specification
 
 // Header represents a block header in the Ethereum blockchain.
@@ -143,7 +143,7 @@ type Header struct {
 	// ParentBeaconRoot was added by EIP-4788 and is ignored in legacy headers.
 	ParentBeaconRoot *common.Hash `json:"parentBeaconBlockRoot" rlp:"optional"`
 
-	// Quantum-Geth v0.9-rc3-hw0 "Quantum Blob" (Tier-2 fields)
+	// Quantum-Geth "Quantum Blob" (Tier-2 fields)
 	// Single opaque byte slice for all quantum fields - maintains backward compatibility
 	QBlob []byte `json:"qBlob" rlp:"optional"`
 
@@ -195,7 +195,7 @@ type headerMarshaling struct {
 	BlobGasUsed   *hexutil.Uint64
 	ExcessBlobGas *hexutil.Uint64
 
-	// Quantum-Geth v0.9-rc3-hw0 field marshaling
+	// Quantum-Geth field marshaling
 	// Types must exactly match header field types for gencodec
 	Epoch         hexutil.Uint64 // *uint32 marshaled as hexutil.Uint64
 	QBits         hexutil.Uint64 // *uint16 marshaled as hexutil.Uint64
@@ -699,7 +699,7 @@ func (h *Header) MarshalQuantumBlob() {
 		}
 	}
 
-	// Encode fields in fixed order (following v0.9-rc3-hw0 spec)
+	// Encode fields in fixed order (following quantum spec)
 	// 16.1 Epoch (4 bytes)
 	if h.Epoch != nil {
 		binary.Write(&buf, binary.LittleEndian, *h.Epoch)
@@ -788,7 +788,7 @@ func (h *Header) UnmarshalQuantumBlob() error {
 		return nil
 	}
 
-	// Minimum size check (should be exactly 197 bytes for v0.9-rc3-hw0)
+	// Minimum size check (should be exactly 197 bytes for quantum headers)
 	expectedSize := 4 + 2 + 4 + 2 + 8 + 32 + 32 + 48 + 32 + 32 + 1 // 197 bytes
 	if len(h.QBlob) < expectedSize {
 		return fmt.Errorf("quantum blob too short: got %d bytes, expected %d", len(h.QBlob), expectedSize)

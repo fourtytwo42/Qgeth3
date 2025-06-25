@@ -1,4 +1,4 @@
-# Start Geth (No Mining) - Quantum-Geth v0.9 BareBones+Halving
+# Start Geth (No Mining) - Quantum-Geth with Halving
 # Starts the quantum geth node without mining enabled - serves work to external miners
 
 param(
@@ -11,7 +11,7 @@ param(
     [int]$verbosity = 3
 )
 
-Write-Host "*** STARTING QUANTUM-GETH v0.9 BareBones+Halving NODE (EXTERNAL MINING) ***" -ForegroundColor Cyan
+Write-Host "*** STARTING QUANTUM-GETH NODE (EXTERNAL MINING) ***" -ForegroundColor Cyan
 Write-Host "Configuration:" -ForegroundColor Green
 Write-Host "  * Data Directory: $datadir" -ForegroundColor Yellow
 Write-Host "  * Network ID: $networkid" -ForegroundColor Yellow
@@ -23,7 +23,7 @@ Write-Host "  * Verbosity: $verbosity" -ForegroundColor Yellow
 Write-Host "  * Mining: EXTERNAL MINERS ONLY (0 internal threads)" -ForegroundColor Green
 Write-Host ""
 
-Write-Host "Quantum-Geth v0.9 BareBones+Halving Features:" -ForegroundColor Magenta
+Write-Host "Quantum-Geth Features:" -ForegroundColor Magenta
 Write-Host "  * 48 sequential quantum puzzles (16 qubits x 8,192 T-gates)" -ForegroundColor Gray
 Write-Host "  * Bitcoin-style halving (50 QGC -> 25 QGC -> 12.5 QGC...)" -ForegroundColor Gray
 Write-Host "  * 600,000 block epochs (approximately 6 months)" -ForegroundColor Gray
@@ -37,7 +37,7 @@ Write-Host ""
 # Check if data directory exists
 if (-not (Test-Path $datadir)) {
     Write-Host "Data directory '$datadir' not found!" -ForegroundColor Red
-    Write-Host "Initializing with v0.9 BareBones+Halving genesis..." -ForegroundColor Yellow
+    Write-Host "Initializing with quantum genesis..." -ForegroundColor Yellow
     Write-Host "  .\reset-blockchain.ps1 -difficulty 1 -force" -ForegroundColor Gray
     
     Write-Host ""
@@ -47,7 +47,7 @@ if (-not (Test-Path $datadir)) {
     exit 1
 }
 
-Write-Host "Starting v0.9 BareBones+Halving geth node (NO MINING)..." -ForegroundColor Magenta
+Write-Host "Starting quantum geth node (NO MINING)..." -ForegroundColor Magenta
 Write-Host "This node serves RPC/HTTP endpoints for external miners WITHOUT mining itself." -ForegroundColor Green
 Write-Host "Use .\start-geth-mining.ps1 to start mining, or external miners to mine." -ForegroundColor Green
 Write-Host "Press Ctrl+C to stop the node." -ForegroundColor Yellow
@@ -102,4 +102,4 @@ if ($GethReleaseDir) {
     --allow-insecure-unlock
 
 Write-Host ""
-Write-Host "v0.9 BareBones+Halving geth node stopped." -ForegroundColor Green 
+Write-Host "Quantum geth node stopped." -ForegroundColor Green 

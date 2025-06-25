@@ -335,7 +335,7 @@ Write-Host ""
 ## Mining
 Use the **optimized quantum-miner package** for high-performance GPU mining (10-100x faster), or use start-geth-mining scripts for basic built-in mining.
 
-Quantum-Geth v0.9 BareBones+Halving Features:
+Quantum-Geth Features:
   * 32 chained quantum puzzles (16 qubits x 20 T-gates)
   * Bitcoin-style halving (50 QGC -> 25 QGC -> 12.5 QGC...)
   * 600,000 block epochs (approximately 6 months)
