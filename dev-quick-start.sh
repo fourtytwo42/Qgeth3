@@ -110,14 +110,18 @@ HTTPPORT=8545
 WSPORT=8546
 ETHERBASE="0x742d35C6C4e6d8de6f10E7FF75DD98dd25b02C3A"
 
-# Find geth executable
-GETH_EXECUTABLE=""
-if [ -f "geth" ]; then
-    GETH_EXECUTABLE="./geth"
-    echo -e "\033[37m   Using Linux/wrapper geth executable\033[0m"
-elif [ -f "geth.bin" ]; then
-    GETH_EXECUTABLE="./geth.bin"
-    echo -e "\033[37m   Using geth.bin executable\033[0m"
+# Find geth executable (prefer geth.bin for init, wrapper for running)
+GETH_INIT_EXECUTABLE=""
+GETH_RUN_EXECUTABLE=""
+
+if [ -f "geth.bin" ]; then
+    GETH_INIT_EXECUTABLE="./geth.bin"
+    GETH_RUN_EXECUTABLE="./geth"
+    echo -e "\033[37m   Using geth.bin for init, wrapper for running\033[0m"
+elif [ -f "geth" ]; then
+    GETH_INIT_EXECUTABLE="./geth"
+    GETH_RUN_EXECUTABLE="./geth"
+    echo -e "\033[37m   Using geth wrapper for both init and running\033[0m"
 else
     echo -e "\033[31m❌ ERROR: No geth executable found!\033[0m"
     exit 1
@@ -140,7 +144,7 @@ if [ ! -d "$DATADIR/geth/chaindata" ]; then
     mkdir -p "$DATADIR"
     
     # Initialize with genesis
-    if "$GETH_EXECUTABLE" --datadir "$DATADIR" init genesis_quantum_dev.json; then
+    if "$GETH_INIT_EXECUTABLE" --datadir "$DATADIR" init genesis_quantum_dev.json; then
         echo -e "\033[32m✅ Q Coin Dev blockchain initialized!\033[0m"
     else
         echo -e "\033[31m❌ ERROR: Failed to initialize blockchain!\033[0m"
@@ -217,7 +221,7 @@ else
 fi
 
 # Start geth
-"$GETH_EXECUTABLE" "${GETH_ARGS[@]}"
+"$GETH_RUN_EXECUTABLE" "${GETH_ARGS[@]}"
 
 echo ""
 echo -e "\033[32m🛑 Q Coin Dev Network stopped.\033[0m" 
