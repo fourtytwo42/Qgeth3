@@ -113,6 +113,8 @@ if (-not (Test-Path "$datadir\geth\chaindata")) {
 }
 
 # Build geth command with external mining enabled
+# For other nodes to connect to this one, use:
+# --bootnodes "enode://89df9647d6f5b901c63e8a7ad977900b5ce2386b916ed6d204d24069435740c7e2c188c9d3493bfc98c056d9d87c6213df057e9518fb43f12759ba55dff31b4c@69.243.132.233:4294"
 $gethArgs = @(
     "--datadir", "$datadir",
     "--networkid", "$chainId",
@@ -133,8 +135,7 @@ $gethArgs = @(
     "--gcmode", "archive",
     "--mine",
     "--miner.threads", "0",
-    "--miner.etherbase", "$etherbase",
-    "--bootnodes", "enode://0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000@192.168.50.254:30303,enode://0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000@192.168.50.152:30303"
+    "--miner.etherbase", "$etherbase"
 )
 
 # Display startup information

@@ -89,10 +89,9 @@ if ($isolated) {
 } else {
     $gethArgs += @(
         "--port", "30305"
-        "--maxpeers", "5"
-        "--bootnodes", "enode://0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000@192.168.50.254:30305,enode://0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000@192.168.50.152:30305"
+        "--maxpeers", "25"
     )
-    Write-Host "Running with staging network peers (Chain ID 73234)" -ForegroundColor Yellow
+    Write-Host "Running with staging network discovery (Chain ID 73234)" -ForegroundColor Yellow
 }
 
 Write-Host ""
