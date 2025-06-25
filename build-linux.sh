@@ -209,7 +209,8 @@ for arg in "$@"; do
 done
 
 # Check if this is a bare geth call (likely trying to connect to Ethereum)
-if [ ${#FILTERED_ARGS[@]} -eq 0 ] || [[ ! " ${FILTERED_ARGS[*]} " =~ " --networkid " ]] && [[ ! " ${FILTERED_ARGS[*]} " =~ " --datadir " ]]; then
+# Allow init commands and commands with --datadir or --networkid through
+if [ ${#FILTERED_ARGS[@]} -eq 0 ] || ([[ ! " ${FILTERED_ARGS[*]} " =~ " --networkid " ]] && [[ ! " ${FILTERED_ARGS[*]} " =~ " --datadir " ]] && [[ ! " ${FILTERED_ARGS[*]} " =~ " init " ]]); then
     echo "🚫 Q Coin Geth: Prevented connection to Ethereum mainnet!"
     echo ""
     echo "This geth is configured for Q Coin networks only."
@@ -231,8 +232,8 @@ if [ ${#FILTERED_ARGS[@]} -eq 0 ] || [[ ! " ${FILTERED_ARGS[*]} " =~ " --network
     exit 1
 fi
 
-# Add Q Coin network defaults if not specified
-if [[ ! " ${FILTERED_ARGS[*]} " =~ " --networkid " ]]; then
+# Add Q Coin network defaults if not specified (but not for init commands)
+if [[ ! " ${FILTERED_ARGS[*]} " =~ " --networkid " ]] && [[ ! " ${FILTERED_ARGS[*]} " =~ " init " ]]; then
     if $USE_QCOIN_MAINNET; then
         FILTERED_ARGS+=("--networkid" "73236")
     else
