@@ -78,6 +78,13 @@ fi
 # Build using existing build script
 if [ -f "build-linux.sh" ]; then
     echo -e "\033[37m   Running build-linux.sh...\033[0m"
+    
+    # Make build script executable if needed
+    if [ ! -x "build-linux.sh" ]; then
+        echo -e "\033[37m   Making build-linux.sh executable...\033[0m"
+        chmod +x build-linux.sh
+    fi
+    
     if ./build-linux.sh geth; then
         echo -e "\033[32m✅ Quantum-Geth built successfully!\033[0m"
     else
@@ -116,6 +123,13 @@ else
     exit 1
 fi
 
+# Check for genesis file
+if [ ! -f "genesis_quantum_dev.json" ]; then
+    echo -e "\033[31m❌ ERROR: genesis_quantum_dev.json not found!\033[0m"
+    echo -e "\033[33m   Make sure you're in the Q Coin root directory\033[0m"
+    exit 1
+fi
+
 # Initialize blockchain if needed
 if [ ! -d "$DATADIR/geth/chaindata" ]; then
     echo -e "\033[33m🏗️  Initializing Q Coin Dev blockchain...\033[0m"
@@ -126,7 +140,7 @@ if [ ! -d "$DATADIR/geth/chaindata" ]; then
     mkdir -p "$DATADIR"
     
     # Initialize with genesis
-    if "$GETH_EXECUTABLE" --datadir "$DATADIR" init "genesis_quantum_dev.json"; then
+    if "$GETH_EXECUTABLE" --datadir "$DATADIR" init genesis_quantum_dev.json; then
         echo -e "\033[32m✅ Q Coin Dev blockchain initialized!\033[0m"
     else
         echo -e "\033[31m❌ ERROR: Failed to initialize blockchain!\033[0m"
