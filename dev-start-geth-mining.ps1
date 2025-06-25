@@ -5,7 +5,7 @@
 param(
     [int]$threads = 1,
     [string]$datadir = "qdata",
-    [int]$networkid = 73235,
+    [int]$networkid = 73234,
     [int]$port = 0,  # Disabled for isolated testing
     [int]$httpport = 8545,
     [int]$authrpcport = 8551,
@@ -86,6 +86,13 @@ if ($isolated) {
         "--port", $port
     )
     Write-Host "Running in isolated mode (no peer connections)" -ForegroundColor Yellow
+} else {
+    $gethArgs += @(
+        "--port", "30305"
+        "--maxpeers", "5"
+        "--bootnodes", "enode://0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000@192.168.50.254:30305,enode://0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000@192.168.50.152:30305"
+    )
+    Write-Host "Running with staging network peers (Chain ID 73234)" -ForegroundColor Yellow
 }
 
 Write-Host ""

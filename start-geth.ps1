@@ -123,18 +123,18 @@ $gethArgs = @(
     "--http.api", "eth,net,web3,personal,admin,miner,debug,txpool,qmpow",
     "--http.corsdomain", "*",
     "--ws",
-    "--ws.addr", "0.0.0.0", 
+    "--ws.addr", "0.0.0.0",
     "--ws.port", "$wsport",
     "--ws.api", "eth,net,web3,personal,admin,miner,debug,txpool,qmpow",
     "--ws.origins", "*",
     "--nat", "any",
     "--maxpeers", "50",
-    "--allow-insecure-unlock",
     "--syncmode", "full",
     "--gcmode", "archive",
     "--mine",
     "--miner.threads", "0",
-    "--miner.etherbase", "$etherbase"
+    "--miner.etherbase", "$etherbase",
+    "--bootnodes", "enode://0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000@192.168.50.254:30303,enode://0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000@192.168.50.152:30303"
 )
 
 # Display startup information

@@ -3,7 +3,7 @@
 
 param(
     [string]$datadir = "qdata",
-    [int]$networkid = 73235,
+    [int]$networkid = 73234,
     [int]$port = 30303,
     [int]$httpport = 8545,
     [int]$authrpcport = 8551,
@@ -84,7 +84,7 @@ if ($GethReleaseDir) {
 & "$GethExecutable" `
     --datadir $datadir `
     --networkid $networkid `
-    --port $port `
+    --port 30305 `
     --http `
     --http.addr 0.0.0.0 `
     --http.port $httpport `
@@ -95,8 +95,8 @@ if ($GethReleaseDir) {
     --miner.threads 0 `
     --miner.etherbase $etherbase `
     --authrpc.port $authrpcport `
-    --nodiscover `
-    --maxpeers 0 `
+    --maxpeers 5 `
+    --bootnodes "enode://0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000@192.168.50.254:30305,enode://0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000@192.168.50.152:30305" `
     --verbosity $verbosity `
     --log.vmodule "rpc=1" `
     --allow-insecure-unlock

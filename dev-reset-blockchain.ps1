@@ -5,8 +5,8 @@
 param(
     [float]$difficulty = 0.0005,  # Starting difficulty (quantum-optimized: 0.0005 based on real testing)
     [string]$datadir = "qdata",
-    [int]$networkid = 73235,
-    [int]$chainid = 73235,
+    [int]$networkid = 73234,
+    [int]$chainid = 73234,
     [string]$etherbase = "0x8b61271473f14c80f2B1381Db9CB13b2d5306200",
     [string]$balance = "300000000000000000000000", # 300000 QGC
     [switch]$force = $false,     # Skip confirmation prompt

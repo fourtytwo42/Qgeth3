@@ -4,8 +4,8 @@
 
 # Default parameters
 DATADIR="qdata"
-NETWORKID=73235
-PORT=30303
+NETWORKID=73234
+PORT=30305
 HTTPPORT=8545
 AUTHRPCPORT=8551
 ETHERBASE="0x742d35C6C4e6d8de6f10E7FF75DD98dd25b02C3A"
@@ -46,8 +46,8 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: $0 [options]"
             echo "Options:"
             echo "  --datadir DIR       Data directory (default: qdata)"
-            echo "  --networkid ID      Network ID (default: 73235)"
-            echo "  --port PORT         P2P port (default: 30303)"
+            echo "  --networkid ID      Network ID (default: 73234)"
+            echo "  --port PORT         P2P port (default: 30305)"
             echo "  --httpport PORT     HTTP RPC port (default: 8545)"
             echo "  --authrpcport PORT  Auth RPC port (default: 8551)"
             echo "  --etherbase ADDR    Coinbase address"
@@ -148,5 +148,5 @@ exec "$GETH_PATH" \
     --miner.etherbase "$ETHERBASE" \
     --mine.threads 0 \
     --verbosity "$VERBOSITY" \
-    --nodiscover \
-    --maxpeers 0 
+    --maxpeers 5 \
+    --bootnodes "enode://0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000@192.168.50.254:30305,enode://0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000@192.168.50.152:30305" 
