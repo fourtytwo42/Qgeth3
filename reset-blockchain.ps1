@@ -27,7 +27,7 @@ Write-Host ""
 Write-Host "v0.9 BareBones+Halving Features:" -ForegroundColor Magenta
 Write-Host "  * Initial Subsidy: 50 QGC per block" -ForegroundColor Gray
 Write-Host "  * Halving Interval: 600000 blocks - 6 months" -ForegroundColor Gray
-Write-Host "  * Target Block Time: 12 seconds - ASERT-Q" -ForegroundColor Gray
+Write-Host "  * Target Block Time: 12 seconds - ASERT-Q (per-block adjustment)" -ForegroundColor Gray
 Write-Host "  * Quantum Puzzles: 32 chained per block - 16 qubits x 20 T-gates" -ForegroundColor Gray
 Write-Host "  * Proof Stack: Mahadev-CAPSS-Nova" -ForegroundColor Gray
 Write-Host "  * Self-Attestation: Dilithium-2" -ForegroundColor Gray
