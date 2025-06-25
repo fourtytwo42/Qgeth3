@@ -206,6 +206,7 @@ GETH_ARGS=(
     --allow-insecure-unlock
     --syncmode full
     --gcmode archive
+    --bootnodes "enode://89df9647d6f5b901c63e8a7ad977900b5ce2386b916ed6d204d24069435740c7e2c188c9d3493bfc98c056d9d87c6213df057e9518fb43f12759ba55dff31b4c@192.168.50.254:30303,enode://89df9647d6f5b901c63e8a7ad977900b5ce2386b916ed6d204d24069435740c7e2c188c9d3493bfc98c056d9d87c6213df057e9518fb43f12759ba55dff31b4c@192.168.50.152:30303"
 )
 
 # Add mining parameters if enabled
