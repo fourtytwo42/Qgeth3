@@ -1,10 +1,10 @@
 #!/bin/bash
-# Q Coin Geth Node Starter
-# Usage: ./start-geth.sh [network] [options]
-# Networks: mainnet, testnet, devnet (default: testnet)
-# Options: --mining (enable mining with single thread)
+# Q Coin Geth Node Starter with Manual IP Override
+# Usage: ./start-geth-local-ip.sh [network] [local_ip] [options]
+# Example: ./start-geth-local-ip.sh testnet 192.168.50.254
 
 NETWORK="testnet"
+MANUAL_IP=""
 MINING=false
 HELP=false
 
@@ -15,6 +15,10 @@ while [[ $# -gt 0 ]]; do
             NETWORK="$1"
             shift
             ;;
+        --ip)
+            MANUAL_IP="$2"
+            shift 2
+            ;;
         --mining)
             MINING=true
             shift
@@ -24,17 +28,23 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         *)
-            echo "Unknown option: $1"
-            echo "Use --help for usage information"
-            exit 1
+            # Check if it looks like an IP address
+            if [[ $1 =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+                MANUAL_IP="$1"
+                shift
+            else
+                echo "Unknown option: $1"
+                echo "Use --help for usage information"
+                exit 1
+            fi
             ;;
     esac
 done
 
 if [ "$HELP" = true ]; then
-    echo -e "\033[1;36mQ Coin Geth Node Starter\033[0m"
+    echo -e "\033[1;36mQ Coin Geth Node Starter (Manual IP)\033[0m"
     echo ""
-    echo -e "\033[1;37mUsage: ./start-geth.sh [network] [options]\033[0m"
+    echo -e "\033[1;37mUsage: ./start-geth-local-ip.sh [network] [options]\033[0m"
     echo ""
     echo -e "\033[1;33mNetworks:\033[0m"
     echo "  mainnet   - Q Coin Mainnet (Chain ID 73236)"
@@ -42,13 +52,14 @@ if [ "$HELP" = true ]; then
     echo "  devnet    - Q Coin Dev Network (Chain ID 73234)"
     echo ""
     echo -e "\033[1;33mOptions:\033[0m"
+    echo "  --ip IP   - Manually specify local IP address"
     echo "  --mining  - Enable mining with single thread"
     echo "  --help    - Show this help message"
     echo ""
     echo -e "\033[1;32mExamples:\033[0m"
-    echo "  ./start-geth.sh                  # Start testnet node"
-    echo "  ./start-geth.sh mainnet          # Start mainnet node"
-    echo "  ./start-geth.sh devnet --mining  # Start dev node with mining"
+    echo "  ./start-geth-local-ip.sh testnet --ip 192.168.50.254"
+    echo "  ./start-geth-local-ip.sh devnet 192.168.1.100 --mining"
+    echo "  ./start-geth-local-ip.sh mainnet --ip 10.0.0.5"
     exit 0
 fi
 
@@ -108,8 +119,15 @@ if [ ! -d "$DATADIR/geth/chaindata" ]; then
     echo -e "\033[1;32m✅ Blockchain initialized successfully\033[0m"
 fi
 
-# Auto-detect local IP address
-LOCAL_IP=$(ip route get 1.1.1.1 | grep -oP 'src \K\S+' 2>/dev/null || echo "192.168.50.254")
+# Determine IP address to use
+if [ -n "$MANUAL_IP" ]; then
+    LOCAL_IP="$MANUAL_IP"
+    echo -e "\033[1;33m🏠 Using manually specified IP: $LOCAL_IP\033[0m"
+else
+    # Auto-detect local IP address
+    LOCAL_IP=$(ip route get 1.1.1.1 | grep -oP 'src \K\S+' 2>/dev/null || echo "192.168.50.254")
+    echo -e "\033[1;33m🏠 Auto-detected local IP: $LOCAL_IP\033[0m"
+fi
 
 # Prepare geth arguments
 GETH_ARGS=(
