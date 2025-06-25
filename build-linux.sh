@@ -84,11 +84,69 @@ build_miner() {
         exit 1
     fi
     
+    # Detect GPU capabilities and build accordingly
+    BUILD_TAGS=""
+    GPU_TYPE="CPU"
+    
+    # Check for NVIDIA GPU and CUDA
+    if command -v nvidia-smi >/dev/null 2>&1; then
+        echo "🔍 NVIDIA GPU detected, checking CUDA availability..."
+        
+        # Check for CUDA development libraries
+        if pkg-config --exists cuda-12.0 2>/dev/null || pkg-config --exists cuda-11.0 2>/dev/null || [ -d "/usr/local/cuda" ]; then
+            echo "✅ CUDA development environment found"
+            BUILD_TAGS="cuda"
+            GPU_TYPE="CUDA"
+            export CGO_ENABLED=1
+        else
+            echo "⚠️  CUDA development libraries not found, checking for Qiskit-Aer GPU..."
+            
+            # Check for Qiskit-Aer GPU support
+            if python3 -c "import qiskit_aer; from qiskit_aer import AerSimulator; AerSimulator(device='GPU')" >/dev/null 2>&1; then
+                echo "✅ Qiskit-Aer GPU support detected"
+                BUILD_TAGS="cuda"
+                GPU_TYPE="Qiskit-GPU"
+                export CGO_ENABLED=0
+            else
+                echo "ℹ️  No GPU acceleration available, building CPU-only version"
+                export CGO_ENABLED=0
+            fi
+        fi
+    else
+        echo "ℹ️  No NVIDIA GPU detected, building CPU-only version"
+        export CGO_ENABLED=0
+    fi
+    
+    echo "🏗️  Build Configuration:"
+    echo "  GPU Type: $GPU_TYPE"
+    echo "  Build Tags: ${BUILD_TAGS:-none}"
+    echo "  CGO Enabled: $CGO_ENABLED"
+    echo ""
+    
     cd quantum-miner
-    if go build -ldflags "-s -w -X 'main.VERSION=$VERSION' -X 'main.BUILD_TIME=$BUILD_TIME' -X 'main.GIT_COMMIT=$GIT_COMMIT'" -o ../quantum-miner .; then
+    
+    # Build with appropriate tags
+    BUILD_CMD="go build -ldflags \"-s -w -X 'main.VERSION=$VERSION' -X 'main.BUILD_TIME=$BUILD_TIME' -X 'main.GIT_COMMIT=$GIT_COMMIT'\""
+    if [ -n "$BUILD_TAGS" ]; then
+        BUILD_CMD="$BUILD_CMD -tags $BUILD_TAGS"
+    fi
+    BUILD_CMD="$BUILD_CMD -o ../quantum-miner ."
+    
+    echo "🔨 Executing: $BUILD_CMD"
+    if eval $BUILD_CMD; then
         cd ..
-        echo "✅ Quantum-Miner built successfully: ./quantum-miner"
+        echo "✅ Quantum-Miner built successfully: ./quantum-miner ($GPU_TYPE)"
         ls -lh quantum-miner
+        
+        # Test GPU support
+        if [ "$GPU_TYPE" != "CPU" ]; then
+            echo "🧪 Testing GPU support..."
+            if ./quantum-miner --help | grep -q "GPU"; then
+                echo "✅ GPU support confirmed in binary"
+            else
+                echo "⚠️  GPU support may not be active (check dependencies)"
+            fi
+        fi
     else
         cd ..
         echo "❌ Error: Failed to build quantum-miner"
