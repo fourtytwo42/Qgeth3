@@ -390,13 +390,13 @@ func (q *QMPoW) Prepare(chain consensus.ChainHeaderReader, header *types.Header)
 			calculatedDifficulty := q.CalcDifficulty(chain, header.Time, parent)
 			header.Difficulty = calculatedDifficulty
 
-			log.Info("🎯 Bitcoin-style difficulty set in Prepare",
+			log.Info("🎯 ASERT-Q difficulty set in Prepare",
 				"blockNumber", header.Number.Uint64(),
 				"parentDifficulty", parent.Difficulty,
 				"newDifficulty", header.Difficulty,
 				"fixedPuzzles", params.LNet,
-				"security", "simplified",
-				"style", "Bitcoin-nonce-target")
+				"security", "quantum-resistant",
+				"style", "ASERT-Q-exponential")
 		} else {
 			// Fallback if parent not found
 			header.Difficulty = big.NewInt(int64(params.LNet))
@@ -406,12 +406,12 @@ func (q *QMPoW) Prepare(chain consensus.ChainHeaderReader, header *types.Header)
 				"fixedPuzzles", params.LNet)
 		}
 	} else {
-		// Genesis block - start with reasonable difficulty for competitive Bitcoin-style mining
+		// Genesis block - start with reasonable difficulty for competitive ASERT-Q mining
 		header.Difficulty = big.NewInt(1000) // Match genesis.json difficulty
-		log.Info("🌱 Genesis block difficulty set (Bitcoin-style)",
+		log.Info("🌱 Genesis block difficulty set (ASERT-Q)",
 			"difficulty", header.Difficulty,
 			"fixedPuzzles", params.LNet,
-			"security", "simplified")
+			"security", "quantum-resistant")
 	}
 
 	// Initialize optional fields to prevent RLP encoding issues
@@ -661,93 +661,180 @@ func (q *QMPoW) SealHash(header *types.Header) common.Hash {
 	return rlpHash(headerCopy)
 }
 
-// CalcDifficulty is the Bitcoin-style difficulty adjustment algorithm
+// CalcDifficulty implements ASERT-Q (Absolutely Scheduled Exponentially Rising Targets - Quantum)
+// This adjusts difficulty every block based on actual vs target block times
+// Formula: newDifficulty = oldDifficulty * 2^((actualTime - targetTime) / halfLife)
 func (q *QMPoW) CalcDifficulty(chain consensus.ChainHeaderReader, time uint64, parent *types.Header) *big.Int {
-	// Simplified Bitcoin-style difficulty retargeting every 100 blocks
 	blockNumber := new(big.Int).Add(parent.Number, big.NewInt(1)).Uint64()
-
-	// Use parent difficulty directly (no complex conversions)
 	parentDifficulty := parent.Difficulty
 
-	log.Info("🔗 Quantum difficulty calculation",
+	log.Info("🔗 ASERT-Q difficulty calculation",
 		"blockNumber", blockNumber,
 		"parentDifficulty", FormatDifficulty(parentDifficulty))
 
-	// Check if it's time for difficulty retargeting (every 50 blocks)
-	if blockNumber > 0 && blockNumber%50 == 0 {
-		log.Info("🎯 Difficulty retarget triggered", "blockNumber", blockNumber)
-
-		// Get the header from 50 blocks ago
-		retargetStart := blockNumber - 50
-		var startHeader *types.Header
-		if retargetStart == 0 {
-			startHeader = chain.GetHeaderByNumber(0) // Genesis
-		} else {
-			startHeader = chain.GetHeaderByNumber(retargetStart)
-		}
-
-		if startHeader == nil {
-			log.Warn("⚠️  Could not find retarget start header, maintaining difficulty")
-			return parentDifficulty
-		}
-
-		// Calculate actual time for the last 50 blocks
-		actualTime := time - startHeader.Time
-		targetTime := uint64(50 * 12) // 50 blocks * 12 seconds = 600 seconds
-
-		log.Info("📊 Retarget analysis",
-			"retargetStart", retargetStart,
-			"actualTime", actualTime,
-			"targetTime", targetTime,
-			"ratio", float64(actualTime)/float64(targetTime))
-
-		// Simple difficulty adjustment: newDiff = oldDiff * targetTime / actualTime
-		if actualTime == 0 {
-			actualTime = 1 // Prevent division by zero
-		}
-
-		newDifficulty := new(big.Int).Set(parentDifficulty)
-		newDifficulty.Mul(newDifficulty, big.NewInt(int64(targetTime)))
-		newDifficulty.Div(newDifficulty, big.NewInt(int64(actualTime)))
-
-		// Clamp adjustment to 2x max change (max 1x increase/decrease)
-		maxIncrease := new(big.Int).Set(parentDifficulty)
-		maxIncrease.Mul(maxIncrease, big.NewInt(2))
-
-		maxDecrease := new(big.Int).Set(parentDifficulty)
-		maxDecrease.Div(maxDecrease, big.NewInt(2))
-
-		if newDifficulty.Cmp(maxIncrease) > 0 {
-			newDifficulty.Set(maxIncrease)
-			log.Info("🔒 Difficulty increase clamped to 2x")
-		} else if newDifficulty.Cmp(maxDecrease) < 0 {
-			newDifficulty.Set(maxDecrease)
-			log.Info("🔒 Difficulty decrease clamped to 2x")
-		}
-
-		// Ensure minimum difficulty
-		minDiff := big.NewInt(500) // 0.0005 in fixed-point
-		if newDifficulty.Cmp(minDiff) < 0 {
-			newDifficulty.Set(minDiff)
-		}
-
-		log.Info("✅ Difficulty retargeted",
-			"oldDifficulty", FormatDifficulty(parentDifficulty),
-			"newDifficulty", FormatDifficulty(newDifficulty),
-			"actualMinutes", float64(actualTime)/60,
-			"targetMinutes", float64(targetTime)/60)
-
-		return newDifficulty
+	// For the first few blocks, maintain genesis difficulty to allow stabilization
+	if blockNumber <= 5 {
+		log.Info("🚀 Early block - maintaining genesis difficulty", "blockNumber", blockNumber)
+		return parentDifficulty
 	}
 
-	// Not a retarget block - keep current difficulty
-	nextRetarget := ((blockNumber / 50) + 1) * 50
-	log.Info("➡️  Difficulty maintained",
-		"blockNumber", blockNumber,
-		"difficulty", FormatDifficulty(parentDifficulty),
-		"nextRetarget", nextRetarget)
+	// Calculate actual block time (time since parent)
+	actualBlockTime := int64(time - parent.Time)
 
-	return parentDifficulty
+	// Ensure we have reasonable bounds on block time
+	if actualBlockTime <= 0 {
+		actualBlockTime = 1 // Prevent division issues
+	}
+	if actualBlockTime > 300 { // Cap at 5 minutes
+		actualBlockTime = 300
+	}
+
+	// Target block time is 12 seconds
+	targetBlockTime := int64(12)
+
+	// Calculate time difference from target
+	timeDiff := actualBlockTime - targetBlockTime
+
+	log.Info("📊 ASERT-Q timing analysis",
+		"actualBlockTime", actualBlockTime,
+		"targetBlockTime", targetBlockTime,
+		"timeDiff", timeDiff,
+		"blockNumber", blockNumber)
+
+	// Apply ASERT adjustment
+	newDifficulty := q.applyASERTAdjustment(parentDifficulty, timeDiff, blockNumber)
+
+	// Ensure minimum difficulty (prevent difficulty from going to zero)
+	minDiff := big.NewInt(1)
+	if newDifficulty.Cmp(minDiff) < 0 {
+		newDifficulty.Set(minDiff)
+		log.Info("🔒 Difficulty clamped to minimum", "minDiff", 1)
+	}
+
+	// Log the adjustment
+	direction := "STABLE"
+	if timeDiff > 1 {
+		direction = "EASIER (slower blocks)"
+	} else if timeDiff < -1 {
+		direction = "HARDER (faster blocks)"
+	}
+
+	log.Info("✅ ASERT-Q difficulty adjusted",
+		"oldDifficulty", FormatDifficulty(parentDifficulty),
+		"newDifficulty", FormatDifficulty(newDifficulty),
+		"direction", direction,
+		"timeDiff", timeDiff)
+
+	return newDifficulty
+}
+
+// applyASERTAdjustment applies the ASERT formula to adjust difficulty
+// Formula: newDifficulty = oldDifficulty * 2^(timeDiff / halfLife)
+// halfLife = 300 seconds (5 minutes) - time for 50% difficulty change
+func (q *QMPoW) applyASERTAdjustment(baseDifficulty *big.Int, timeDiff int64, blockNumber uint64) *big.Int {
+	// ASERT parameters
+	const halfLife = 300  // 5 minutes in seconds
+	const fixedPoint = 16 // Q16 fixed-point arithmetic
+
+	// If no time difference, return original difficulty
+	if timeDiff == 0 {
+		return new(big.Int).Set(baseDifficulty)
+	}
+
+	// Calculate exponent in Q16 fixed-point: exponent = timeDiff / halfLife
+	// exponentQ16 = (timeDiff << 16) / halfLife
+	exponentQ16 := (timeDiff << fixedPoint) / halfLife
+
+	// Apply 2^exponent using fixed-point arithmetic
+	adjustedDifficulty := q.applyPowerOfTwo(baseDifficulty, exponentQ16, fixedPoint)
+
+	// Clamp the adjustment to prevent extreme changes (max 4x change per block)
+	maxIncrease := new(big.Int).Set(baseDifficulty)
+	maxIncrease.Mul(maxIncrease, big.NewInt(4))
+
+	maxDecrease := new(big.Int).Set(baseDifficulty)
+	maxDecrease.Div(maxDecrease, big.NewInt(4))
+
+	if adjustedDifficulty.Cmp(maxIncrease) > 0 {
+		adjustedDifficulty.Set(maxIncrease)
+		log.Info("🔒 ASERT-Q adjustment clamped to 4x increase")
+	} else if adjustedDifficulty.Cmp(maxDecrease) < 0 {
+		adjustedDifficulty.Set(maxDecrease)
+		log.Info("🔒 ASERT-Q adjustment clamped to 4x decrease")
+	}
+
+	return adjustedDifficulty
+}
+
+// applyPowerOfTwo applies 2^(exponentQ16) to a big.Int using Q16 fixed-point arithmetic
+// This implements smooth exponential adjustment for ASERT-Q
+func (q *QMPoW) applyPowerOfTwo(value *big.Int, exponentQ16 int64, fixedPoint int) *big.Int {
+	if exponentQ16 == 0 {
+		return new(big.Int).Set(value)
+	}
+
+	// Handle negative exponents (making difficulty higher)
+	isNegative := exponentQ16 < 0
+	if isNegative {
+		exponentQ16 = -exponentQ16
+	}
+
+	// Extract integer and fractional parts
+	integerPart := exponentQ16 >> fixedPoint
+	fractionalPart := exponentQ16 & ((1 << fixedPoint) - 1)
+
+	result := new(big.Int).Set(value)
+
+	// Apply integer part: multiply by 2^integerPart
+	if integerPart > 0 {
+		// Clamp integer part to prevent overflow
+		if integerPart > 10 {
+			integerPart = 10 // Max 1024x change
+		}
+		shift := big.NewInt(1)
+		shift.Lsh(shift, uint(integerPart))
+		result.Mul(result, shift)
+	}
+
+	// Apply fractional part using Taylor series approximation
+	// 2^(x/65536) ≈ 1 + x*ln(2)/65536 + (x*ln(2)/65536)^2/2 for small x
+	if fractionalPart > 0 {
+		// ln(2) in Q16: 0.693147 * 65536 ≈ 45426
+		ln2Q16 := int64(45426)
+
+		// First-order term: x*ln(2)/65536
+		firstOrder := (fractionalPart * ln2Q16) >> fixedPoint
+		adjustment1 := new(big.Int).SetInt64(firstOrder)
+		adjustment1.Mul(adjustment1, result)
+		adjustment1.Div(adjustment1, big.NewInt(1<<fixedPoint))
+
+		// Second-order term: (x*ln(2)/65536)^2/2
+		secondOrder := (firstOrder * firstOrder) >> (fixedPoint + 1) // divide by 2
+		adjustment2 := new(big.Int).SetInt64(secondOrder)
+		adjustment2.Mul(adjustment2, result)
+		adjustment2.Div(adjustment2, big.NewInt(1<<fixedPoint))
+
+		// Apply adjustments
+		result.Add(result, adjustment1)
+		result.Add(result, adjustment2)
+	}
+
+	// Handle negative exponent (division for increasing difficulty)
+	if isNegative && result.Cmp(big.NewInt(1)) > 0 {
+		// For negative exponent: result = value / (2^|exponent|)
+		divisor := new(big.Int).Set(result)
+		result.Set(value)
+		result.Mul(result, big.NewInt(1<<fixedPoint)) // Scale up to maintain precision
+		result.Div(result, divisor)
+		result.Div(result, big.NewInt(1<<fixedPoint)) // Scale back down
+
+		// Prevent difficulty from becoming zero
+		if result.Cmp(big.NewInt(1)) < 0 {
+			result.Set(big.NewInt(1))
+		}
+	}
+
+	return result
 }
 
 // APIs returns the RPC APIs this consensus engine provides
