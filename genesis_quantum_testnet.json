@@ -17,7 +17,7 @@
       "testMode": false
     }
   },
-  "difficulty": "0x1",
+  "difficulty": "0xC8",
   "gasLimit": "0x2fefd8",
   "alloc": {
     "0x8b61271473f14c80f2B1381Db9CB13b2d5306200": {
