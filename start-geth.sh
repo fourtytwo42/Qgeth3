@@ -53,7 +53,7 @@ if [ "$HELP" = true ]; then
 fi
 
 # Build if geth doesn't exist
-if [ ! -f "quantum-geth/build/bin/geth" ]; then
+if [ ! -f "./geth" ] || [ ! -f "./geth.bin" ]; then
     echo -e "\033[1;33m🔨 Building Q Coin Geth...\033[0m"
     ./build-linux.sh geth
     if [ $? -ne 0 ]; then
@@ -87,7 +87,7 @@ case $NETWORK in
         ;;
 esac
 
-BOOTNODES="enode://0bc243936ebc13ebf57895dff1321695064ae4b0ac0c1e047d52d695c396b64c52847f852a9738f0d079af4ba109dfceafd1cf0924587b151765834caf13e5fd@69.243.132.233:30305"
+BOOTNODES="enode://89df9647d6f5b901c63e8a7ad977900b5ce2386b916ed6d204d24069435740c7e2c188c9d3493bfc98c056d9d87c6213df057e9518fb43f12759ba55dff31b4c@69.243.132.233:4294"
 
 echo -e "\033[1;36m🚀 Starting $NAME (Chain ID: $CHAINID)\033[0m"
 
@@ -100,7 +100,7 @@ fi
 # Initialize with genesis if needed
 if [ ! -d "$DATADIR/geth/chaindata" ]; then
     echo -e "\033[1;33m🔧 Initializing blockchain with genesis file...\033[0m"
-    ./quantum-geth/build/bin/geth init "$GENESIS" --datadir "$DATADIR"
+    ./geth init "$GENESIS" --datadir "$DATADIR"
     if [ $? -ne 0 ]; then
         echo -e "\033[1;31m❌ Genesis initialization failed!\033[0m"
         exit 1
@@ -150,4 +150,4 @@ echo ""
 echo -e "\033[1;32m🎯 Starting Q Coin Geth node...\033[0m"
 
 # Start geth
-./quantum-geth/build/bin/geth "${GETH_ARGS[@]}" 
+./geth "${GETH_ARGS[@]}" 
