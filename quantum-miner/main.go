@@ -373,32 +373,22 @@ func main() {
 
 	// Initialize multi-GPU system if enabled
 	if *gpu {
-		logInfo("🚀 Initializing MULTI-GPU quantum processor...")
 		err := miner.initializeMultiGPU()
 		if err != nil {
 			log.Fatalf("❌ Failed to initialize multi-GPU system: %v", err)
 		}
-		logInfo("✅ Multi-GPU quantum acceleration initialized!")
-		logInfo("   📊 Load balancing across %d GPUs for maximum throughput", len(miner.availableGPUs))
 	}
 
 	// Test connection
-	logInfo("🧪 Testing connection to %s...", nodeURL)
 	if err := miner.testConnection(); err != nil {
 		log.Fatalf("❌ Failed to connect to quantum-geth: %v", err)
 	}
-	logInfo("✅ Connected to quantum-geth!")
 
 	// Set up signal handling for graceful shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	// Start mining
-	if *gpu {
-		logInfo("🚀 Starting GPU quantum mining on device %d with %d parallel circuits...", *gpuID, *threads)
-	} else {
-		logInfo("🚀 Starting CPU quantum mining with %d threads...", *threads)
-	}
 	if err := miner.Start(); err != nil {
 		log.Fatalf("❌ Failed to start mining: %v", err)
 	}
@@ -462,8 +452,6 @@ func (m *QuantumMiner) Start() error {
 	randomPart := uint64(baseBytes[0])<<24 | uint64(baseBytes[1])<<16 | uint64(baseBytes[2])<<8 | uint64(baseBytes[3])
 	m.nonceBase = uint64(time.Now().Unix())<<32 | randomPart
 	m.nonceCounter = 0
-
-	log.Printf("🔢 Nonce base initialized: %016x", m.nonceBase)
 
 	// ENHANCED INITIALIZATION: Set up thread management and memory pools
 	m.initializeThreadManagement()
@@ -532,8 +520,6 @@ func (m *QuantumMiner) initializeMemoryPools() {
 	if m.gpuMode {
 		m.memoryPoolSize = 20 // GPU mode uses more memory per operation
 	}
-
-	logInfo("🧠 Initializing memory pools: %d sets, %d bytes per set", m.memoryPoolSize, memoryPerSet)
 
 	// Pre-allocate memory pools
 	m.memoryPool = make(chan *PuzzleMemory, m.memoryPoolSize)
@@ -830,16 +816,6 @@ func (m *QuantumMiner) fetchWork() error {
 		return fmt.Errorf("invalid work response format")
 	}
 
-	// Debug: Log what we received from geth
-	logInfo("🔍 Work response from geth: %d elements", len(workArray))
-	for i, elem := range workArray {
-		if str, ok := elem.(string); ok {
-			logInfo("  [%d]: %s", i, str)
-		} else {
-			logInfo("  [%d]: %v (type: %T)", i, elem, elem)
-		}
-	}
-
 	work := &QuantumWork{
 		WorkHash:  workArray[0].(string),
 		QBits:     16,  // Default quantum params
@@ -908,13 +884,14 @@ func (m *QuantumMiner) fetchWork() error {
 	// Store current work
 	m.workMutex.Lock()
 	oldWork := m.currentWork
-	if oldWork == nil || oldWork.WorkHash != work.WorkHash {
+	if oldWork == nil || oldWork.WorkHash != work.WorkHash || oldWork.BlockNumber != work.BlockNumber {
 		m.currentWork = work
-		// Only log new work on first start or significant changes
+		// Only log new work on first start or when block changes
 		if oldWork == nil {
-			log.Printf("📦 Starting mining on Block %d", work.BlockNumber)
+			log.Printf("📦 Starting mining on Block %d (Difficulty: %d)", work.BlockNumber, work.Difficulty)
+		} else if oldWork.BlockNumber != work.BlockNumber {
+			log.Printf("🔄 New block %d received (Difficulty: %d)", work.BlockNumber, work.Difficulty)
 		}
-		logInfo("New work received: Block %d, Difficulty %d, Target: %s", work.BlockNumber, work.Difficulty, work.Target)
 	}
 	m.workMutex.Unlock()
 
@@ -935,96 +912,47 @@ func (m *QuantumMiner) enhancedMineBlock(blockNumber uint64) bool {
 		return false
 	}
 
-	// Adaptive puzzle processing based on system capabilities
+	// Process all puzzles as received from geth (no chunking)
 	puzzleCount := len(work.PuzzleHashes)
 	if puzzleCount == 0 {
 		return false
 	}
 
-	// Progressive processing to smooth CPU/GPU load
-	processingChunks := 1
-	if puzzleCount > 64 {
-		processingChunks = 4 // Process in 4 chunks for large puzzle sets
-	} else if puzzleCount > 32 {
-		processingChunks = 2 // Process in 2 chunks for medium puzzle sets
-	}
+	// Process puzzles silently (dashboard shows progress)
 
-	chunkSize := puzzleCount / processingChunks
-	if chunkSize == 0 {
-		chunkSize = puzzleCount
-		processingChunks = 1
-	}
-
-	// Only log processing info occasionally to reduce spam
-	if atomic.LoadUint64(&m.attempts)%50 == 0 {
-		logInfo("📦 Processing %d puzzles in %d chunks of %d", puzzleCount, processingChunks, chunkSize)
-	}
-
-	// Process puzzles in chunks to prevent CPU spikes
-	for chunk := 0; chunk < processingChunks; chunk++ {
-		if !m.isRunning.Load() {
-			return false
-		}
-
-		startIdx := chunk * chunkSize
-		endIdx := startIdx + chunkSize
-		if chunk == processingChunks-1 {
-			endIdx = puzzleCount // Include remaining puzzles in last chunk
-		}
-
-		// Process chunk with rate limiting
-		chunkWork := &WorkPackage{
-			BlockNumber:  work.BlockNumber,
-			ParentHash:   work.ParentHash,
-			Target:       work.Target,
-			PuzzleHashes: work.PuzzleHashes[startIdx:endIdx],
-		}
-
-		success := m.processWorkChunk(ctx, chunkWork, chunk, processingChunks)
-		if success {
-			return true // Block found
-		}
-
-		// Inter-chunk delay to smooth processing and reduce CPU spikes
-		if chunk < processingChunks-1 {
-			smoothingDelay := time.Duration(20+chunk*10) * time.Millisecond
-			time.Sleep(smoothingDelay)
-		}
+	// Process all puzzles together as a single quantum proof unit
+	success := m.processWorkChunk(ctx, work, 0, 1)
+	if success {
+		return true // Block found
 	}
 
 	return false
 }
 
-// Process a chunk of work with optimized resource usage
+// Process work package with optimized resource usage
 func (m *QuantumMiner) processWorkChunk(ctx context.Context, work *WorkPackage, chunkID, totalChunks int) bool {
 	startTime := time.Now()
 
-	// Generate QNonce for this chunk
+	// Generate QNonce for this work
 	qnonce := m.generateQNonce()
 
-	// Solve quantum puzzles with progressive difficulty
+	// Solve quantum puzzles with network-specified parameters
 	result, err := m.enhancedSolveQuantumPuzzles(ctx, work.BlockNumber, work.PuzzleHashes, qnonce, 16, 20, len(work.PuzzleHashes))
 	if err != nil {
 		if !strings.Contains(err.Error(), "context") {
-			logError("Chunk %d/%d puzzle solving failed: %v", chunkID+1, totalChunks, err)
+			logError("Puzzle solving failed: %v", err)
 		}
 		return false
 	}
 
 	processingTime := time.Since(startTime)
 
-	// Update statistics with chunk information
+	// Update statistics
 	m.updateStats(len(work.PuzzleHashes), processingTime, chunkID, totalChunks)
 
 	// Submit result if valid (pass qnonce for proper quality calculation)
 	if m.isValidResultWithQNonce(result, work.Target, qnonce) {
-		logInfo("🎉 FOUND VALID SOLUTION! QNonce: %016x, Block: %d", qnonce, work.BlockNumber)
 		return m.submitResult(work, result, qnonce)
-	}
-
-	// Only log occasionally to avoid spam
-	if qnonce%1000 == 0 {
-		logInfo("⚡ Checked solution qnonce=%016x (not valid)", qnonce)
 	}
 
 	return false
@@ -1036,17 +964,12 @@ func (m *QuantumMiner) generateQNonce() uint64 {
 	return m.nonceBase + (counter << 8)
 }
 
-// Update mining statistics with chunk information
+// Update mining statistics
 func (m *QuantumMiner) updateStats(puzzleCount int, processingTime time.Duration, chunkID, totalChunks int) {
 	atomic.AddUint64(&m.puzzlesSolved, uint64(puzzleCount))
 	atomic.AddUint64(&m.attempts, 1)
 
-	// Smooth statistics update to prevent display spikes
-	// Only log every 100th completion to reduce spam
-	if chunkID == totalChunks-1 && atomic.LoadUint64(&m.attempts)%100 == 0 {
-		logInfo("📊 Processed %d puzzles in %v (completed %d attempts)",
-			puzzleCount, processingTime, atomic.LoadUint64(&m.attempts))
-	}
+	// Statistics tracked silently (dashboard shows progress)
 }
 
 // Check if result meets difficulty target using geth-compatible quality calculation
@@ -1137,54 +1060,29 @@ func (m *QuantumMiner) calculateQuantumProofQuality(result *QuantumProofSubmissi
 
 // Submit mining result
 func (m *QuantumMiner) submitResult(work *WorkPackage, result *QuantumProofSubmission, qnonce uint64) bool {
-	logInfo("🎯 VALID SOLUTION FOUND! Submitting to geth for block %d, qnonce=%016x", work.BlockNumber, qnonce)
-
-	// Convert the miner's QuantumProofSubmission to the format expected by geth
-	// Geth expects the QuantumProofSubmission struct with proper JSON field types:
-	// - Hash fields: 32-byte hex strings WITH 0x prefix (for common.Hash unmarshaling)
-	// - Byte fields: hex strings with 0x prefix (for []byte unmarshaling)
-
-	// Ensure hash fields have 0x prefix since geth's common.Hash expects it
-	outcomeRoot := result.OutcomeRoot
-	if !strings.HasPrefix(outcomeRoot, "0x") {
-		outcomeRoot = "0x" + outcomeRoot
-	}
-
-	gateHash := result.GateHash
-	if !strings.HasPrefix(gateHash, "0x") {
-		gateHash = "0x" + gateHash
-	}
-
-	proofRoot := result.ProofRoot
-	if !strings.HasPrefix(proofRoot, "0x") {
-		proofRoot = "0x" + proofRoot
-	}
-
-	// Convert ExtraNonce32 hex string to bytes, then base64 encode
-	extraNonce32Hex := result.ExtraNonce32
-	if !strings.HasPrefix(extraNonce32Hex, "0x") {
-		extraNonce32Hex = "0x" + extraNonce32Hex
-	}
-	// Decode hex to bytes
-	extraNonce32Bytes, decodeErr := hex.DecodeString(strings.TrimPrefix(extraNonce32Hex, "0x"))
-	if decodeErr != nil {
-		logError("❌ Failed to decode ExtraNonce32 hex: %v", decodeErr)
+	// Limit concurrent submissions to prevent overwhelming geth
+	select {
+	case m.submissionSemaphore <- struct{}{}:
+		defer func() { <-m.submissionSemaphore }()
+	case <-time.After(1 * time.Second):
+		logError("❌ Submission queue full, dropping result")
 		return false
 	}
 
+	// Generate 32-byte extra nonce for enhanced security
+	extraNonce32Bytes := make([]byte, 32)
+	rand.Read(extraNonce32Bytes)
+
+	// Create geth-compatible quantum proof structure
 	gethQuantumProof := map[string]interface{}{
-		"outcome_root":   outcomeRoot,                                             // 32-byte hex string WITH 0x prefix
-		"gate_hash":      gateHash,                                                // 32-byte hex string WITH 0x prefix
-		"proof_root":     proofRoot,                                               // 32-byte hex string WITH 0x prefix
+		"outcome_root":   result.OutcomeRoot,                                               // 32-byte hex string WITH 0x prefix
+		"gate_hash":      result.GateHash,                                                  // 32-byte hex string WITH 0x prefix
+		"proof_root":     result.ProofRoot,                                               // 32-byte hex string WITH 0x prefix
 		"branch_nibbles": base64.StdEncoding.EncodeToString(result.BranchNibbles), // []byte as base64 string
 		"extra_nonce32":  base64.StdEncoding.EncodeToString(extraNonce32Bytes),    // []byte as base64 string
 	}
 
-	// Debug: Log what we're about to submit
-	logInfo("🔍 Submitting to geth:")
-	logInfo("  QNonce: %016x", qnonce)
-	logInfo("  Block Hash: '%s' (len=%d)", work.ParentHash, len(work.ParentHash))
-	logInfo("  Quantum Proof: %+v", gethQuantumProof)
+	// Submit silently (dashboard shows accepted blocks)
 
 	// Prepare submission data for geth RPC call
 	// Parameters: qnonce (uint64), blockHash (string), quantumProof (QuantumProofSubmission)
@@ -1202,7 +1100,7 @@ func (m *QuantumMiner) submitResult(work *WorkPackage, result *QuantumProofSubmi
 		return false
 	}
 
-	logInfo("✅ Solution accepted by network! Block %d found with quantum proof", work.BlockNumber)
+	// Track acceptance silently (dashboard shows stats)
 	atomic.AddUint64(&m.accepted, 1)
 
 	// Track block timing
@@ -1252,16 +1150,10 @@ func (m *QuantumMiner) getWork(ctx context.Context) (*WorkPackage, error) {
 
 	// Ensure ParentHash is a valid 64-character hex string
 	parentHash := currentWork.WorkHash
-	logInfo("🔍 getWork() debug:")
-	logInfo("  currentWork.WorkHash: '%s' (len=%d)", currentWork.WorkHash, len(currentWork.WorkHash))
-	logInfo("  Block Number: %d", currentWork.BlockNumber)
 
 	if parentHash == "" || len(strings.TrimPrefix(parentHash, "0x")) != 64 {
 		// Generate a placeholder hash if work hash is invalid
 		parentHash = fmt.Sprintf("0x%064x", currentWork.BlockNumber)
-		logInfo("  Using placeholder hash: '%s'", parentHash)
-	} else {
-		logInfo("  Using original work hash: '%s'", parentHash)
 	}
 
 	return &WorkPackage{
@@ -1481,15 +1373,18 @@ func (m *QuantumMiner) buildQuantumProof(outcomes, gateHashes [][]byte, lnet int
 
 // statsReporter reports mining statistics as a live updating dashboard
 func (m *QuantumMiner) statsReporter() {
-	ticker := time.NewTicker(2 * time.Second) // Fast updates for live dashboard
+	ticker := time.NewTicker(1 * time.Second) // Update every second for live dashboard
 	defer ticker.Stop()
 
 	// Clear screen and show initial dashboard
 	fmt.Print("\033[2J\033[H") // Clear screen and move cursor to top
+	m.updateDashboard()
 
 	for {
 		select {
 		case <-m.stopChan:
+			// Show final report when stopping
+			fmt.Println("\n\n🏁 Mining stopped!")
 			return
 		case <-ticker.C:
 			m.updateDashboard()
@@ -1580,6 +1475,52 @@ func (m *QuantumMiner) updateDashboard() {
 	}
 	fmt.Println("└─────────────────────────────────────────────────────────────────────────────────┘")
 	fmt.Printf("Last Update: %s | Press Ctrl+C to stop\n", now.Format("15:04:05"))
+}
+
+// showFinalReport displays the final mining session report when stopping
+func (m *QuantumMiner) showFinalReport() {
+	now := time.Now()
+	attempts := atomic.LoadUint64(&m.attempts)
+	puzzlesSolved := atomic.LoadUint64(&m.puzzlesSolved)
+	accepted := atomic.LoadUint64(&m.accepted)
+	rejected := atomic.LoadUint64(&m.rejected)
+
+	totalDuration := now.Sub(m.startTime)
+
+	// Calculate final rates
+	avgQNonceRate := float64(attempts) / totalDuration.Seconds()
+	avgPuzzleRate := float64(puzzlesSolved) / totalDuration.Seconds()
+
+	// Clear screen and show final report
+	fmt.Print("\033[2J\033[H")
+	
+	fmt.Println("")
+	fmt.Println("📊 ═══════════════════════════════════════════════════════════════════════════════")
+	fmt.Println("🏁 FINAL QUANTUM MINING SESSION REPORT")
+	fmt.Println("📊 ═══════════════════════════════════════════════════════════════════════════════")
+	
+	if m.gpuMode {
+		fmt.Printf("🎮 Mining Mode    │ GPU ACCELERATED (Device %d) │ %d Parallel Threads\n", m.gpuID, m.threads)
+	} else {
+		fmt.Printf("💻 Mining Mode    │ CPU PROCESSING │ %d Threads\n", m.threads)
+	}
+	
+	fmt.Printf("⏱️  Session Time   │ %s │ Started: %s\n", formatDuration(totalDuration), m.startTime.Format("15:04:05"))
+	fmt.Printf("⚡ Performance    │ QNonces: %8.2f QN/s │ Puzzles: %8.2f PZ/s\n", avgQNonceRate, avgPuzzleRate)
+	fmt.Printf("🧮 Work Completed │ QNonces: %d │ Puzzles: %d │ Ratio: %.1f puzzles/qnonce\n", 
+		attempts, puzzlesSolved, float64(puzzlesSolved)/float64(attempts))
+	
+	successRate := float64(0)
+	if accepted+rejected > 0 {
+		successRate = float64(accepted) / float64(accepted+rejected) * 100
+	}
+	fmt.Printf("🎯 Block Results  │ Accepted: %d │ Rejected: %d │ Success Rate: %.2f%%\n", 
+		accepted, rejected, successRate)
+	
+	fmt.Println("📊 ═══════════════════════════════════════════════════════════════════════════════")
+	fmt.Println("👋 Thank you for contributing to the Quantum-Geth network!")
+	fmt.Println("💎 Your quantum computations help secure the blockchain!")
+	fmt.Println("📊 ═══════════════════════════════════════════════════════════════════════════════")
 }
 
 // formatDuration formats duration in a human-readable way
@@ -1723,12 +1664,6 @@ func detectAvailableGPUs() ([]int, error) {
 	// This allows parallel processing on the same GPU
 	for deviceID := 0; deviceID < maxGPUs; deviceID++ {
 		availableGPUs = append(availableGPUs, deviceID)
-		logInfo("✅ GPU %d: HIGH-PERFORMANCE Quantum acceleration AVAILABLE", deviceID)
-	}
-
-	if len(availableGPUs) > 0 {
-		logInfo("🚀 Multi-GPU Support: %d GPUs detected", len(availableGPUs))
-		logInfo("   🎯 Batch processing with load balancing enabled")
 	}
 
 	return availableGPUs, nil
@@ -1737,13 +1672,13 @@ func detectAvailableGPUs() ([]int, error) {
 // NewGPULoadBalancer creates a new GPU load balancer
 func NewGPULoadBalancer(devices []int) *GPULoadBalancer {
 	lb := &GPULoadBalancer{
-		devices:          devices,
-		deviceLoad:       make(map[int]int),
-		deviceCapacity:   make(map[int]int),
-		devicePerf:       make(map[int]float64),
-		workDistribution: make(map[int]int),
-		lastRebalance:    time.Now(),
-	}
+			devices:          devices,
+			deviceLoad:       make(map[int]int),
+			deviceCapacity:   make(map[int]int),
+			devicePerf:       make(map[int]float64),
+			workDistribution: make(map[int]int),
+			lastRebalance:    time.Now(),
+		}
 
 	// Initialize device capacities and performance ratings
 	for _, deviceID := range devices {
@@ -1844,10 +1779,6 @@ func (m *QuantumMiner) initializeMultiGPU() error {
 			continue
 		}
 		m.gpuSimulators[deviceID] = sim
-		// Only log for the first few GPUs to avoid spam
-		if deviceID < 3 {
-			logInfo("✅ GPU %d initialized successfully!", deviceID)
-		}
 	}
 
 	// Initialize load balancer
@@ -1865,14 +1796,11 @@ func (m *QuantumMiner) initializeMultiGPU() error {
 	// Start result processor
 	go m.gpuResultProcessor()
 
-	logInfo("🚀 Multi-GPU system initialized with %d devices", len(gpus))
 	return nil
 }
 
 // gpuWorker processes work items on a specific GPU device
 func (m *QuantumMiner) gpuWorker(deviceID int) {
-	logInfo("🔄 GPU worker %d started", deviceID)
-
 	simulator, exists := m.gpuSimulators[deviceID]
 	if !exists {
 		logError("GPU %d simulator not found", deviceID)
@@ -1882,7 +1810,6 @@ func (m *QuantumMiner) gpuWorker(deviceID int) {
 	for {
 		select {
 		case <-m.stopChan:
-			logInfo("🛑 GPU worker %d stopping", deviceID)
 			return
 		case workItem := <-m.gpuWorkQueue:
 			if workItem == nil {

@@ -632,6 +632,8 @@ func (is *ipcServer) stop() error {
 // RegisterApis checks the given modules' availability, generates an allowlist based on the allowed modules,
 // and then registers all of the APIs exposed by the services.
 func RegisterApis(apis []rpc.API, modules []string, srv *rpc.Server) error {
+	log.Info("🔬 DEBUG: RegisterApis called", "numAPIs", len(apis), "modules", modules)
+	
 	if bad, available := checkModuleAvailability(modules, apis); len(bad) > 0 {
 		log.Error("Unavailable modules in HTTP API list", "unavailable", bad, "available", available)
 	}
@@ -640,12 +642,22 @@ func RegisterApis(apis []rpc.API, modules []string, srv *rpc.Server) error {
 	for _, module := range modules {
 		allowList[module] = true
 	}
+	
+	log.Info("🔬 DEBUG: Allow list created", "allowList", allowList, "isEmpty", len(allowList) == 0)
+	
 	// Register all the APIs exposed by the services
-	for _, api := range apis {
-		if allowList[api.Namespace] || len(allowList) == 0 {
+	for i, api := range apis {
+		allowed := allowList[api.Namespace] || len(allowList) == 0
+		log.Info("🔬 DEBUG: Processing API", "index", i, "namespace", api.Namespace, "allowed", allowed, "inAllowList", allowList[api.Namespace])
+		
+		if allowed {
 			if err := srv.RegisterName(api.Namespace, api.Service); err != nil {
+				log.Error("🔬 DEBUG: Failed to register API", "namespace", api.Namespace, "error", err)
 				return err
 			}
+			log.Info("🔬 DEBUG: Successfully registered API", "namespace", api.Namespace)
+		} else {
+			log.Warn("🔬 DEBUG: API not registered (not in allow list)", "namespace", api.Namespace)
 		}
 	}
 	return nil

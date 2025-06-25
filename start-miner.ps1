@@ -1,131 +1,188 @@
-# Q Coin Miner Starter
-# Usage: ./start-miner.ps1 [type] [network] [options]
-# Types: cpu, gpu (default: cpu)
-# Networks: mainnet, testnet, devnet (default: testnet)
+# Q Coin Smart Miner - Uses Latest Release
+# Auto-detects network from running Geth node
+# Auto-detects GPU capability and falls back to CPU
+# Usage: ./start-miner.ps1 [options]
 
 param(
-    [Parameter(Position=0)]
-    [ValidateSet("cpu", "gpu")]
-    [string]$Type = "cpu",
-    
-    [Parameter(Position=1)]
-    [ValidateSet("mainnet", "testnet", "devnet")]
-    [string]$Network = "testnet",
-    
-    [int]$Threads = 4,
+    [int]$Threads = 0,
     [string]$GethRpc = "http://localhost:8545",
     [string]$Etherbase = "",
+    [switch]$ForceCpu,
     [switch]$Help
 )
 
 if ($Help) {
-    Write-Host "Q Coin Miner Starter" -ForegroundColor Cyan
+    Write-Host "Q Coin Smart Miner (Latest Release)" -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "Usage: ./start-miner.ps1 [type] [network] [options]" -ForegroundColor White
+    Write-Host "Auto-detects network from running Geth node" -ForegroundColor Green
+    Write-Host "Auto-detects GPU capability and falls back to CPU" -ForegroundColor Green
+    Write-Host "Uses latest miner release from releases directory" -ForegroundColor Green
     Write-Host ""
-    Write-Host "Mining Types:" -ForegroundColor Yellow
-    Write-Host "  cpu       - CPU Mining [DEFAULT]"
-    Write-Host "  gpu       - GPU Mining (CUDA required)"
-    Write-Host ""
-    Write-Host "Networks:" -ForegroundColor Yellow
-    Write-Host "  mainnet   - Q Coin Mainnet (Chain ID 73236)"
-    Write-Host "  testnet   - Q Coin Testnet (Chain ID 73235) [DEFAULT]"
-    Write-Host "  devnet    - Q Coin Dev Network (Chain ID 73234)"
+    Write-Host "Usage: ./start-miner.ps1 [options]" -ForegroundColor White
     Write-Host ""
     Write-Host "Options:" -ForegroundColor Yellow
-    Write-Host "  -threads <n>        Number of mining threads (default: 4)"
+    Write-Host "  -threads <n>        Number of mining threads (0 = auto-detect)"
     Write-Host "  -gethRpc <url>      Geth RPC endpoint (default: http://localhost:8545)"
     Write-Host "  -etherbase <addr>   Mining reward address (auto-detected if empty)"
+    Write-Host "  -forceCpu           Force CPU mining even if GPU available"
     Write-Host "  -help               Show this help message"
     Write-Host ""
     Write-Host "Examples:" -ForegroundColor Green
-    Write-Host "  ./start-miner.ps1                       # Start CPU miner on testnet"
-    Write-Host "  ./start-miner.ps1 gpu                   # Start GPU miner on testnet"
-    Write-Host "  ./start-miner.ps1 cpu devnet            # Start CPU miner on devnet"
-    Write-Host "  ./start-miner.ps1 cpu testnet -threads 8 # Start CPU miner with 8 threads"
+    Write-Host "  ./start-miner.ps1                    # Smart auto-detection"
+    Write-Host "  ./start-miner.ps1 -threads 32        # 32 threads"
+    Write-Host "  ./start-miner.ps1 -forceCpu          # Force CPU mining"
     exit 0
 }
 
-# Build miner if it doesn't exist
-$MinerPath = "quantum-miner\quantum-miner.exe"
-if (-not (Test-Path $MinerPath)) {
-    Write-Host "🔨 Building Q Coin Miner..." -ForegroundColor Yellow
-    & .\build-linux.sh miner
+Write-Host "Q Coin Smart Miner Starting..." -ForegroundColor Cyan
+Write-Host "Auto-detecting optimal mining configuration..." -ForegroundColor Yellow
+
+# Find latest miner release
+function Get-LatestMinerRelease {
+    $minerReleases = Get-ChildItem "releases" -Directory | Where-Object { $_.Name -like "quantum-miner-*" } | Sort-Object Name -Descending
+    if ($minerReleases.Count -eq 0) {
+        return $null
+    }
+    return Join-Path $minerReleases[0].FullName "quantum-miner.exe"
+}
+
+# Build miner if latest release doesn't exist
+$MinerPath = Get-LatestMinerRelease
+if (-not $MinerPath -or -not (Test-Path $MinerPath)) {
+    Write-Host "Building Q Coin Miner Release..." -ForegroundColor Yellow
+    & .\build-release.ps1 miner
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "❌ Miner build failed!" -ForegroundColor Red
+        Write-Host "ERROR: Miner build failed!" -ForegroundColor Red
+        exit 1
+    }
+    $MinerPath = Get-LatestMinerRelease
+    if (-not $MinerPath) {
+        Write-Host "ERROR: No miner release found after build!" -ForegroundColor Red
         exit 1
     }
 }
 
-# Network configurations
-$configs = @{
-    "mainnet" = @{
-        chainid = 73236
-        name = "Q Coin Mainnet"
-        description = "Production network with real Q Coin value"
+Write-Host "Using latest miner release: $MinerPath" -ForegroundColor Green
+
+# Test Geth connection and get network info
+Write-Host "Connecting to Geth at $GethRpc..." -ForegroundColor Yellow
+try {
+    $chainIdResponse = Invoke-RestMethod -Uri "$GethRpc" -Method POST -Headers @{"Content-Type"="application/json"} -Body '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' -ErrorAction Stop
+    $chainIdHex = $chainIdResponse.result
+    $chainId = [Convert]::ToInt32($chainIdHex, 16)
+    
+    # Determine network from chain ID
+    switch ($chainId) {
+        73234 { 
+            $networkName = "Q Coin Dev Network"
+            $networkColor = "Magenta"
+        }
+        73235 { 
+            $networkName = "Q Coin Testnet"
+            $networkColor = "Cyan"
+        }
+        73236 { 
+            $networkName = "Q Coin Mainnet"
+            $networkColor = "Green"
+        }
+        default { 
+            $networkName = "Unknown Q Coin Network (Chain ID: $chainId)"
+            $networkColor = "Yellow"
+        }
     }
-    "testnet" = @{
-        chainid = 73235
-        name = "Q Coin Testnet"
-        description = "Testing network with test Q Coin"
-    }
-    "devnet" = @{
-        chainid = 73234
-        name = "Q Coin Dev Network"
-        description = "Development network for testing"
-    }
+    
+    Write-Host "SUCCESS: Connected to $networkName" -ForegroundColor $networkColor
+} catch {
+    Write-Host "ERROR: Failed to connect to Geth RPC at $GethRpc" -ForegroundColor Red
+    Write-Host "       Make sure Geth is running first!" -ForegroundColor Yellow
+    Write-Host "       Try: ./qcoin-geth.ps1" -ForegroundColor Cyan
+    exit 1
 }
 
-$config = $configs[$Network]
-Write-Host "⛏️  Starting $Type Mining on $($config.name)" -ForegroundColor Cyan
-
-# Get etherbase if not provided
+# Get or create etherbase address
 if ($Etherbase -eq "") {
-    Write-Host "🔍 Auto-detecting mining address..." -ForegroundColor Yellow
+    Write-Host "Auto-detecting mining address..." -ForegroundColor Yellow
     try {
         $response = Invoke-RestMethod -Uri "$GethRpc" -Method POST -Headers @{"Content-Type"="application/json"} -Body '{"jsonrpc":"2.0","method":"eth_accounts","params":[],"id":1}' -ErrorAction Stop
         if ($response.result -and $response.result.Count -gt 0) {
             $Etherbase = $response.result[0]
-            Write-Host "✅ Using account: $Etherbase" -ForegroundColor Green
+            Write-Host "SUCCESS: Using existing account: $Etherbase" -ForegroundColor Green
         } else {
-            Write-Host "⚠️  No accounts found. Creating new account..." -ForegroundColor Yellow
+            Write-Host "WARNING: No accounts found. Creating new account..." -ForegroundColor Yellow
             $createResponse = Invoke-RestMethod -Uri "$GethRpc" -Method POST -Headers @{"Content-Type"="application/json"} -Body '{"jsonrpc":"2.0","method":"personal_newAccount","params":[""],"id":1}' -ErrorAction Stop
             if ($createResponse.result) {
                 $Etherbase = $createResponse.result
-                Write-Host "✅ Created new account: $Etherbase" -ForegroundColor Green
+                Write-Host "SUCCESS: Created new account: $Etherbase" -ForegroundColor Green
             } else {
-                Write-Host "❌ Failed to create account!" -ForegroundColor Red
+                Write-Host "ERROR: Failed to create account!" -ForegroundColor Red
                 exit 1
             }
         }
     } catch {
-        Write-Host "❌ Failed to connect to Geth RPC at $GethRpc" -ForegroundColor Red
-        Write-Host "   Make sure Geth is running first!" -ForegroundColor Yellow
+        Write-Host "ERROR: Failed to get/create mining address!" -ForegroundColor Red
         exit 1
+    }
+}
+
+# Auto-detect mining mode (GPU vs CPU)
+$UseGpu = $false
+$MiningMode = "CPU"
+$MiningColor = "Yellow"
+
+if (-not $ForceCpu) {
+    Write-Host "Testing GPU mining capability..." -ForegroundColor Yellow
+    
+    # Test GPU mining by running a quick check
+    try {
+        $gpuTest = & $MinerPath -gpu -node $GethRpc -coinbase $Etherbase -threads 1 -help 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            $UseGpu = $true
+            $MiningMode = "GPU"
+            $MiningColor = "Green"
+            Write-Host "SUCCESS: GPU mining available - Using GPU mode" -ForegroundColor Green
+        } else {
+            Write-Host "WARNING: GPU mining not available - Falling back to CPU" -ForegroundColor Yellow
+        }
+    } catch {
+        Write-Host "WARNING: GPU test failed - Falling back to CPU" -ForegroundColor Yellow
+    }
+} else {
+    Write-Host "INFO: CPU mining forced by user" -ForegroundColor Yellow
+}
+
+# Auto-detect thread count
+if ($Threads -eq 0) {
+    if ($UseGpu) {
+        $Threads = 1
+        Write-Host "Auto-detected GPU threads: $Threads" -ForegroundColor Green
+    } else {
+        $Threads = [Environment]::ProcessorCount
+        Write-Host "Auto-detected CPU threads: $Threads" -ForegroundColor Green
     }
 }
 
 # Prepare miner arguments
 $minerArgs = @(
-    "--rpc-url", $GethRpc,
-    "--etherbase", $Etherbase,
-    "--threads", $Threads
+    "-node", $GethRpc,
+    "-coinbase", $Etherbase,
+    "-threads", $Threads
 )
 
-if ($Type -eq "gpu") {
-    $minerArgs += "--gpu"
-    Write-Host "🎮 GPU Mining enabled" -ForegroundColor Yellow
-} else {
-    Write-Host "🖥️  CPU Mining enabled" -ForegroundColor Yellow
+if ($UseGpu) {
+    $minerArgs += "-gpu"
 }
 
-Write-Host "🌐 Network: $($config.name)" -ForegroundColor White
-Write-Host "🔗 Chain ID: $($config.chainid)" -ForegroundColor White
-Write-Host "📡 Geth RPC: $GethRpc" -ForegroundColor White
-Write-Host "💰 Mining Address: $Etherbase" -ForegroundColor White
-Write-Host "🧵 Threads: $Threads" -ForegroundColor White
+# Display configuration
 Write-Host ""
-Write-Host "🎯 Starting Q Coin $Type miner..." -ForegroundColor Green
+Write-Host "Mining Configuration:" -ForegroundColor White
+Write-Host "Network: $networkName" -ForegroundColor $networkColor
+Write-Host "Chain ID: $chainId" -ForegroundColor White
+Write-Host "Mining Mode: $MiningMode" -ForegroundColor $MiningColor
+Write-Host "Geth RPC: $GethRpc" -ForegroundColor White
+Write-Host "Mining Address: $Etherbase" -ForegroundColor White
+Write-Host "Threads: $Threads" -ForegroundColor White
+Write-Host ""
+Write-Host "Starting Q Coin miner..." -ForegroundColor Green
 
 # Start miner
 & $MinerPath @minerArgs 

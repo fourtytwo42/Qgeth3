@@ -40,7 +40,7 @@ class QiskitGPUBackend:
         """Initialize CUDA 12.9 GPU-accelerated Qiskit-Aer backend"""
         try:
             # Try GPU backend first (CUDA 12.9)
-            print(f"🔍 Attempting to initialize CUDA 12.9 GPU backend...")
+            print(f"INFO: Attempting to initialize CUDA 12.9 GPU backend...")
             self.backend = AerSimulator(device='GPU', method='statevector')
             
             # Test GPU backend with a simple circuit
@@ -56,12 +56,12 @@ class QiskitGPUBackend:
             gpu_test_time = time.time() - start_time
             
             self.gpu_available = True
-            print(f"✅ CUDA 12.9 GPU backend ACTIVE! Test circuit: {gpu_test_time:.4f}s")
-            print(f"🚀 GPU Device: {self.device_id}, Backend: {self.backend}")
+            print(f"SUCCESS: CUDA 12.9 GPU backend ACTIVE! Test circuit: {gpu_test_time:.4f}s")
+            print(f"INFO: GPU Device: {self.device_id}, Backend: {self.backend}")
             
         except Exception as e:
-            print(f"⚠️  CUDA 12.9 GPU initialization failed: {e}", file=sys.stderr)
-            print(f"💡 Falling back to high-performance CPU backend", file=sys.stderr)
+            print(f"WARNING: CUDA 12.9 GPU initialization failed: {e}", file=sys.stderr)
+            print(f"INFO: Falling back to high-performance CPU backend", file=sys.stderr)
             
             try:
                 # High-performance CPU fallback
@@ -72,7 +72,7 @@ class QiskitGPUBackend:
                 test_circuit = QuantumCircuit(4)
                 test_circuit.h(0)
                 result = self.backend.run(test_circuit, shots=1).result()
-                print(f"✅ CPU backend initialized successfully")
+                print(f"SUCCESS: CPU backend initialized successfully")
                 
             except Exception as e2:
                 raise RuntimeError(f"Both GPU and CPU backends failed: {e2}")
@@ -239,7 +239,7 @@ class QiskitGPUBackend:
             # CPU fallback for batch simulation
             return self._cpu_batch_simulate(work_hash, qnonce, n_qubits, n_gates, n_puzzles)
         
-        print(f"🚀 GPU Batch Processing: {n_puzzles} puzzles on CUDA 12.9")
+        print(f"INFO: GPU Batch Processing: {n_puzzles} puzzles on CUDA 12.9")
         start_time = time.time()
         
         # For mining efficiency, we use simplified quantum simulation
@@ -300,14 +300,14 @@ class QiskitGPUBackend:
                 outcomes.append(outcome_bytes)
         
         total_time = time.time() - start_time
-        print(f"⚡ GPU Batch Complete: {n_puzzles} puzzles in {total_time:.4f}s ({n_puzzles/total_time:.1f} puzzles/sec)")
+        print(f"SUCCESS: GPU Batch Complete: {n_puzzles} puzzles in {total_time:.4f}s ({n_puzzles/total_time:.1f} puzzles/sec)")
         
         return outcomes, total_time
     
     def _cpu_batch_simulate(self, work_hash: str, qnonce: int,
                           n_qubits: int, n_gates: int, n_puzzles: int) -> Tuple[List[bytes], float]:
         """CPU fallback for batch simulation"""
-        print(f"💻 CPU Batch Processing: {n_puzzles} puzzles")
+        print(f"INFO: CPU Batch Processing: {n_puzzles} puzzles")
         start_time = time.time()
         
         outcomes = []

@@ -1,27 +1,18 @@
 #!/bin/bash
-# Q Coin Miner Starter
-# Usage: ./start-miner.sh [type] [network] [options]
-# Types: cpu, gpu (default: cpu)
-# Networks: mainnet, testnet, devnet (default: testnet)
+# Q Coin Smart Miner
+# Auto-detects network from running Geth node
+# Auto-detects GPU capability and falls back to CPU
+# Usage: ./start-miner.sh [options]
 
-TYPE="cpu"
-NETWORK="testnet"
-THREADS=4
+THREADS=0  # 0 = auto-detect
 GETH_RPC="http://localhost:8545"
 ETHERBASE=""
+FORCE_CPU=false
 HELP=false
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
-        cpu|gpu)
-            TYPE="$1"
-            shift
-            ;;
-        mainnet|testnet|devnet)
-            NETWORK="$1"
-            shift
-            ;;
         --threads)
             THREADS="$2"
             shift 2
@@ -33,6 +24,10 @@ while [[ $# -gt 0 ]]; do
         --etherbase)
             ETHERBASE="$2"
             shift 2
+            ;;
+        --force-cpu)
+            FORCE_CPU=true
+            shift
             ;;
         --help|-h)
             HELP=true
@@ -47,32 +42,29 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [ "$HELP" = true ]; then
-    echo -e "\033[1;36mQ Coin Miner Starter\033[0m"
+    echo -e "\033[1;36m🎯 Q Coin Smart Miner\033[0m"
     echo ""
-    echo -e "\033[1;37mUsage: ./start-miner.sh [type] [network] [options]\033[0m"
+    echo -e "\033[1;32mAuto-detects network from running Geth node\033[0m"
+    echo -e "\033[1;32mAuto-detects GPU capability and falls back to CPU\033[0m"
     echo ""
-    echo -e "\033[1;33mMining Types:\033[0m"
-    echo "  cpu       - CPU Mining [DEFAULT]"
-    echo "  gpu       - GPU Mining (CUDA required)"
-    echo ""
-    echo -e "\033[1;33mNetworks:\033[0m"
-    echo "  mainnet   - Q Coin Mainnet (Chain ID 73236)"
-    echo "  testnet   - Q Coin Testnet (Chain ID 73235) [DEFAULT]"
-    echo "  devnet    - Q Coin Dev Network (Chain ID 73234)"
+    echo -e "\033[1;37mUsage: ./start-miner.sh [options]\033[0m"
     echo ""
     echo -e "\033[1;33mOptions:\033[0m"
-    echo "  --threads <n>        Number of mining threads (default: 4)"
+    echo "  --threads <n>        Number of mining threads (0 = auto-detect)"
     echo "  --geth-rpc <url>     Geth RPC endpoint (default: http://localhost:8545)"
     echo "  --etherbase <addr>   Mining reward address (auto-detected if empty)"
+    echo "  --force-cpu          Force CPU mining even if GPU available"
     echo "  --help               Show this help message"
     echo ""
     echo -e "\033[1;32mExamples:\033[0m"
-    echo "  ./start-miner.sh                       # Start CPU miner on testnet"
-    echo "  ./start-miner.sh gpu                   # Start GPU miner on testnet"
-    echo "  ./start-miner.sh cpu devnet            # Start CPU miner on devnet"
-    echo "  ./start-miner.sh cpu testnet --threads 8 # Start CPU miner with 8 threads"
+    echo "  ./start-miner.sh                    # Smart auto-detection"
+    echo "  ./start-miner.sh --threads 32       # 32 threads"
+    echo "  ./start-miner.sh --force-cpu        # Force CPU mining"
     exit 0
 fi
+
+echo -e "\033[1;36m🎯 Q Coin Smart Miner Starting...\033[0m"
+echo -e "\033[1;33m🔍 Auto-detecting optimal mining configuration...\033[0m"
 
 # Build miner if it doesn't exist
 MINER_PATH="quantum-miner/quantum-miner"
@@ -85,28 +77,46 @@ if [ ! -f "$MINER_PATH" ]; then
     fi
 fi
 
-# Network configurations
-case $NETWORK in
-    mainnet)
-        CHAINID=73236
-        NAME="Q Coin Mainnet"
-        DESCRIPTION="Production network with real Q Coin value"
-        ;;
-    testnet)
-        CHAINID=73235
-        NAME="Q Coin Testnet"
-        DESCRIPTION="Testing network with test Q Coin"
-        ;;
-    devnet)
-        CHAINID=73234
-        NAME="Q Coin Dev Network"
-        DESCRIPTION="Development network for testing"
-        ;;
-esac
+# Test Geth connection and get network info
+echo -e "\033[1;33m📡 Connecting to Geth at $GETH_RPC...\033[0m"
 
-echo -e "\033[1;36m⛏️  Starting $TYPE Mining on $NAME\033[0m"
+CHAIN_ID_RESPONSE=$(curl -s -X POST -H "Content-Type: application/json" \
+    --data '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' \
+    "$GETH_RPC" 2>/dev/null)
 
-# Get etherbase if not provided
+if [ $? -eq 0 ] && echo "$CHAIN_ID_RESPONSE" | grep -q '"result"'; then
+    CHAIN_ID_HEX=$(echo "$CHAIN_ID_RESPONSE" | grep -o '"0x[0-9a-fA-F]*"' | tr -d '"')
+    CHAIN_ID=$((CHAIN_ID_HEX))
+    
+    # Determine network from chain ID
+    case $CHAIN_ID in
+        73234)
+            NETWORK_NAME="Q Coin Dev Network"
+            NETWORK_COLOR="\033[1;35m"  # Magenta
+            ;;
+        73235)
+            NETWORK_NAME="Q Coin Testnet"
+            NETWORK_COLOR="\033[1;36m"  # Cyan
+            ;;
+        73236)
+            NETWORK_NAME="Q Coin Mainnet"
+            NETWORK_COLOR="\033[1;32m"  # Green
+            ;;
+        *)
+            NETWORK_NAME="Unknown Q Coin Network (Chain ID: $CHAIN_ID)"
+            NETWORK_COLOR="\033[1;33m"  # Yellow
+            ;;
+    esac
+    
+    echo -e "\033[1;32m✅ Connected to ${NETWORK_COLOR}${NETWORK_NAME}\033[0m"
+else
+    echo -e "\033[1;31m❌ Failed to connect to Geth RPC at $GETH_RPC\033[0m"
+    echo -e "\033[1;33m   Make sure Geth is running first!\033[0m"
+    echo -e "\033[1;36m   Try: ./qcoin-geth.sh\033[0m"
+    exit 1
+fi
+
+# Get or create etherbase address
 if [ -z "$ETHERBASE" ]; then
     echo -e "\033[1;33m🔍 Auto-detecting mining address...\033[0m"
     
@@ -119,7 +129,7 @@ if [ -z "$ETHERBASE" ]; then
         ETHERBASE=$(echo "$RESPONSE" | grep -o '"0x[0-9a-fA-F]*"' | head -1 | tr -d '"')
         
         if [ -n "$ETHERBASE" ]; then
-            echo -e "\033[1;32m✅ Using account: $ETHERBASE\033[0m"
+            echo -e "\033[1;32m✅ Using existing account: $ETHERBASE\033[0m"
         else
             echo -e "\033[1;33m⚠️  No accounts found. Creating new account...\033[0m"
             CREATE_RESPONSE=$(curl -s -X POST -H "Content-Type: application/json" \
@@ -135,33 +145,68 @@ if [ -z "$ETHERBASE" ]; then
             fi
         fi
     else
-        echo -e "\033[1;31m❌ Failed to connect to Geth RPC at $GETH_RPC\033[0m"
-        echo -e "\033[1;33m   Make sure Geth is running first!\033[0m"
+        echo -e "\033[1;31m❌ Failed to get/create mining address!\033[0m"
         exit 1
+    fi
+fi
+
+# Auto-detect mining mode (GPU vs CPU)
+USE_GPU=false
+MINING_MODE="CPU"
+MINING_COLOR="\033[1;33m"  # Yellow
+
+if [ "$FORCE_CPU" != true ]; then
+    echo -e "\033[1;33m🎮 Testing GPU mining capability...\033[0m"
+    
+    # Test GPU mining by running a quick check
+    GPU_TEST_OUTPUT=$(./"$MINER_PATH" -gpu -node "$GETH_RPC" -coinbase "$ETHERBASE" -threads 1 -help 2>&1)
+    GPU_TEST_EXIT=$?
+    
+    if [ $GPU_TEST_EXIT -eq 0 ]; then
+        USE_GPU=true
+        MINING_MODE="GPU"
+        MINING_COLOR="\033[1;32m"  # Green
+        echo -e "\033[1;32m✅ GPU mining available - Using GPU mode\033[0m"
+    else
+        echo -e "\033[1;33m⚠️  GPU mining not available - Falling back to CPU\033[0m"
+    fi
+else
+    echo -e "\033[1;33m🖥️  CPU mining forced by user\033[0m"
+fi
+
+# Auto-detect thread count
+if [ "$THREADS" -eq 0 ]; then
+    if [ "$USE_GPU" = true ]; then
+        THREADS=1  # GPU typically uses 1 thread
+        echo -e "\033[1;32m🧵 Auto-detected GPU threads: $THREADS\033[0m"
+    else
+        THREADS=$(nproc)
+        echo -e "\033[1;32m🧵 Auto-detected CPU threads: $THREADS\033[0m"
     fi
 fi
 
 # Prepare miner arguments
 MINER_ARGS=(
-    "--rpc-url" "$GETH_RPC"
-    "--etherbase" "$ETHERBASE"
-    "--threads" "$THREADS"
+    "-node" "$GETH_RPC"
+    "-coinbase" "$ETHERBASE"
+    "-threads" "$THREADS"
 )
 
-if [ "$TYPE" = "gpu" ]; then
-    MINER_ARGS+=("--gpu")
-    echo -e "\033[1;33m🎮 GPU Mining enabled\033[0m"
-else
-    echo -e "\033[1;33m🖥️  CPU Mining enabled\033[0m"
+if [ "$USE_GPU" = true ]; then
+    MINER_ARGS+=("-gpu")
 fi
 
-echo -e "\033[1;37m🌐 Network: $NAME\033[0m"
-echo -e "\033[1;37m🔗 Chain ID: $CHAINID\033[0m"
+# Display configuration
+echo ""
+echo -e "\033[1;37m⚡ Mining Configuration:\033[0m"
+echo -e "\033[1;37m🌐 Network: ${NETWORK_COLOR}${NETWORK_NAME}\033[0m"
+echo -e "\033[1;37m🔗 Chain ID: $CHAIN_ID\033[0m"
+echo -e "\033[1;37m⛏️  Mining Mode: ${MINING_COLOR}${MINING_MODE}\033[0m"
 echo -e "\033[1;37m📡 Geth RPC: $GETH_RPC\033[0m"
 echo -e "\033[1;37m💰 Mining Address: $ETHERBASE\033[0m"
 echo -e "\033[1;37m🧵 Threads: $THREADS\033[0m"
 echo ""
-echo -e "\033[1;32m🎯 Starting Q Coin $TYPE miner...\033[0m"
+echo -e "\033[1;32m🚀 Starting Q Coin miner...\033[0m"
 
 # Start miner
 ./"$MINER_PATH" "${MINER_ARGS[@]}" 

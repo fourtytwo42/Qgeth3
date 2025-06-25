@@ -456,8 +456,18 @@ func makeExtraData(extra []byte) []byte {
 func (s *Ethereum) APIs() []rpc.API {
 	apis := ethapi.GetAPIs(s.APIBackend)
 
+	// Debug logging to see what engine we have
+	log.Info("🔬 DEBUG: Ethereum.APIs() called", "engineType", fmt.Sprintf("%T", s.engine))
+	
 	// Append any APIs exposed explicitly by the consensus engine
-	apis = append(apis, s.engine.APIs(s.BlockChain())...)
+	engineAPIs := s.engine.APIs(s.BlockChain())
+	log.Info("🔬 DEBUG: Engine APIs returned", "numAPIs", len(engineAPIs))
+	
+	for i, api := range engineAPIs {
+		log.Info("🔬 DEBUG: Engine API", "index", i, "namespace", api.Namespace, "version", api.Version, "public", api.Public)
+	}
+	
+	apis = append(apis, engineAPIs...)
 
 	// Append all the local APIs and return
 	return append(apis, []rpc.API{

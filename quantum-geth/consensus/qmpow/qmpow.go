@@ -791,7 +791,9 @@ func (q *QMPoW) applyASERTAdjustmentPrecise(baseDifficulty *big.Int, timeDiff in
 
 // APIs returns the RPC APIs this consensus engine provides
 func (q *QMPoW) APIs(chain consensus.ChainHeaderReader) []rpc.API {
-	return []rpc.API{
+	log.Info("🔬 DEBUG: QMPoW APIs() method called", "chainIsNil", chain == nil, "qmpowIsNil", q == nil)
+	
+	apis := []rpc.API{
 		{
 			Namespace: "qmpow",
 			Version:   "1.0",
@@ -805,6 +807,9 @@ func (q *QMPoW) APIs(chain consensus.ChainHeaderReader) []rpc.API {
 			Public:    true,
 		},
 	}
+	
+	log.Info("🔬 DEBUG: QMPoW APIs() returning", "numAPIs", len(apis), "namespaces", []string{"qmpow", "eth"})
+	return apis
 }
 
 // Close terminates any background threads maintained by the consensus engine

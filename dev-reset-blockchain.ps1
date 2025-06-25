@@ -3,7 +3,7 @@
 # Usage: .\reset-blockchain.ps1 -difficulty 1 -force
 
 param(
-    [float]$difficulty = 0.0005,  # Starting difficulty (quantum-optimized: 0.0005 based on real testing)
+    [float]$difficulty = 200,  # Starting difficulty (quantum-optimized: 200 based on real testing)
     [string]$datadir = "qdata",
     [int]$networkid = 73234,
     [int]$chainid = 73234,

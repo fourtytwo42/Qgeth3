@@ -56,9 +56,9 @@ func NewQiskitGPUSimulator(deviceID int) (*QiskitGPUSimulator, error) {
 	}
 
 	// Find the Qiskit GPU script
-	scriptPath, err := filepath.Abs("pkg/quantum/qiskit_gpu.py")
+	scriptPath, err := findQiskitScript()
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve script path: %w", err)
+		return nil, fmt.Errorf("failed to find qiskit_gpu.py script: %w", err)
 	}
 	sim.scriptPath = scriptPath
 

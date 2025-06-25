@@ -1,78 +1,51 @@
-# Q Coin Build Script
-# Usage: ./build-release.ps1 [component] [options]
+# Q Coin Build Script - Creates timestamped releases
+# Usage: ./build-release.ps1 [component]
 # Components: geth, miner, both (default: both)
 
 param(
     [Parameter(Position=0)]
     [ValidateSet("geth", "miner", "both")]
-    [string]$Component = "both",
-    
-    [switch]$Clean,
-    [switch]$Help
+    [string]$Component = "both"
 )
 
-if ($Help) {
-    Write-Host "Q Coin Build Script" -ForegroundColor Cyan
-    Write-Host ""
-    Write-Host "Usage: ./build-release.ps1 [component] [options]" -ForegroundColor White
-    Write-Host ""
-    Write-Host "Components:" -ForegroundColor Yellow
-    Write-Host "  geth      - Build quantum-geth only"
-    Write-Host "  miner     - Build quantum-miner only"
-    Write-Host "  both      - Build both geth and miner [DEFAULT]"
-    Write-Host ""
-    Write-Host "Options:" -ForegroundColor Yellow
-    Write-Host "  -clean    - Clean build directories before building"
-    Write-Host "  -help     - Show this help message"
-    Write-Host ""
-    Write-Host "Examples:" -ForegroundColor Green
-    Write-Host "  ./build-release.ps1           # Build both geth and miner"
-    Write-Host "  ./build-release.ps1 geth      # Build geth only"
-    Write-Host "  ./build-release.ps1 -clean    # Clean build and build both"
-    exit 0
-}
-
-Write-Host "🔨 Q Coin Build Script" -ForegroundColor Cyan
+Write-Host "Building Q Coin Release..." -ForegroundColor Cyan
 Write-Host ""
 
-$ErrorActionPreference = "Stop"
-
-# Clean if requested
-if ($Clean) {
-    Write-Host "🧹 Cleaning build directories..." -ForegroundColor Yellow
-    
-    if (Test-Path "quantum-geth\build") {
-        Remove-Item -Recurse -Force "quantum-geth\build"
-        Write-Host "   Cleaned quantum-geth\build" -ForegroundColor Gray
-    }
-    
-    if (Test-Path "quantum-miner\quantum-miner.exe") {
-        Remove-Item -Force "quantum-miner\quantum-miner.exe"
-        Write-Host "   Cleaned quantum-miner.exe" -ForegroundColor Gray
-    }
-    
-    Write-Host "✅ Clean completed" -ForegroundColor Green
-    Write-Host ""
-}
+$timestamp = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
 
 # Build geth
 if ($Component -eq "geth" -or $Component -eq "both") {
-    Write-Host "🔨 Building quantum-geth..." -ForegroundColor Yellow
+    Write-Host "Building quantum-geth..." -ForegroundColor Yellow
     
     if (-not (Test-Path "quantum-geth")) {
-        Write-Host "❌ quantum-geth directory not found!" -ForegroundColor Red
+        Write-Host "quantum-geth directory not found!" -ForegroundColor Red
         exit 1
     }
     
+    # Build to regular location first
     Push-Location "quantum-geth"
     try {
-        $env:CGO_ENABLED = "1"
-        & go build -o "build\bin\geth.exe" ".\cmd\geth"
+        & go build -o "build/bin/geth.exe" "./cmd/geth"
         
         if ($LASTEXITCODE -eq 0) {
-            Write-Host "✅ quantum-geth built successfully" -ForegroundColor Green
+            Write-Host "quantum-geth built successfully" -ForegroundColor Green
+            
+            # Create timestamped release
+            $releaseDir = "../releases/quantum-geth-$timestamp"
+            New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
+            Copy-Item "build/bin/geth.exe" "$releaseDir/geth.exe" -Force
+            
+            # Create release info
+            @"
+# Quantum-Geth Release $timestamp
+Built: $(Get-Date)
+Component: quantum-geth
+Version: Latest
+"@ | Out-File -FilePath "$releaseDir/README.md" -Encoding UTF8
+            
+            Write-Host "Created release: $releaseDir" -ForegroundColor Green
         } else {
-            Write-Host "❌ quantum-geth build failed!" -ForegroundColor Red
+            Write-Host "quantum-geth build failed!" -ForegroundColor Red
             exit 1
         }
     } finally {
@@ -83,22 +56,81 @@ if ($Component -eq "geth" -or $Component -eq "both") {
 
 # Build miner
 if ($Component -eq "miner" -or $Component -eq "both") {
-    Write-Host "🔨 Building quantum-miner..." -ForegroundColor Yellow
+    Write-Host "Building quantum-miner..." -ForegroundColor Yellow
     
     if (-not (Test-Path "quantum-miner")) {
-        Write-Host "❌ quantum-miner directory not found!" -ForegroundColor Red
+        Write-Host "quantum-miner directory not found!" -ForegroundColor Red
         exit 1
     }
     
+    # Build to regular location first
     Push-Location "quantum-miner"
     try {
         $env:CGO_ENABLED = "1"
         & go build -o "quantum-miner.exe" "."
         
         if ($LASTEXITCODE -eq 0) {
-            Write-Host "✅ quantum-miner built successfully" -ForegroundColor Green
+            Write-Host "quantum-miner built successfully" -ForegroundColor Green
+            
+            # Create timestamped release
+            $releaseDir = "../releases/quantum-miner-$timestamp"
+            New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
+            Copy-Item "quantum-miner.exe" "$releaseDir/quantum-miner.exe" -Force
+            
+            # Copy pkg directory if it exists
+            if (Test-Path "pkg") {
+                Copy-Item "pkg" "$releaseDir/pkg" -Recurse -Force
+            }
+            
+            # Create release scripts
+            @"
+# Quantum-Miner GPU Launcher (PowerShell)
+param(
+    [string]`$Coinbase = "",
+    [int]`$Threads = 1,
+    [int]`$GpuId = 0,
+    [string]`$NodeURL = "http://localhost:8545"
+)
+
+if (`$Coinbase -eq "") {
+    Write-Host "Usage: .\start-miner-gpu.ps1 -Coinbase <address>" -ForegroundColor Yellow
+    exit 1
+}
+
+& ".\quantum-miner.exe" -gpu -coinbase "`$Coinbase" -threads `$Threads -gpu-id `$GpuId -node "`$NodeURL"
+"@ | Out-File -FilePath "$releaseDir/start-miner-gpu.ps1" -Encoding UTF8
+
+            @"
+# Quantum-Miner CPU Launcher (PowerShell)
+param(
+    [string]`$Coinbase = "",
+    [int]`$Threads = 4,
+    [string]`$NodeURL = "http://localhost:8545"
+)
+
+if (`$Coinbase -eq "") {
+    Write-Host "Usage: .\start-miner-cpu.ps1 -Coinbase <address>" -ForegroundColor Yellow
+    exit 1
+}
+
+& ".\quantum-miner.exe" -coinbase "`$Coinbase" -threads `$Threads -node "`$NodeURL"
+"@ | Out-File -FilePath "$releaseDir/start-miner-cpu.ps1" -Encoding UTF8
+
+            # Create release info
+            @"
+# Quantum-Miner Release $timestamp
+Built: $(Get-Date)
+Component: quantum-miner
+Version: Latest
+
+## Usage
+- GPU Mining: .\start-miner-gpu.ps1 -Coinbase <address>
+- CPU Mining: .\start-miner-cpu.ps1 -Coinbase <address>
+"@ | Out-File -FilePath "$releaseDir/README.md" -Encoding UTF8
+            
+            Write-Host "Created release: $releaseDir" -ForegroundColor Green
         } else {
-            Write-Host "❌ quantum-miner build failed!" -ForegroundColor Red
+            Write-Host "quantum-miner build failed!" -ForegroundColor Red
             exit 1
         }
     } finally {
@@ -107,20 +139,5 @@ if ($Component -eq "miner" -or $Component -eq "both") {
     Write-Host ""
 }
 
-Write-Host "🎉 Build completed successfully!" -ForegroundColor Green
-
-# Show built files
-Write-Host ""
-Write-Host "Built files:" -ForegroundColor Cyan
-if ($Component -eq "geth" -or $Component -eq "both") {
-    if (Test-Path "quantum-geth\build\bin\geth.exe") {
-        $gethSize = (Get-Item "quantum-geth\build\bin\geth.exe").Length / 1MB
-        Write-Host "  quantum-geth\build\bin\geth.exe ($([math]::Round($gethSize, 1)) MB)" -ForegroundColor White
-    }
-}
-if ($Component -eq "miner" -or $Component -eq "both") {
-    if (Test-Path "quantum-miner\quantum-miner.exe") {
-        $minerSize = (Get-Item "quantum-miner\quantum-miner.exe").Length / 1MB
-        Write-Host "  quantum-miner\quantum-miner.exe ($([math]::Round($minerSize, 1)) MB)" -ForegroundColor White
-    }
-} 
+Write-Host "Build completed successfully!" -ForegroundColor Green
+Write-Host "" 
