@@ -1,6 +1,7 @@
-# Start Geth with Mining - Quantum-Geth with Halving
-# Starts the quantum geth node with quantum proof-of-work mining
-# Usage: .\start-geth-mining.ps1 -threads 1 -verbosity 4
+# Q Coin Dev Network - Start Geth with Mining
+# Starts Q Coin dev network node (Chain ID 73234) with quantum proof-of-work mining
+# This script ONLY connects to Q Coin Dev network, never Ethereum!
+# Usage: .\dev-start-geth-mining.ps1 -threads 1 -verbosity 4
 
 param(
     [int]$threads = 1,
@@ -15,8 +16,9 @@ param(
     [switch]$isolated = $true  # Run in isolated mode (no peers)
 )
 
-Write-Host "*** QUANTUM-GETH MINING STARTUP ***" -ForegroundColor Green
-Write-Host "48-Puzzle Sequential Quantum Proof-of-Work with Bitcoin-Style Halving" -ForegroundColor Cyan
+Write-Host "🪙 Q COIN DEV NETWORK - MINING STARTUP 🪙" -ForegroundColor Green
+Write-Host "128-Puzzle Sequential Quantum Proof-of-Work with Bitcoin-Style Halving" -ForegroundColor Cyan
+Write-Host "Chain ID 73234 - Development/Staging Environment" -ForegroundColor Magenta
 Write-Host ""
 
 # Check if blockchain exists
@@ -30,9 +32,10 @@ if (-not (Test-Path "$datadir\geth\chaindata")) {
 }
 
 Write-Host "Configuration:" -ForegroundColor Cyan
+Write-Host "  Network: Q Coin Dev/Staging"
+Write-Host "  Chain ID: $networkid (Dev Network)"
 Write-Host "  Data Directory: $datadir"
 Write-Host "  Mining Threads: $threads"
-Write-Host "  Network ID: $networkid"
 Write-Host "  Etherbase: $etherbase"
 Write-Host "  Verbosity: $verbosity"
 Write-Host "  Quantum Solver: $quantumSolver"
