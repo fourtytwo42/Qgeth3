@@ -140,19 +140,13 @@ if [ -n "$GETH_RELEASE_DIR" ] && [ -f "$GETH_RELEASE_DIR/geth" ]; then
 elif [ -f "../geth" ]; then
     echo "Using development geth from parent directory"
     GETH_PATH="../geth"
-elif [ ! -f "geth" ]; then
-    echo "Geth executable not found. Building release..."
-    if ./build-release.sh geth; then
-        GETH_RELEASE_DIR=$(find ../releases -name "quantum-geth-*" -type d 2>/dev/null | sort -V | tail -1)
-        echo "SUCCESS: Release built at $GETH_RELEASE_DIR"
-        GETH_PATH="$GETH_RELEASE_DIR/geth"
-    else
-        echo "ERROR: Failed to build quantum-geth release"
-        exit 1
-    fi
-else
+elif [ -f "./geth" ]; then
     echo "Using development geth from current directory"
     GETH_PATH="./geth"
+else
+    echo "❌ ERROR: Q Coin geth binary not found!"
+    echo "   Build it first: ./build-linux.sh"
+    exit 1
 fi
 
 # Start geth WITHOUT mining - pure RPC node for external miners

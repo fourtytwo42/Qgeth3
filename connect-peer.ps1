@@ -39,7 +39,7 @@ Write-Host "=========================" -ForegroundColor Cyan
 Write-Host ""
 
 # Validate enode format
-if ($Enode -notmatch "^enode://[a-fA-F0-9]{128}@[\d\.]+:\d+$") {
+if ($Enode -notmatch '^enode://[a-fA-F0-9]{128}@[\d\.]+:\d+$') {
     Write-Host "❌ Invalid enode format!" -ForegroundColor Red
     Write-Host ""
     Write-Host "Expected format:" -ForegroundColor Yellow
@@ -52,7 +52,7 @@ if ($Enode -notmatch "^enode://[a-fA-F0-9]{128}@[\d\.]+:\d+$") {
 }
 
 # Extract connection details
-if ($Enode -match "enode://([^@]+)@([^:]+):(\d+)") {
+if ($Enode -match 'enode://([^@]+)@([^:]+):(\d+)') {
     $nodeId = $matches[1]
     $ip = $matches[2]
     $port = $matches[3]
