@@ -3,6 +3,7 @@
 # Usage: ./dev-reset-blockchain.sh [options]
 
 CHAIN_ID=73234
+DIFFICULTY=200
 HELP=false
 CONFIRM=false
 
@@ -11,6 +12,10 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --chain-id)
             CHAIN_ID="$2"
+            shift 2
+            ;;
+        --difficulty)
+            DIFFICULTY="$2"
             shift 2
             ;;
         --yes)
@@ -35,12 +40,14 @@ if [ "$HELP" = true ]; then
     echo -e "\033[1;37mUsage: ./dev-reset-blockchain.sh [options]\033[0m"
     echo ""
     echo -e "\033[1;33mOptions:\033[0m"
-    echo "  --chain-id <id>   - Chain ID for genesis (default: 73234)"
-    echo "  --yes             - Skip confirmation prompt"
-    echo "  --help            - Show this help message"
+    echo "  --chain-id <id>     - Chain ID for genesis (default: 73234)"
+    echo "  --difficulty <num>  - Starting difficulty (default: 200)"
+    echo "  --yes               - Skip confirmation prompt"
+    echo "  --help              - Show this help message"
     echo ""
     echo -e "\033[1;32mExample:\033[0m"
-    echo "  ./dev-reset-blockchain.sh --yes          # Reset with confirmation"
+    echo "  ./dev-reset-blockchain.sh --yes                    # Reset with confirmation"
+    echo "  ./dev-reset-blockchain.sh --difficulty 1 --yes     # Reset with difficulty 1"
     exit 0
 fi
 
@@ -57,6 +64,7 @@ esac
 
 echo -e "\033[1;33m⚠️  WARNING: This will completely reset the blockchain!\033[0m"
 echo -e "\033[1;37m   Network: $NETWORK_NAME (Chain ID: $CHAIN_ID)\033[0m"
+echo -e "\033[1;37m   Starting Difficulty: $DIFFICULTY\033[0m"
 echo -e "\033[1;37m   Data Directory: qdata/\033[0m"
 echo ""
 
@@ -88,12 +96,50 @@ if [ ! -f "quantum-geth/build/bin/geth" ]; then
     fi
 fi
 
-# Create genesis file if it doesn't exist
-GENESIS_FILE="genesis_quantum_dev.json"
-if [ ! -f "$GENESIS_FILE" ]; then
-    echo -e "\033[1;31m❌ Genesis file not found: $GENESIS_FILE\033[0m"
-    exit 1
-fi
+# Create dynamic genesis file with specified difficulty
+GENESIS_FILE="genesis_quantum_dev_temp.json"
+echo -e "\033[1;33m🔧 Creating genesis file with difficulty $DIFFICULTY...\033[0m"
+
+# Convert difficulty to hex
+DIFFICULTY_HEX=$(printf "0x%X" $DIFFICULTY)
+echo -e "\033[1;37m   Converting difficulty: $DIFFICULTY -> $DIFFICULTY_HEX\033[0m"
+
+# Create genesis JSON with dynamic difficulty
+cat > "$GENESIS_FILE" << EOF
+{
+  "config": {
+    "networkId": $CHAIN_ID,
+    "chainId": $CHAIN_ID,
+    "eip2FBlock": 0,
+    "eip7FBlock": 0,
+    "eip150Block": 0,
+    "eip155Block": 0,
+    "eip160Block": 0,
+    "eip161FBlock": 0,
+    "eip170FBlock": 0,
+    "qmpow": {
+      "qbits": 16,
+      "tcount": 20,
+      "lnet": 128,
+      "epochLen": 100,
+      "testMode": false
+    }
+  },
+  "difficulty": "$DIFFICULTY_HEX",
+  "gasLimit": "0x2fefd8",
+  "alloc": {
+    "0x8b61271473f14c80f2B1381Db9CB13b2d5306200": {
+      "balance": "0x3635c9adc5dea00000"
+    },
+    "0x742d35C6C4e6d8de6f10E7FF75DD98dd25b02C3A": {
+      "balance": "0x3635c9adc5dea00000"
+    },
+    "0x1234567890123456789012345678901234567890": {
+      "balance": "0x3635c9adc5dea00000"
+    }
+  }
+}
+EOF
 
 # Initialize blockchain
 echo -e "\033[1;33m🔧 Initializing fresh blockchain...\033[0m"
@@ -101,11 +147,16 @@ echo -e "\033[1;33m🔧 Initializing fresh blockchain...\033[0m"
 
 if [ $? -eq 0 ]; then
     echo -e "\033[1;32m✅ Blockchain reset completed successfully!\033[0m"
+    
+    # Clean up temporary genesis file
+    rm -f "$GENESIS_FILE"
+    
     echo ""
     echo -e "\033[1;36m🚀 Next steps:\033[0m"
     echo -e "\033[1;37m   1. Start dev node: ./start-geth.sh devnet\033[0m"
     echo -e "\033[1;37m   2. Start mining: ./start-miner.sh cpu devnet\033[0m"
 else
     echo -e "\033[1;31m❌ Blockchain initialization failed!\033[0m"
+    rm -f "$GENESIS_FILE"  # Clean up on failure too
     exit 1
 fi 

@@ -33,15 +33,32 @@ if ($Help) {
     exit 0
 }
 
-# Build if geth doesn't exist
-if (-not (Test-Path "quantum-geth\build\bin\geth.exe")) {
-    Write-Host "🔨 Building Q Coin Geth..." -ForegroundColor Yellow
-    & .\build-linux.sh
+# Find latest geth release
+function Get-LatestGethRelease {
+    $gethReleases = Get-ChildItem "releases" -Directory | Where-Object { $_.Name -like "quantum-geth-*" } | Sort-Object Name -Descending
+    if ($gethReleases.Count -eq 0) {
+        return $null
+    }
+    return Join-Path $gethReleases[0].FullName "geth.exe"
+}
+
+# Build if latest geth release doesn't exist
+$latestGeth = Get-LatestGethRelease
+if (-not $latestGeth -or -not (Test-Path $latestGeth)) {
+    Write-Host "🔨 Building Q Coin Geth Release..." -ForegroundColor Yellow
+    & .\build-release.ps1 geth
     if ($LASTEXITCODE -ne 0) {
         Write-Host "❌ Build failed!" -ForegroundColor Red
         exit 1
     }
+    $latestGeth = Get-LatestGethRelease
+    if (-not $latestGeth) {
+        Write-Host "❌ No geth release found after build!" -ForegroundColor Red
+        exit 1
+    }
 }
+
+Write-Host "📦 Using latest geth release: $latestGeth" -ForegroundColor Green
 
 # Network configurations
 $configs = @{
@@ -84,7 +101,7 @@ if (-not (Test-Path $config.datadir)) {
 $genesisPath = Join-Path $config.datadir "geth\chaindata"
 if (-not (Test-Path $genesisPath)) {
     Write-Host "🔧 Initializing blockchain with genesis file..." -ForegroundColor Yellow
-    & "quantum-geth\build\bin\geth.exe" init $config.genesis --datadir $config.datadir
+    & $latestGeth --datadir $config.datadir init $config.genesis
     if ($LASTEXITCODE -ne 0) {
         Write-Host "❌ Genesis initialization failed!" -ForegroundColor Red
         exit 1
@@ -101,12 +118,12 @@ $gethArgs = @(
     "--http.addr", "0.0.0.0",
     "--http.port", "8545",
     "--http.corsdomain", "*",
-    "--http.api", "eth,net,web3,personal,admin,txpool",
+            "--http.api", "eth,net,web3,personal,admin,txpool,miner,qmpow",
     "--ws",
     "--ws.addr", "0.0.0.0", 
     "--ws.port", "8546",
     "--ws.origins", "*",
-    "--ws.api", "eth,net,web3,personal,admin,txpool",
+    "--ws.api", "eth,net,web3,personal,admin,txpool,miner,qmpow",
     "--authrpc.addr", "127.0.0.1",
     "--authrpc.port", "8551",
     "--authrpc.vhosts", "localhost",
@@ -118,11 +135,12 @@ $gethArgs = @(
 
 # Add mining if requested
 if ($Mining) {
-    $gethArgs += @("--mine", "--miner.threads", "1")
+    $gethArgs += @("--mine", "--miner.threads", "1", "--miner.etherbase", "0x1234567890123456789012345678901234567890")
     Write-Host "⛏️  Mining enabled with 1 thread" -ForegroundColor Yellow
 } else {
-    $gethArgs += @("--miner.threads", "-1")
-    Write-Host "🚫 Local mining disabled (external miners only)" -ForegroundColor Yellow
+    # Enable mining interface for external miners (0 threads = no CPU mining)
+    $gethArgs += @("--mine", "--miner.threads", "0", "--miner.etherbase", "0x1234567890123456789012345678901234567890")
+    Write-Host "🌐 Mining interface enabled for external miners (no CPU mining)" -ForegroundColor Green
 }
 
 Write-Host "🌐 Network: $($config.name)" -ForegroundColor White
@@ -134,4 +152,4 @@ Write-Host ""
 Write-Host "🎯 Starting Q Coin Geth node..." -ForegroundColor Green
 
 # Start geth
-& "quantum-geth\build\bin\geth.exe" @gethArgs 
+& $latestGeth @gethArgs 

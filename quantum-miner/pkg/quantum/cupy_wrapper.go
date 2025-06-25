@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"time"
@@ -19,7 +20,7 @@ type CupyGPUSimulator struct {
 // NewCupyGPUSimulator creates a new CuPy GPU simulator instance
 func NewCupyGPUSimulator() *CupyGPUSimulator {
 	simulator := &CupyGPUSimulator{
-		pythonScript: filepath.Join("pkg", "quantum", "cupy_gpu.py"),
+		pythonScript: findCupyScript(),
 		available:    false,
 	}
 
@@ -264,4 +265,26 @@ func containsHelper(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+// findCupyScript locates the CuPy GPU Python script
+func findCupyScript() string {
+	// Try different possible locations
+	possiblePaths := []string{
+		filepath.Join("quantum-miner", "pkg", "quantum", "cupy_gpu.py"),
+		filepath.Join("pkg", "quantum", "cupy_gpu.py"),
+		filepath.Join(".", "cupy_gpu.py"),
+	}
+
+	for _, path := range possiblePaths {
+		if _, err := os.Stat(path); err == nil {
+			if absPath, err := filepath.Abs(path); err == nil {
+				return absPath
+			}
+			return path
+		}
+	}
+
+	// Default fallback
+	return filepath.Join("pkg", "quantum", "cupy_gpu.py")
 }
