@@ -18,17 +18,12 @@
 package ethconfig
 
 import (
-	"os"
-	"os/user"
-	"path/filepath"
-	"runtime"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/beacon"
 	"github.com/ethereum/go-ethereum/consensus/clique"
-	"github.com/ethereum/go-ethereum/consensus/ethash"
 	"github.com/ethereum/go-ethereum/consensus/lyra2"
 	"github.com/ethereum/go-ethereum/consensus/qmpow"
 	"github.com/ethereum/go-ethereum/core/txpool/blobpool"
@@ -57,15 +52,7 @@ var FullNodeGPO = gasprice.Config{
 // Defaults contains default settings for use on the Ethereum main net.
 var Defaults = Config{
 	SyncMode: downloader.SnapSync,
-	Ethash: ethash.Config{
-		CacheDir:         "ethash",
-		CachesInMem:      2,
-		CachesOnDisk:     3,
-		CachesLockMmap:   false,
-		DatasetsInMem:    1,
-		DatasetsOnDisk:   2,
-		DatasetsLockMmap: false,
-	},
+	// Ethash removed - Q Coin uses QMPoW consensus
 	NetworkId:          0, // enable auto configuration of networkID == chainID
 	ProtocolVersions:   vars.DefaultProtocolVersions,
 	TxLookupLimit:      2350000,
@@ -89,24 +76,7 @@ var Defaults = Config{
 }
 
 func init() {
-	home := os.Getenv("HOME")
-	if home == "" {
-		if user, err := user.Current(); err == nil {
-			home = user.HomeDir
-		}
-	}
-	if runtime.GOOS == "darwin" {
-		Defaults.Ethash.DatasetDir = filepath.Join(home, "Library", "Ethash")
-	} else if runtime.GOOS == "windows" {
-		localappdata := os.Getenv("LOCALAPPDATA")
-		if localappdata != "" {
-			Defaults.Ethash.DatasetDir = filepath.Join(localappdata, "Ethash")
-		} else {
-			Defaults.Ethash.DatasetDir = filepath.Join(home, "AppData", "Local", "Ethash")
-		}
-	} else {
-		Defaults.Ethash.DatasetDir = filepath.Join(home, ".ethash")
-	}
+	// Initialization for Q Coin - no ethash dataset directories needed
 }
 
 //go:generate go run github.com/fjl/gencodec -type Config -formats toml -out gen_config.go
@@ -178,8 +148,7 @@ type Config struct {
 	// Mining options
 	Miner miner.Config
 
-	// Ethash options
-	Ethash ethash.Config
+	// Ethash removed - Q Coin uses QMPoW consensus
 
 	// Transaction pool options
 	TxPool   legacypool.Config
@@ -236,7 +205,7 @@ type Config struct {
 }
 
 // CreateConsensusEngine creates a consensus engine for the given chain configuration.
-func CreateConsensusEngine(stack *node.Node, ethashConfig *ethash.Config, cliqueConfig *ctypes.CliqueConfig, lyra2Config *lyra2.Config, qmpowConfig *ctypes.QMPoWConfig, notify []string, noverify bool, db ethdb.Database) consensus.Engine {
+func CreateConsensusEngine(stack *node.Node, cliqueConfig *ctypes.CliqueConfig, lyra2Config *lyra2.Config, qmpowConfig *ctypes.QMPoWConfig, notify []string, noverify bool, db ethdb.Database) consensus.Engine {
 	// If proof-of-authority is requested, set it up
 	var engine consensus.Engine
 	if qmpowConfig != nil {

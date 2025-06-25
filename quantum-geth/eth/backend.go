@@ -149,13 +149,7 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 			log.Error("Failed to recover state", "error", err)
 		}
 	}
-	// Transfer mining-related config to the ethash config.
-	ethashConfig := config.Ethash
-	ethashConfig.NotifyFull = config.Miner.NotifyFull
-
-	if config.Genesis != nil && config.Genesis.Config != nil {
-		ethashConfig.ECIP1099Block = config.Genesis.GetEthashECIP1099Transition()
-	}
+	// Ethash removed - Q Coin uses QMPoW consensus
 
 	cliqueConfig, err := core.LoadCliqueConfig(chainDb, config.Genesis)
 	if err != nil {
@@ -279,7 +273,7 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 		log.Info("✅ FINAL OVERRIDE: QMPoW config corrected to 32-puzzle configuration")
 	}
 
-	engine := ethconfig.CreateConsensusEngine(stack, &ethashConfig, cliqueConfig, lyra2Config, qmpowConfig, config.Miner.Notify, config.Miner.Noverify, chainDb)
+	engine := ethconfig.CreateConsensusEngine(stack, cliqueConfig, lyra2Config, qmpowConfig, config.Miner.Notify, config.Miner.Noverify, chainDb)
 
 	chainConfig, err := core.LoadChainConfig(chainDb, config.Genesis)
 	if err != nil {
