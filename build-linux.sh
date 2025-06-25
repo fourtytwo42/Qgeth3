@@ -231,19 +231,44 @@ case "$TARGET" in
         ;;
 esac
 
+# Make startup scripts executable if they exist
+if [ -f "start-linux-geth.sh" ]; then
+    chmod +x start-linux-geth.sh
+fi
+if [ -f "start-linux-miner.sh" ]; then
+    chmod +x start-linux-miner.sh
+fi
+
 echo ""
 echo "🚀 Build Complete!"
 echo ""
 echo "📦 Binaries created in root directory:"
 if [ "$TARGET" = "geth" ] || [ "$TARGET" = "both" ]; then
-    echo "  ./geth              - Quantum-Geth node"
+    echo "  ./geth                 - Quantum-Geth node"
 fi
 if [ "$TARGET" = "miner" ] || [ "$TARGET" = "both" ]; then
-    echo "  ./quantum-miner     - Quantum Miner"
-    echo "  ./quantum_solver.py - Python quantum solver helper"
+    echo "  ./quantum-miner        - Quantum Miner"
+    echo "  ./quantum_solver.py    - Python quantum solver helper"
+fi
+if [ -f "start-linux-geth.sh" ]; then
+    echo "  ./start-linux-geth.sh  - Easy testnet node startup"
+fi
+if [ -f "start-linux-miner.sh" ]; then
+    echo "  ./start-linux-miner.sh - Easy miner startup"
 fi
 echo ""
-echo "🎯 Quick Start:"
+echo "🎯 Quick Start (Easy Method):"
+if [ -f "start-linux-geth.sh" ] && ([ "$TARGET" = "geth" ] || [ "$TARGET" = "both" ]); then
+    echo "  # Start Q Coin testnet node:"
+    echo "  ./start-linux-geth.sh"
+    echo ""
+fi
+if [ -f "start-linux-miner.sh" ] && ([ "$TARGET" = "miner" ] || [ "$TARGET" = "both" ]); then
+    echo "  # Start mining (in another terminal):"
+    echo "  ./start-linux-miner.sh"
+    echo ""
+fi
+echo "🔧 Manual Method:"
 if [ "$TARGET" = "geth" ] || [ "$TARGET" = "both" ]; then
     echo "  # Initialize blockchain:"
     echo "  ./geth --datadir qdata init genesis_quantum_testnet.json"
