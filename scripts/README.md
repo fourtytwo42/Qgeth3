@@ -1,162 +1,140 @@
-# Quantum-Geth Scripts Directory
+# Quantum-Geth Scripts
 
-This directory contains Linux/macOS shell script equivalents of the Windows PowerShell scripts in the root directory.
+This directory contains shell scripts for Linux/Unix systems that provide equivalent functionality to the PowerShell scripts in the root directory.
 
 ## Available Scripts
 
-| Script | Purpose | Windows Equivalent |
-|--------|---------|-------------------|
-| `reset-blockchain.sh` | Reset blockchain with custom difficulty | `reset-blockchain.ps1` |
-| `start-mining.sh` | Start quantum mining process | `start-geth-mining.ps1` |
-| `monitor.sh` | Monitor mining progress in real-time | `monitor-mining.ps1` |
+### Core Node Management
+- **`start-geth.sh`** - Start Quantum-Geth node without mining (equivalent to `start-geth.ps1`)
+- **`start-geth-mining.sh`** - Start Quantum-Geth node with mining enabled (equivalent to `start-geth-mining.ps1`)
+- **`start-mining.sh`** - Legacy mining script (existing)
+- **`reset-blockchain.sh`** - Reset and initialize blockchain (existing)
 
-## Setup Instructions
+### Build and Release
+- **`build-release.sh`** - Build distributable release packages (equivalent to `build-release.ps1`)
 
-### First Time Setup (Linux/macOS)
+### Mining Scripts
+- **`run-cpu-miner.sh`** - Run quantum miner with CPU simulation (equivalent to `run-cpu-miner.ps1`)
+- **`run-gpu-miner.sh`** - Run quantum miner with GPU acceleration (equivalent to `run-gpu-miner.ps1`)
 
-1. **Make scripts executable:**
-   ```bash
-   chmod +x scripts/*.sh
-   ```
+### Testing
+- **`basic-test.sh`** - Basic build test for both geth and miner (equivalent to `basic_test.ps1`)
+- **`run-hardness-tests.sh`** - Comprehensive security test suite (equivalent to `run-hardness-tests.ps1`)
 
-2. **Install dependencies:**
-   ```bash
-   # Install Python dependencies
-   pip install qiskit qiskit-aer numpy
-   
-   # Compile Quantum-Geth
-   cd quantum-geth
-   make geth
-   cd ..
-   ```
+## Cross-Platform Equivalents
+
+| Windows PowerShell | Linux Shell Script | Description |
+|-------------------|-------------------|-------------|
+| `build-release.ps1` | `build-release.sh` | Build release packages |
+| `start-geth.ps1` | `start-geth.sh` | Start node (no mining) |
+| `start-geth-mining.ps1` | `start-geth-mining.sh` | Start node with mining |
+| `run-cpu-miner.ps1` | `run-cpu-miner.sh` | CPU quantum mining |
+| `run-gpu-miner.ps1` | `run-gpu-miner.sh` | GPU quantum mining |
+| `run-hardness-tests.ps1` | `run-hardness-tests.sh` | Security test suite |
+| `basic_test.ps1` | `basic-test.sh` | Basic build tests |
 
 ## Usage Examples
 
-### Reset Blockchain
+### Quick Start (Linux)
 ```bash
-# Reset with default difficulty (100)
-./scripts/reset-blockchain.sh
+# Initialize blockchain
+./scripts/reset-blockchain.sh --difficulty 1 --force
 
-# Reset with custom difficulty
-./scripts/reset-blockchain.sh --difficulty 1000
+# Start node without mining
+./scripts/start-geth.sh
 
-# Reset without confirmation prompt
-./scripts/reset-blockchain.sh --difficulty 100 --force
+# Start node with mining
+./scripts/start-geth-mining.sh --threads 1
 
-# Get help
-./scripts/reset-blockchain.sh --help
+# Run external CPU miner
+./scripts/run-cpu-miner.sh --coinbase 0x742d35C6C4e6d8de6f10E7FF75DD98dd25b02C3A
+
+# Run external GPU miner
+./scripts/run-gpu-miner.sh --coinbase 0x742d35C6C4e6d8de6f10E7FF75DD98dd25b02C3A
 ```
 
-### Start Mining
+### Build and Test (Linux)
 ```bash
-# Start mining with default settings
-./scripts/start-mining.sh
+# Build release packages
+./scripts/build-release.sh both
 
-# Start with multiple threads
-./scripts/start-mining.sh --threads 4
+# Run basic tests
+./scripts/basic-test.sh
 
-# Start with network connections enabled
-./scripts/start-mining.sh --network
-
-# Start with debug logging
-./scripts/start-mining.sh --verbosity 5
-
-# Get help
-./scripts/start-mining.sh --help
-```
-
-### Monitor Mining
-```bash
-# Monitor with default settings (3s refresh)
-./scripts/monitor.sh
-
-# Monitor with custom refresh interval
-./scripts/monitor.sh --interval 5
-
-# Monitor with more log lines
-./scripts/monitor.sh --lines 100
-
-# Get help
-./scripts/monitor.sh --help
+# Run security test suite
+./scripts/run-hardness-tests.sh --category all --verbose
 ```
 
 ## Script Features
 
-### Cross-Platform Compatibility
-- **Automatic binary detection**: Scripts automatically find `geth` binary in various locations
-- **Color output**: Rich terminal colors for better readability
-- **Error handling**: Comprehensive error checking and user feedback
-- **Parameter validation**: Input validation with helpful error messages
+### Node Scripts
+- **Auto-detection**: Automatically find and use the newest release or fall back to development builds
+- **Parameter validation**: Validate addresses, ports, and other parameters
+- **Comprehensive help**: Use `--help` with any script for detailed usage information
+- **Error handling**: Clear error messages and troubleshooting guidance
 
-### Configuration Options
-- **Data directory**: Customizable blockchain data location
-- **Network settings**: Isolated mode or peer connections
-- **Mining parameters**: Configurable thread count and difficulty
-- **Logging**: Adjustable verbosity levels
+### Mining Scripts
+- **Hardware detection**: Automatically detect CUDA availability for GPU mining
+- **Environment validation**: Check Python, qiskit-aer, and other dependencies
+- **Performance information**: Display expected mining performance
+- **Flexible configuration**: Support for custom node URLs, thread counts, and logging
 
-### Safety Features
-- **Confirmation prompts**: Prevents accidental blockchain deletion
-- **Process management**: Automatic cleanup of existing geth processes
-- **Validation**: Parameter and dependency checking
-- **Graceful shutdown**: Proper signal handling for clean exits
+### Build Scripts
+- **Multi-target builds**: Build geth, miner, or both
+- **Release packaging**: Create complete release packages with documentation
+- **Dependency checking**: Verify Go installation and build requirements
+- **Clean builds**: Optional cleanup of existing releases
+
+### Test Scripts
+- **Comprehensive coverage**: Test all security assumptions and attack vectors
+- **Categorized testing**: Run specific test categories or all tests
+- **Detailed reporting**: Success rates, timing, and failure analysis
+- **CI/CD ready**: Appropriate exit codes for automation
+
+## File Permissions
+
+On Linux/Unix systems, make sure the scripts are executable:
+```bash
+chmod +x scripts/*.sh
+```
+
+## Requirements
+
+### All Scripts
+- Go 1.19 or later
+- Bash shell
+
+### Mining Scripts
+- Python 3.8+
+- qiskit and qiskit-aer packages
+- For GPU mining: CUDA toolkit and compatible GPU
+
+### Test Scripts
+- bc (basic calculator) for floating point calculations
+- Go test framework
+
+## Quantum-Geth Features
+
+All scripts support the current Quantum-Geth configuration:
+- **128 sequential quantum puzzles** per block
+- **16 qubits × 20 T-gates** per puzzle
+- **Bitcoin-style halving** rewards (50 QGC → 25 QGC → 12.5 QGC...)
+- **ASERT-Q difficulty adjustment** targeting 12-second blocks
+- **Mahadev→CAPSS→Nova** proof stack
+- **Dilithium-2 self-attestation**
 
 ## Troubleshooting
 
 ### Common Issues
+1. **Permission denied**: Run `chmod +x scripts/*.sh` to make scripts executable
+2. **Go not found**: Install Go 1.19+ and ensure it's in your PATH
+3. **Python/qiskit issues**: Install Python 3.8+ and run `pip install qiskit qiskit-aer`
+4. **CUDA not available**: For GPU mining, install NVIDIA CUDA toolkit
 
-1. **Permission denied:**
-   ```bash
-   chmod +x scripts/*.sh
-   ```
-
-2. **Geth binary not found:**
-   ```bash
-   cd quantum-geth
-   make geth
-   ```
-
-3. **Python dependencies missing:**
-   ```bash
-   pip install qiskit qiskit-aer numpy
-   ```
-
-4. **Mining process not starting:**
-   - Check if blockchain is initialized: `./scripts/reset-blockchain.sh`
-   - Verify quantum solver exists: `ls quantum-geth/tools/solver/qiskit_solver.py`
-
-### Log Locations
-- **Blockchain data**: `qdata_quantum/`
-- **Geth logs**: `qdata_quantum/geth/geth.log`
-- **Mining output**: Terminal output or background logs
-
-## Advanced Usage
-
-### Custom Configuration
-You can modify the default values at the top of each script:
-- `DATADIR`: Change blockchain data directory
-- `NETWORKID`: Change network ID for private networks
-- `ETHERBASE`: Change mining reward address
-
-### Background Mining
+### Getting Help
+Each script supports the `--help` flag for detailed usage information:
 ```bash
-# Start mining in background
-nohup ./scripts/start-mining.sh > mining.log 2>&1 &
-
-# Monitor background mining
-tail -f mining.log
-```
-
-### Production Deployment
-For production use, consider:
-- Using systemd services for automatic startup
-- Implementing log rotation
-- Setting up monitoring and alerting
-- Configuring firewall rules for P2P networking
-
-## Support
-
-For issues with these scripts, please check:
-1. This README for common solutions
-2. The main project README.md for general setup
-3. GitHub Issues for known problems
-4. Script help output (`--help`) for usage details 
+./scripts/start-geth.sh --help
+./scripts/run-cpu-miner.sh --help
+./scripts/build-release.sh --help
+``` 
