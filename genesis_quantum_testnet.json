@@ -1,0 +1,33 @@
+{
+  "config": {
+    "networkId": 73235,
+    "chainId": 73235,
+    "eip2FBlock": 0,
+    "eip7FBlock": 0,
+    "eip150Block": 0,
+    "eip155Block": 0,
+    "eip160Block": 0,
+    "eip161FBlock": 0,
+    "eip170FBlock": 0,
+    "qmpow": {
+      "qbits": 16,
+      "tcount": 20,
+      "lnet": 128,
+      "epochLen": 100,
+      "testMode": false
+    }
+  },
+  "difficulty": "0x1",
+  "gasLimit": "0x2fefd8",
+  "alloc": {
+    "0x8b61271473f14c80f2B1381Db9CB13b2d5306200": {
+      "balance": "0x3635c9adc5dea00000"
+    },
+    "0x742d35C6C4e6d8de6f10E7FF75DD98dd25b02C3A": {
+      "balance": "0x3635c9adc5dea00000"
+    },
+    "0x1234567890123456789012345678901234567890": {
+      "balance": "0x3635c9adc5dea00000"
+    }
+  }
+} 
