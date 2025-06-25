@@ -262,15 +262,15 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 
 	// FINAL OVERRIDE: Always ensure 32-puzzle configuration regardless of source
 	if qmpowConfig != nil && (qmpowConfig.LNet != 32 || qmpowConfig.QBits != 16 || qmpowConfig.TCount != 20) {
-		log.Warn("🔄 FINAL OVERRIDE: Forcing correct 32-puzzle configuration",
+		log.Warn("🔄 FINAL OVERRIDE: Forcing correct 128-puzzle configuration",
 			"oldQBits", qmpowConfig.QBits, "newQBits", 16,
 			"oldTCount", qmpowConfig.TCount, "newTCount", 20,
-			"oldLNet", qmpowConfig.LNet, "newLNet", 32)
+			"oldLNet", qmpowConfig.LNet, "newLNet", 128)
 		qmpowConfig.QBits = 16
 		qmpowConfig.TCount = 20
-		qmpowConfig.LNet = 32
+		qmpowConfig.LNet = 128
 		qmpowConfig.TestMode = false
-		log.Info("✅ FINAL OVERRIDE: QMPoW config corrected to 32-puzzle configuration")
+		log.Info("✅ FINAL OVERRIDE: QMPoW config corrected to 128-puzzle configuration")
 	}
 
 	engine := ethconfig.CreateConsensusEngine(stack, cliqueConfig, lyra2Config, qmpowConfig, config.Miner.Notify, config.Miner.Noverify, chainDb)
