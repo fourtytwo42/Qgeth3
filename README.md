@@ -1,36 +1,65 @@
-# Qgeth3 - Quantum Blockchain Mining Platform
+# Q Coin - Quantum Blockchain Platform
 
-A complete quantum blockchain platform featuring **Quantum-Geth** (quantum-enhanced Ethereum client) and **high-performance quantum miners** with both CPU and GPU acceleration support.
+A complete quantum blockchain platform featuring **Q Coin** testnet with **Quantum-Geth** (quantum-enhanced Ethereum client) and **high-performance quantum miners** with both CPU and GPU acceleration support.
 
-**🎉 NEW: Professional Release Build System with Visual Studio 2022 Support!**
+**🎉 NEW: Q Coin Testnet with User-Friendly Interface!**
 
-## 🚀 Quick Start
+## 🚀 Quick Start - Q Coin Testnet
 
-### 1. Start Quantum-Geth Node
+### 1. Start Q Coin Testnet Node
 ```powershell
-# Start the quantum blockchain node (automatically uses newest release)
+# Start the Q Coin testnet node (works like standard geth)
 .\start-geth.ps1
+
+# Start with mining enabled
+.\start-geth.ps1 -mine -etherbase 0xYourAddress
+
+# Show all options
+.\start-geth.ps1 -help
 ```
 
-### 2. Choose Your Mining Method
+### 2. Use External Miners (Optional)
 
 **🎮 GPU Mining (Recommended - Best Performance)**
 ```powershell
 # High-performance GPU mining with Qiskit acceleration
-.\run-gpu-miner.ps1 -Coinbase 0xYourAddress
+.\dev-run-gpu-miner.ps1 -Coinbase 0xYourAddress
 
 # Show all GPU mining options
-.\run-gpu-miner.ps1 -Help
+.\dev-run-gpu-miner.ps1 -Help
 ```
 
 **💻 CPU Mining (No Dependencies)**
 ```powershell
-# CPU-only mining (no additional setup required)
-.\run-cpu-miner.ps1 -Coinbase 0xYourAddress
+# CPU-only mining (no additional setup required)  
+.\dev-run-cpu-miner.ps1 -Coinbase 0xYourAddress
 
 # Show all CPU mining options  
-.\run-cpu-miner.ps1 -Help
+.\dev-run-cpu-miner.ps1 -Help
 ```
+
+## 🌐 Q Coin Testnet Details
+
+- **Name:** Q Coin
+- **Symbol:** Q  
+- **Chain ID:** 73235
+- **Block Time:** 12 seconds
+- **Consensus:** QMPoW (Quantum Proof of Work)
+- **Default Data Directory:** 
+  - Windows: `%APPDATA%\Qcoin`
+  - Linux: `~/.qcoin`
+
+## 📁 Script Organization
+
+**User Scripts (Testnet):**
+- `start-geth.ps1` / `scripts/start-geth.sh` - User-friendly testnet node
+
+**Development Scripts:**
+- `dev-start-geth.ps1` / `scripts/dev-start-geth.sh` - Development node (uses qdata/)
+- `dev-start-geth-mining.ps1` / `scripts/dev-start-geth-mining.sh` - Development mining
+- `dev-run-gpu-miner.ps1` / `scripts/dev-run-gpu-miner.sh` - External GPU mining
+- `dev-run-cpu-miner.ps1` / `scripts/dev-run-cpu-miner.sh` - External CPU mining
+- `dev-reset-blockchain.ps1` / `scripts/dev-reset-blockchain.sh` - Reset development blockchain
 
 ## 🏗️ Release Build System
 
