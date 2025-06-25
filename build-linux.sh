@@ -10,11 +10,28 @@ echo "🔨 Building Quantum-Geth Standalone Miner for Linux..."
 echo "Version: $VERSION"
 echo ""
 
+# Check if we're in the right directory
+if [ ! -d "quantum-miner" ]; then
+    echo "❌ Error: quantum-miner directory not found!"
+    echo "Please run this script from the root of the Qgeth3 project."
+    exit 1
+fi
+
+# Change to quantum-miner directory
+cd quantum-miner
+
 # Clean previous builds if requested
 if [ "$CLEAN" = "true" ]; then
     echo "🧹 Cleaning previous builds..."
     rm -f quantum-miner
-    rm -f quantum_solver.py
+    rm -f ../quantum_solver.py
+fi
+
+# Check if go.mod exists
+if [ ! -f "go.mod" ]; then
+    echo "❌ Error: go.mod not found in quantum-miner directory!"
+    echo "The Go module file is missing."
+    exit 1
 fi
 
 # Set build environment
@@ -31,6 +48,7 @@ echo "  Target: linux/amd64"
 echo "  Output: $OUTPUT_NAME"
 echo "  Build Time: $BUILD_TIME"
 echo "  Git Commit: $GIT_COMMIT"
+echo "  Working Directory: $(pwd)"
 echo ""
 
 # Build the binary with version info
@@ -52,6 +70,9 @@ if [ $? -eq 0 ]; then
     
     # Make executable
     chmod +x "$OUTPUT_NAME"
+    
+    # Go back to root directory for creating scripts
+    cd ..
     
     # Create quantum solver Python script
     echo "🔬 Creating quantum solver script..."
@@ -165,13 +186,14 @@ EOF
     echo "🚀 Build complete! Ready to mine quantum blocks."
     echo ""
     echo "Usage examples:"
-    echo "  Solo mining:  ./$OUTPUT_NAME -coinbase 0x... -node http://localhost:8545"
-    echo "  Pool mining:  ./$OUTPUT_NAME -pool stratum+tcp://pool.example.com:4444"
-    echo "  Show config:  ./$OUTPUT_NAME -show-config"
-    echo "  Show version: ./$OUTPUT_NAME -version"
+    echo "  Solo mining:  ./quantum-miner/$OUTPUT_NAME -coinbase 0x... -node http://localhost:8545"
+    echo "  Pool mining:  ./quantum-miner/$OUTPUT_NAME -pool stratum+tcp://pool.example.com:4444"
+    echo "  Show config:  ./quantum-miner/$OUTPUT_NAME -show-config"
+    echo "  Show version: ./quantum-miner/$OUTPUT_NAME -version"
     
 else
     echo "❌ Build failed!"
+    cd ..  # Go back to root even if build failed
     exit 1
 fi
 

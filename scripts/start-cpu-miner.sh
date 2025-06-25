@@ -87,7 +87,21 @@ fi
 MINER_EXECUTABLE="$MINER_RELEASE_DIR/quantum-miner"
 if [ ! -f "$MINER_EXECUTABLE" ]; then
     echo -e "\033[31mERROR: Miner executable not found in release directory!\033[0m"
-    exit 1
+    echo -e "\033[33mFound release dir: $MINER_RELEASE_DIR\033[0m"
+    echo -e "\033[33mTrying to build release...\033[0m"
+    
+    # Try to build a release
+    if ./build-release.sh miner; then
+        MINER_RELEASE_DIR=$(find ../releases -name "quantum-miner-*" -type d 2>/dev/null | sort -r | head -n 1)
+        MINER_EXECUTABLE="$MINER_RELEASE_DIR/quantum-miner"
+        if [ ! -f "$MINER_EXECUTABLE" ]; then
+            echo -e "\033[31mERROR: Build succeeded but executable still not found!\033[0m"
+            exit 1
+        fi
+    else
+        echo -e "\033[31mERROR: Failed to build quantum-miner release!\033[0m"
+        exit 1
+    fi
 fi
 
 echo -e "\033[32mUsing miner from: $(basename "$MINER_RELEASE_DIR")\033[0m"
