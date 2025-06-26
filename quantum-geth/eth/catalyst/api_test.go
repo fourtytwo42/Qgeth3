@@ -33,7 +33,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/consensus"
 	beaconConsensus "github.com/ethereum/go-ethereum/consensus/beacon"
-	"github.com/ethereum/go-ethereum/consensus/ethash"
+	"github.com/ethereum/go-ethereum/consensus/qmpow"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -67,7 +67,7 @@ var (
 
 func generateMergeChain(n int, merged bool) (*genesisT.Genesis, []*types.Block) {
 	config := *params.AllEthashProtocolChanges
-	engine := consensus.Engine(beaconConsensus.New(ethash.NewFaker()))
+	engine := consensus.Engine(beaconConsensus.New(qmpow.NewFaker()))
 	if merged {
 		config.SetEthashTerminalTotalDifficulty(common.Big0)
 		config.SetEthashTerminalTotalDifficultyPassed(true)

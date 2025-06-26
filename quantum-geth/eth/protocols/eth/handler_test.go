@@ -25,7 +25,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/beacon"
-	"github.com/ethereum/go-ethereum/consensus/ethash"
+	"github.com/ethereum/go-ethereum/consensus/qmpow"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/txpool"
@@ -74,7 +74,8 @@ func newTestBackendWithGenerator(blocks int, shanghai bool, generator func(int, 
 		// Create a database pre-initialize with a genesis block
 		db                      = rawdb.NewMemoryDatabase()
 		config                  = params.TestChainConfig
-		engine consensus.Engine = ethash.NewFaker()
+		// QUANTUM FIX: Use QMPoW test engine for protocol handler tests  
+		engine consensus.Engine = qmpow.NewFaker()
 	)
 
 	if shanghai {

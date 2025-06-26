@@ -28,7 +28,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/consensus/ethash"
+	"github.com/ethereum/go-ethereum/consensus/qmpow"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/internal/build"
 	"github.com/ethereum/go-ethereum/params"
@@ -103,7 +103,8 @@ func TestDifficultyGen2(t *testing.T) {
 					newTest.CurrentTimestamp = newTest.ParentTimestamp + timestampOffset
 
 					// Fill the expected difficulty from the test params we've just established.
-					newTest.CurrentDifficulty = ethash.CalcDifficulty(config, newTest.CurrentTimestamp, &types.Header{
+					// QUANTUM FIX: Use quantum difficulty calculation (ASERT-Q) instead of ethash
+		newTest.CurrentDifficulty = qmpow.CalcDifficulty(config, newTest.CurrentTimestamp, &types.Header{
 						Difficulty: newTest.ParentDifficulty,
 						Time:       newTest.ParentTimestamp,
 						Number:     big.NewInt(int64(newTest.CurrentBlockNumber - 1)),

@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/consensus"
-	"github.com/ethereum/go-ethereum/consensus/ethash"
+	"github.com/ethereum/go-ethereum/consensus/qmpow"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -63,9 +63,11 @@ func newTestHandlerWithBlocksWithOpts(blocks int, mode downloader.SyncMode, gen 
 	}
 	core.MustCommitGenesis(db, triedb.NewDatabase(db, nil), gspec)
 
-	chain, _ := core.NewBlockChain(db, nil, gspec, nil, ethash.NewFaker(), vm.Config{}, nil, nil)
+	// QUANTUM FIX: Use QMPoW test engine for sync tests
+	chain, _ := core.NewBlockChain(db, nil, gspec, nil, qmpow.NewFaker(), vm.Config{}, nil, nil)
 
-	bs, _ := core.GenerateChain(params.TestChainConfig, chain.Genesis(), ethash.NewFaker(), db, blocks, gen)
+	// QUANTUM FIX: Use QMPoW test engine for block generation
+	bs, _ := core.GenerateChain(params.TestChainConfig, chain.Genesis(), qmpow.NewFaker(), db, blocks, gen)
 	if _, err := chain.InsertChain(bs); err != nil {
 		panic(err)
 	}

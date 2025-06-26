@@ -29,7 +29,7 @@ import (
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/consensus/ethash"
+	"github.com/ethereum/go-ethereum/consensus/qmpow"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/bloombits"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -211,7 +211,8 @@ func TestBlockSubscription(t *testing.T) {
 			Config:  params.TestChainConfig,
 			BaseFee: big.NewInt(vars.InitialBaseFee),
 		}
-		_, chain, _ = core.GenerateChainWithGenesis(genesis, ethash.NewFaker(), 10, func(i int, gen *core.BlockGen) {})
+		// QUANTUM FIX: Use QMPoW test engine for filter system tests
+	_, chain, _ = core.GenerateChainWithGenesis(genesis, qmpow.NewFaker(), 10, func(i int, gen *core.BlockGen) {})
 		chainEvents = []core.ChainEvent{}
 	)
 
@@ -271,7 +272,8 @@ func TestSideBlockSubscription(t *testing.T) {
 			BaseFee: big.NewInt(vars.InitialBaseFee),
 		}
 		genesis         = core.MustCommitGenesis(db, triedb.NewDatabase(db, nil), gspec)
-		chain, _        = core.GenerateChain(params.TestChainConfig, genesis, ethash.NewFaker(), db, 10, func(i int, gen *core.BlockGen) {})
+		// QUANTUM FIX: Use QMPoW test engine for chain generation
+	chain, _        = core.GenerateChain(params.TestChainConfig, genesis, qmpow.NewFaker(), db, 10, func(i int, gen *core.BlockGen) {})
 		chainSideEvents = []core.ChainSideEvent{}
 	)
 
@@ -902,7 +904,8 @@ func TestLightFilterLogs(t *testing.T) {
 		}}
 	)
 
-	_, blocks, _ := core.GenerateChainWithGenesis(genesis, ethash.NewFaker(), 4, func(i int, b *core.BlockGen) {
+	// QUANTUM FIX: Use QMPoW test engine for block generation  
+	_, blocks, _ := core.GenerateChainWithGenesis(genesis, qmpow.NewFaker(), 4, func(i int, b *core.BlockGen) {
 		if i == 0 {
 			return
 		}

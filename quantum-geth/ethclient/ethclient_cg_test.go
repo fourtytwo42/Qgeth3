@@ -10,7 +10,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/consensus/ethash"
+	"github.com/ethereum/go-ethereum/consensus/qmpow"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -174,7 +174,7 @@ func generateTestChainWithUncles() (*genesisT.Genesis, []*types.Block) {
 		}
 	}
 	gblock := core.GenesisToBlock(genesis, db)
-	engine := ethash.NewFaker()
+	engine := qmpow.NewFaker()
 	blocks, _ := core.GenerateChain(config, gblock, engine, db, 8, generate)
 	blocks = append([]*types.Block{gblock}, blocks...)
 

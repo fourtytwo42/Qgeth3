@@ -25,7 +25,7 @@ import (
 
 	"github.com/davecgh/go-spew/spew"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/consensus/ethash"
+	"github.com/ethereum/go-ethereum/consensus/qmpow"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -164,7 +164,7 @@ func testSetupGenesis(t *testing.T, scheme string) {
 				bc, _ := NewBlockChain(db, DefaultCacheConfigWithScheme(scheme), &oldcustomg, nil, ethash.NewFullFaker(), vm.Config{}, nil, nil)
 				defer bc.Stop()
 
-				_, blocks, _ := GenerateChainWithGenesis(&oldcustomg, ethash.NewFaker(), 4, nil)
+				_, blocks, _ := GenerateChainWithGenesis(&oldcustomg, qmpow.NewFaker(), 4, nil)
 				bc.InsertChain(blocks)
 
 				// This should return a compatibility error.

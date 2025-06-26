@@ -46,7 +46,7 @@ func testHeaderVerification(t *testing.T, scheme string) {
 	// Create a simple chain to verify
 	var (
 		gspec        = &genesisT.Genesis{Config: params.TestChainConfig}
-		_, blocks, _ = GenerateChainWithGenesis(gspec, ethash.NewFaker(), 8, nil)
+		_, blocks, _ = GenerateChainWithGenesis(gspec, qmpow.NewFaker(), 8, nil)
 	)
 	headers := make([]*types.Header, len(blocks))
 	for i, block := range blocks {
@@ -66,7 +66,7 @@ func testHeaderVerification(t *testing.T, scheme string) {
 	engine := qmpow.NewFaker()
 				_, results = engine.VerifyHeaders(chain, []*types.Header{headers[i]}, []bool{true})
 			} else {
-				engine := ethash.NewFakeFailer(headers[i].Number.Uint64())
+				engine := qmpow.NewFakeFailer(headers[i].Number.Uint64())
 				_, results = engine.VerifyHeaders(chain, []*types.Header{headers[i]}, []bool{true})
 			}
 			// Wait for the verification result
@@ -259,7 +259,7 @@ func testHeaderConcurrentVerification(t *testing.T, threads int) {
 	// Create a simple chain to verify
 	var (
 		gspec        = &genesisT.Genesis{Config: params.TestChainConfig}
-		_, blocks, _ = GenerateChainWithGenesis(gspec, ethash.NewFaker(), 8, nil)
+		_, blocks, _ = GenerateChainWithGenesis(gspec, qmpow.NewFaker(), 8, nil)
 	)
 	headers := make([]*types.Header, len(blocks))
 	seals := make([]bool, len(blocks))
@@ -283,7 +283,7 @@ func testHeaderConcurrentVerification(t *testing.T, threads int) {
 			_, results = chain.engine.VerifyHeaders(chain, headers, seals)
 			chain.Stop()
 		} else {
-			chain, _ := NewBlockChain(rawdb.NewMemoryDatabase(), nil, gspec, nil, ethash.NewFakeFailer(uint64(len(headers)-1)), vm.Config{}, nil, nil)
+			chain, _ := NewBlockChain(rawdb.NewMemoryDatabase(), nil, gspec, nil, qmpow.NewFakeFailer(uint64(len(headers)-1)), vm.Config{}, nil, nil)
 			_, results = chain.engine.VerifyHeaders(chain, headers, seals)
 			chain.Stop()
 		}

@@ -23,7 +23,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
-	"github.com/ethereum/go-ethereum/consensus/ethash"
+	"github.com/ethereum/go-ethereum/consensus/qmpow"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/txpool"
@@ -153,9 +153,11 @@ func newTestHandlerWithBlocks(blocks int) *testHandler {
 		Config: params.TestChainConfig,
 		Alloc:  genesisT.GenesisAlloc{testAddr: {Balance: big.NewInt(1000000)}},
 	}
-	chain, _ := core.NewBlockChain(db, nil, gspec, nil, ethash.NewFaker(), vm.Config{}, nil, nil)
+	// QUANTUM FIX: Use QMPoW test engine for Ethereum protocol handler tests
+	chain, _ := core.NewBlockChain(db, nil, gspec, nil, qmpow.NewFaker(), vm.Config{}, nil, nil)
 
-	_, bs, _ := core.GenerateChainWithGenesis(gspec, ethash.NewFaker(), blocks, nil)
+	// QUANTUM FIX: Use QMPoW test engine for block generation
+	_, bs, _ := core.GenerateChainWithGenesis(gspec, qmpow.NewFaker(), blocks, nil)
 	if _, err := chain.InsertChain(bs); err != nil {
 		panic(err)
 	}

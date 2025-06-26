@@ -25,7 +25,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/beacon"
-	"github.com/ethereum/go-ethereum/consensus/ethash"
+	"github.com/ethereum/go-ethereum/consensus/qmpow"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip1559"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -132,7 +132,7 @@ func TestStateProcessorErrors(t *testing.T) {
 					},
 				},
 			}
-			blockchain, _  = NewBlockChain(db, nil, gspec, nil, beacon.New(ethash.NewFaker()), vm.Config{}, nil, nil)
+			blockchain, _  = NewBlockChain(db, nil, gspec, nil, beacon.New(qmpow.NewFaker()), vm.Config{}, nil, nil)
 			tooBigInitCode = make([]byte, vars.MaxInitCodeSize+1)
 		)
 
@@ -259,7 +259,7 @@ func TestStateProcessorErrors(t *testing.T) {
 		} {
 			mem := rawdb.NewMemoryDatabase()
 			genesisBlock := MustCommitGenesis(mem, triedb.NewDatabase(mem, nil), gspec)
-			block := GenerateBadBlock(genesisBlock, beacon.New(ethash.NewFaker()), tt.txs, gspec.Config)
+			block := GenerateBadBlock(genesisBlock, beacon.New(qmpow.NewFaker()), tt.txs, gspec.Config)
 			_, err := blockchain.InsertChain(types.Blocks{block})
 			if err == nil {
 				t.Fatal("block imported without errors")
@@ -296,7 +296,7 @@ func TestStateProcessorErrors(t *testing.T) {
 			}
 			mem           = rawdb.NewMemoryDatabase()
 			genesis       = MustCommitGenesis(mem, triedb.NewDatabase(mem, nil), gspec)
-			blockchain, _ = NewBlockChain(db, nil, gspec, nil, ethash.NewFaker(), vm.Config{}, nil, nil)
+			blockchain, _ = NewBlockChain(db, nil, gspec, nil, qmpow.NewFaker(), vm.Config{}, nil, nil)
 		)
 		defer blockchain.Stop()
 		for i, tt := range []struct {
@@ -310,7 +310,7 @@ func TestStateProcessorErrors(t *testing.T) {
 				want: "could not apply tx 0 [0x88626ac0d53cb65308f2416103c62bb1f18b805573d4f96a3640bbbfff13c14f]: transaction type not supported",
 			},
 		} {
-			block := GenerateBadBlock(genesis, ethash.NewFaker(), tt.txs, gspec)
+			block := GenerateBadBlock(genesis, qmpow.NewFaker(), tt.txs, gspec)
 			_, err := blockchain.InsertChain(types.Blocks{block})
 			if err == nil {
 				t.Fatal("block imported without errors")
@@ -337,7 +337,7 @@ func TestStateProcessorErrors(t *testing.T) {
 			}
 			mem           = rawdb.NewMemoryDatabase()
 			genesis       = MustCommitGenesis(mem, triedb.NewDatabase(mem, nil), gspec)
-			blockchain, _ = NewBlockChain(db, nil, gspec, nil, beacon.New(ethash.NewFaker()), vm.Config{}, nil, nil)
+			blockchain, _ = NewBlockChain(db, nil, gspec, nil, beacon.New(qmpow.NewFaker()), vm.Config{}, nil, nil)
 		)
 		defer blockchain.Stop()
 		for i, tt := range []struct {
@@ -351,7 +351,7 @@ func TestStateProcessorErrors(t *testing.T) {
 				want: "could not apply tx 0 [0x88626ac0d53cb65308f2416103c62bb1f18b805573d4f96a3640bbbfff13c14f]: sender not an eoa: address 0x71562b71999873DB5b286dF957af199Ec94617F7, codehash: 0x9280914443471259d4570a8661015ae4a5b80186dbc619658fb494bebc3da3d1",
 			},
 		} {
-			block := GenerateBadBlock(genesis, beacon.New(ethash.NewFaker()), tt.txs, gspec)
+			block := GenerateBadBlock(genesis, beacon.New(qmpow.NewFaker()), tt.txs, gspec)
 			_, err := blockchain.InsertChain(types.Blocks{block})
 			if err == nil {
 				t.Fatal("block imported without errors")
@@ -395,7 +395,7 @@ func TestStateProcessorErrors(t *testing.T) {
 				},
 			}
 			genesis        = MustCommitGenesis(db, triedb.NewDatabase(db, nil), gspec)
-			blockchain, _  = NewBlockChain(db, nil, gspec, nil, beacon.New(ethash.NewFaker()), vm.Config{}, nil, nil)
+			blockchain, _  = NewBlockChain(db, nil, gspec, nil, beacon.New(qmpow.NewFaker()), vm.Config{}, nil, nil)
 			tooBigInitCode = make([]byte, vars.MaxInitCodeSize+1)
 			smallInitCode  = [320]byte{}
 		)
@@ -417,7 +417,7 @@ func TestStateProcessorErrors(t *testing.T) {
 				want: "could not apply tx 0 [0x39b7436cb432d3662a25626474282c5c4c1a213326fd87e4e18a91477bae98b2]: intrinsic gas too low: have 54299, want 54300",
 			},
 		} {
-			block := GenerateBadBlock(genesis, beacon.New(ethash.NewFaker()), tt.txs, gspec.Config)
+			block := GenerateBadBlock(genesis, beacon.New(qmpow.NewFaker()), tt.txs, gspec.Config)
 			_, err := blockchain.InsertChain(types.Blocks{block})
 			if err == nil {
 				t.Fatal("block imported without errors")

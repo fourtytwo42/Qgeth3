@@ -38,7 +38,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/beacon"
-	"github.com/ethereum/go-ethereum/consensus/ethash"
+	"github.com/ethereum/go-ethereum/consensus/qmpow"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/bloombits"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -643,7 +643,7 @@ func TestEstimateGas(t *testing.T) {
 		signer         = types.HomesteadSigner{}
 		randomAccounts = newAccounts(2)
 	)
-	api := NewBlockChainAPI(newTestBackend(t, genBlocks, genesis, beacon.New(ethash.NewFaker()), func(i int, b *core.BlockGen) {
+	api := NewBlockChainAPI(newTestBackend(t, genBlocks, genesis, beacon.New(qmpow.NewFaker()), func(i int, b *core.BlockGen) {
 		// Transfer from account[0] to account[1]
 		//    value: 1000 wei
 		//    fee:   0 wei
@@ -802,7 +802,7 @@ func TestCall(t *testing.T) {
 		genBlocks = 10
 		signer    = types.HomesteadSigner{}
 	)
-	api := NewBlockChainAPI(newTestBackend(t, genBlocks, genesis, beacon.New(ethash.NewFaker()), func(i int, b *core.BlockGen) {
+	api := NewBlockChainAPI(newTestBackend(t, genBlocks, genesis, beacon.New(qmpow.NewFaker()), func(i int, b *core.BlockGen) {
 		// Transfer from account[0] to account[1]
 		//    value: 1000 wei
 		//    fee:   0 wei
@@ -995,7 +995,7 @@ func TestSignTransaction(t *testing.T) {
 			Alloc:  genesisT.GenesisAlloc{},
 		}
 	)
-	b := newTestBackend(t, 1, genesis, beacon.New(ethash.NewFaker()), func(i int, b *core.BlockGen) {
+	b := newTestBackend(t, 1, genesis, beacon.New(qmpow.NewFaker()), func(i int, b *core.BlockGen) {
 		b.SetPoS()
 	})
 	api := NewTransactionAPI(b, nil)
@@ -1033,7 +1033,7 @@ func TestSignBlobTransaction(t *testing.T) {
 			Alloc:  genesisT.GenesisAlloc{},
 		}
 	)
-	b := newTestBackend(t, 1, genesis, beacon.New(ethash.NewFaker()), func(i int, b *core.BlockGen) {
+	b := newTestBackend(t, 1, genesis, beacon.New(qmpow.NewFaker()), func(i int, b *core.BlockGen) {
 		b.SetPoS()
 	})
 	api := NewTransactionAPI(b, nil)
@@ -1067,7 +1067,7 @@ func TestSendBlobTransaction(t *testing.T) {
 			Alloc:  genesisT.GenesisAlloc{},
 		}
 	)
-	b := newTestBackend(t, 1, genesis, beacon.New(ethash.NewFaker()), func(i int, b *core.BlockGen) {
+	b := newTestBackend(t, 1, genesis, beacon.New(qmpow.NewFaker()), func(i int, b *core.BlockGen) {
 		b.SetPoS()
 	})
 	api := NewTransactionAPI(b, nil)
@@ -1104,7 +1104,7 @@ func TestFillBlobTransaction(t *testing.T) {
 		emptyBlobProof, _              = kzg4844.ComputeBlobProof(emptyBlob, emptyBlobCommit)
 		emptyBlobHash      common.Hash = kzg4844.CalcBlobHashV1(sha256.New(), &emptyBlobCommit)
 	)
-	b := newTestBackend(t, 1, genesis, beacon.New(ethash.NewFaker()), func(i int, b *core.BlockGen) {
+	b := newTestBackend(t, 1, genesis, beacon.New(qmpow.NewFaker()), func(i int, b *core.BlockGen) {
 		b.SetPoS()
 	})
 	api := NewTransactionAPI(b, nil)
@@ -1572,7 +1572,7 @@ func TestRPCGetBlockOrHeader(t *testing.T) {
 		}
 		pending = types.NewBlockWithWithdrawals(&types.Header{Number: big.NewInt(11), Time: 42}, []*types.Transaction{tx}, nil, nil, []*types.Withdrawal{withdrawal}, blocktest.NewHasher())
 	)
-	backend := newTestBackend(t, genBlocks, genesis, ethash.NewFaker(), func(i int, b *core.BlockGen) {
+	backend := newTestBackend(t, genBlocks, genesis, qmpow.NewFaker(), func(i int, b *core.BlockGen) {
 		// Transfer from account[0] to account[1]
 		//    value: 1000 wei
 		//    fee:   0 wei
@@ -1827,7 +1827,7 @@ func setupReceiptBackend(t *testing.T, genBlocks int) (*testBackend, []common.Ha
 	// Set the terminal total difficulty in the config
 	genesis.Config.(*goethereum.ChainConfig).TerminalTotalDifficulty = big.NewInt(0)
 	genesis.Config.(*goethereum.ChainConfig).TerminalTotalDifficultyPassed = true
-	backend := newTestBackend(t, genBlocks, genesis, beacon.New(ethash.NewFaker()), func(i int, b *core.BlockGen) {
+	backend := newTestBackend(t, genBlocks, genesis, beacon.New(qmpow.NewFaker()), func(i int, b *core.BlockGen) {
 		var (
 			tx  *types.Transaction
 			err error
