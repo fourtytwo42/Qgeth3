@@ -58,10 +58,17 @@ build_geth() {
         exit 1
     fi
     
+    # CRITICAL: Always use CGO_ENABLED=0 for geth to ensure compatibility
+    # This ensures Linux and Windows builds have identical quantum field handling
+    local ORIGINAL_CGO=$CGO_ENABLED
+    export CGO_ENABLED=0
+    
+    echo "🛡️  Enforcing CGO_ENABLED=0 for geth build (quantum field compatibility)"
+    
     cd quantum-geth/cmd/geth
-    if go build -ldflags "-s -w -X 'main.VERSION=$VERSION' -X 'main.BUILD_TIME=$BUILD_TIME' -X 'main.GIT_COMMIT=$GIT_COMMIT'" -o ../../../geth.bin .; then
+    if CGO_ENABLED=0 go build -ldflags "-s -w -X 'main.VERSION=$VERSION' -X 'main.BUILD_TIME=$BUILD_TIME' -X 'main.GIT_COMMIT=$GIT_COMMIT'" -o ../../../geth.bin .; then
         cd ../../..
-        echo "✅ Quantum-Geth built successfully: ./geth.bin"
+        echo "✅ Quantum-Geth built successfully: ./geth.bin (CGO_ENABLED=0)"
         
         # Create Q Coin geth wrapper that prevents Ethereum connections
         create_geth_wrapper
@@ -72,6 +79,9 @@ build_geth() {
         echo "❌ Error: Failed to build quantum-geth"
         exit 1
     fi
+    
+    # Restore original CGO setting for any subsequent builds
+    export CGO_ENABLED=$ORIGINAL_CGO
 }
 
 # Function to build quantum-miner
