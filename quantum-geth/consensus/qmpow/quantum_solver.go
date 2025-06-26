@@ -194,8 +194,25 @@ func (q *QMPoW) SolveQuantumPuzzles(header *types.Header) error {
 	outcomeRoot := CalculateOutcomeRootFromBytes(outcomesBytes, int(*header.LNet), int(*header.QBits))
 	header.OutcomeRoot = &outcomeRoot
 
-	if len(branchNibblesBytes) >= BranchNibblesSize {
+	// Handle branch nibbles - Python solver returns one nibble per puzzle (lnet nibbles)
+	// but Go expects BranchNibblesSize (64) bytes. We need to pad if necessary.
+	if len(branchNibblesBytes) > BranchNibblesSize {
+		// Truncate if too long
 		copy(header.BranchNibbles, branchNibblesBytes[:BranchNibblesSize])
+		log.Debug("🔬 Truncated branch nibbles", "got", len(branchNibblesBytes), "used", BranchNibblesSize)
+	} else {
+		// Copy what we have and pad with zeros if necessary
+		copy(header.BranchNibbles, branchNibblesBytes)
+		if len(branchNibblesBytes) < BranchNibblesSize {
+			// Clear remaining bytes (they were already initialized to zero in Prepare)
+			for i := len(branchNibblesBytes); i < BranchNibblesSize; i++ {
+				header.BranchNibbles[i] = 0
+			}
+			log.Debug("🔬 Padded branch nibbles with zeros", 
+				"got", len(branchNibblesBytes), 
+				"expected", BranchNibblesSize,
+				"padded", BranchNibblesSize-len(branchNibblesBytes))
+		}
 	}
 
 	gateHash := common.BytesToHash(gateHashBytes)

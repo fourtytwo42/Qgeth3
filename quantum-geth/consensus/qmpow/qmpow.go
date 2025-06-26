@@ -29,18 +29,18 @@ import (
 // Quantum-Geth Constants
 const (
 	// Halving epoch parameters (Section 11)
-	EpochBlocks   = HalvingEpochLength // Epoch = ⌊Height / 600,000⌋
-	StartingQBits = 16                 // Start n = 16 at epoch 0 (simplified security)
+	EpochBlocks   = 100 // Epoch length in blocks
+	StartingQBits = 16  // Start n = 16 at epoch 0 (simplified security)
 
 	// Dynamic circuit parameters (follow glide schedule from params.go)
 	// These are now calculated dynamically based on height
 
 	// Proof system sizes
 	OutcomeRootSize   = 32  // Merkle root of outcomes
-	BranchNibblesSize = 128 // One full byte per puzzle for maximum entropy
+	BranchNibblesSize = 64  // One nibble per puzzle (128 puzzles = 128 nibbles = 64 bytes)
 	GateHashSize      = 32  // SHA-256 of gate streams
 	ProofRootSize     = 32  // Merkle root of Nova proofs
-	ExtraNonce32Size  = 32  // Entropy field size
+	ExtraNonce32Size  = 32  // 32-byte entropy field
 
 	// Attestation modes
 	AttestModeDilithium = 0x00 // Deterministic Dilithium attestation
