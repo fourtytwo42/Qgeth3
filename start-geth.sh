@@ -97,7 +97,7 @@ case $NETWORK in
         ;;
 esac
 
-BOOTNODES="enode://89df9647d6f5b901c63e8a7ad977900b5ce2386b916ed6d204d24069435740c7e2c188c9d3493bfc98c056d9d87c6213df057e9518fb43f12759ba55dff31b4c@69.243.132.233:4294"
+BOOTNODES="enode://89df9647d6f5b901c63e8a7ad977900b5ce2386b916ed6d204d24069435740c7e2c188c9d3493bfc98c056d9d87c6213df057e9518fb43f12759ba55dff31b4c@143.110.231.183:30303"
 
 echo -e "\033[1;36m🚀 Starting $NAME (Chain ID: $CHAINID)\033[0m"
 
@@ -137,16 +137,17 @@ GETH_ARGS=(
     "--datadir" "$DATADIR"
     "--networkid" "$CHAINID"
     "--port" "$PORT"
+    "--nat" "extip:143.110.231.183"
     "--http"
     "--http.addr" "0.0.0.0"
     "--http.port" "8545"
     "--http.corsdomain" "*"
-    "--http.api" "eth,net,web3,personal,admin,txpool,miner"
+    "--http.api" "eth,net,web3,personal,admin,txpool,miner,qmpow"
     "--ws"
     "--ws.addr" "0.0.0.0"
     "--ws.port" "8546"
     "--ws.origins" "*"
-    "--ws.api" "eth,net,web3,personal,admin,txpool,miner"
+    "--ws.api" "eth,net,web3,personal,admin,txpool,miner,qmpow"
     "--authrpc.addr" "127.0.0.1"
     "--authrpc.port" "8551"
     "--authrpc.vhosts" "localhost"
@@ -156,14 +157,14 @@ GETH_ARGS=(
     "--verbosity" "3"
 )
 
-# Add mining configuration
+# Add mining if requested
 if [ "$MINING" = true ]; then
     GETH_ARGS+=("--mine" "--miner.threads" "1" "--miner.etherbase" "0x1234567890123456789012345678901234567890")
     echo -e "\033[1;33m⛏️  Mining enabled with 1 thread\033[0m"
 else
-    # Enable mining interface for external miners but don't mine locally
+    # Enable mining interface for external miners (0 threads = no CPU mining)
     GETH_ARGS+=("--mine" "--miner.threads" "0" "--miner.etherbase" "0x1234567890123456789012345678901234567890")
-    echo -e "\033[1;33m🔌 Mining interface enabled for external miners\033[0m"
+    echo -e "\033[1;33m🌐 Mining interface enabled for external miners (no CPU mining)\033[0m"
 fi
 
 # Create JWT file if it doesn't exist
