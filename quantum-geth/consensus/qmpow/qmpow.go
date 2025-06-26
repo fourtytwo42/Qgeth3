@@ -158,6 +158,9 @@ type QMPoW struct {
 	// Remote mining support
 	remote *remoteSealer
 
+	// Testing support
+	fakeFailure uint64 // Block number to fail at (for testing)
+
 	lock sync.RWMutex
 }
 

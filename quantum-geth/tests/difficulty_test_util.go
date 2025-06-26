@@ -22,7 +22,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
-	"github.com/ethereum/go-ethereum/consensus/ethash"
+	"github.com/ethereum/go-ethereum/consensus/qmpow"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params/types/coregeth"
 	"github.com/ethereum/go-ethereum/params/types/ctypes"
@@ -64,7 +64,9 @@ func (test *DifficultyTest) Run(config ctypes.ChainConfigurator) error {
 		UncleHash:  uncleHash,
 	}
 
-	actual := ethash.CalcDifficulty(config, test.CurrentTimestamp, parent)
+	// QUANTUM FIX: Use quantum difficulty calculation instead of ethash
+	// Import quantum consensus for proper ASERT-Q difficulty calculation
+	actual := qmpow.CalcDifficulty(config, test.CurrentTimestamp, parent)
 	exp := test.CurrentDifficulty
 
 	if actual.Cmp(exp) != 0 {

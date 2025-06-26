@@ -26,7 +26,7 @@ import (
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/beacon"
 	"github.com/ethereum/go-ethereum/consensus/clique"
-	"github.com/ethereum/go-ethereum/consensus/ethash"
+	"github.com/ethereum/go-ethereum/consensus/qmpow"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -53,7 +53,8 @@ func testHeaderVerification(t *testing.T, scheme string) {
 		headers[i] = block.Header()
 	}
 	// Run the header checker for blocks one-by-one, checking for both valid and invalid nonces
-	chain, _ := NewBlockChain(rawdb.NewMemoryDatabase(), DefaultCacheConfigWithScheme(scheme), gspec, nil, ethash.NewFaker(), vm.Config{}, nil, nil)
+	// QUANTUM FIX: Use QMPoW test engine for block validation tests
+	chain, _ := NewBlockChain(rawdb.NewMemoryDatabase(), DefaultCacheConfigWithScheme(scheme), gspec, nil, qmpow.NewFaker(), vm.Config{}, nil, nil)
 	defer chain.Stop()
 
 	for i := 0; i < len(blocks); i++ {
@@ -61,7 +62,8 @@ func testHeaderVerification(t *testing.T, scheme string) {
 			var results <-chan error
 
 			if valid {
-				engine := ethash.NewFaker()
+				// QUANTUM FIX: Use QMPoW test engine for block validation tests
+	engine := qmpow.NewFaker()
 				_, results = engine.VerifyHeaders(chain, []*types.Header{headers[i]}, []bool{true})
 			} else {
 				engine := ethash.NewFakeFailer(headers[i].Number.Uint64())
@@ -140,7 +142,8 @@ func testHeaderVerificationForMerging(t *testing.T, isClique bool) {
 	} else {
 		config := *params.TestChainConfig
 		gspec = &genesisT.Genesis{Config: &config}
-		engine = beacon.New(ethash.NewFaker())
+		// QUANTUM FIX: Use QMPoW test engine with beacon wrapper
+		engine = beacon.New(qmpow.NewFaker())
 		td := int(vars.GenesisDifficulty.Uint64())
 		genDb, blocks, _ := GenerateChainWithGenesis(gspec, engine, 8, nil)
 		for _, block := range blocks {
@@ -275,7 +278,8 @@ func testHeaderConcurrentVerification(t *testing.T, threads int) {
 		var results <-chan error
 
 		if valid {
-			chain, _ := NewBlockChain(rawdb.NewMemoryDatabase(), nil, gspec, nil, ethash.NewFaker(), vm.Config{}, nil, nil)
+			// QUANTUM FIX: Use QMPoW test engine for block validation tests
+	chain, _ := NewBlockChain(rawdb.NewMemoryDatabase(), nil, gspec, nil, qmpow.NewFaker(), vm.Config{}, nil, nil)
 			_, results = chain.engine.VerifyHeaders(chain, headers, seals)
 			chain.Stop()
 		} else {
@@ -326,7 +330,8 @@ func testHeaderConcurrentAbortion(t *testing.T, threads int) {
 	// Create a simple chain to verify
 	var (
 		gspec        = &genesisT.Genesis{Config: params.TestChainConfig}
-		_, blocks, _ = GenerateChainWithGenesis(gspec, ethash.NewFaker(), 1024, nil)
+		// QUANTUM FIX: Use QMPoW test engine for block validation tests
+	_, blocks, _ = GenerateChainWithGenesis(gspec, qmpow.NewFaker(), 1024, nil)
 	)
 	headers := make([]*types.Header, len(blocks))
 	seals := make([]bool, len(blocks))

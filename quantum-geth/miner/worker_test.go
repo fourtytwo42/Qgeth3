@@ -27,7 +27,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/clique"
-	"github.com/ethereum/go-ethereum/consensus/ethash"
+	"github.com/ethereum/go-ethereum/consensus/qmpow"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/txpool"
@@ -235,7 +235,8 @@ func testGenerateBlockAndImport(t *testing.T, isClique bool) {
 		}, db)
 	} else {
 		chainConfig = params.AllEthashProtocolChanges
-		engine = ethash.NewFaker()
+		// QUANTUM FIX: Use QMPoW test engine for quantum mining tests
+		engine = qmpow.NewFaker()
 	}
 	w, b := newTestWorker(t, chainConfig, engine, db, 0)
 	defer w.close()
@@ -276,7 +277,8 @@ func testGenerateBlockAndImport(t *testing.T, isClique bool) {
 
 func TestEmptyWorkEthash(t *testing.T) {
 	t.Parallel()
-	testEmptyWork(t, ethashChainConfig, ethash.NewFaker())
+	// QUANTUM FIX: Use QMPoW test engine for quantum mining tests
+	testEmptyWork(t, ethashChainConfig, qmpow.NewFaker())
 }
 func TestEmptyWorkClique(t *testing.T) {
 	t.Parallel()
@@ -332,10 +334,11 @@ func testEmptyWork(t *testing.T, chainConfig ctypes.ChainConfigurator, engine co
 }
 
 func TestStreamUncleBlock(t *testing.T) {
-	ethash := ethash.NewFaker()
-	defer ethash.Close()
+	// QUANTUM FIX: Use QMPoW test engine for quantum mining tests
+	qmpowEngine := qmpow.NewFaker()
+	defer qmpowEngine.Close()
 
-	w, b := newTestWorker(t, ethashChainConfig, ethash, rawdb.NewMemoryDatabase(), 1)
+	w, b := newTestWorker(t, ethashChainConfig, qmpowEngine, rawdb.NewMemoryDatabase(), 1)
 	defer w.close()
 
 	var taskCh = make(chan struct{}, 3)
@@ -383,7 +386,8 @@ func TestStreamUncleBlock(t *testing.T) {
 }
 
 func TestRegenerateMiningBlockEthash(t *testing.T) {
-	testRegenerateMiningBlock(t, ethashChainConfig, ethash.NewFaker())
+	// QUANTUM FIX: Use QMPoW test engine for quantum mining tests
+	testRegenerateMiningBlock(t, ethashChainConfig, qmpow.NewFaker())
 }
 
 func TestRegenerateMiningBlockClique(t *testing.T) {
@@ -447,7 +451,8 @@ func testRegenerateMiningBlock(t *testing.T, chainConfig ctypes.ChainConfigurato
 
 func TestAdjustIntervalEthash(t *testing.T) {
 	t.Parallel()
-	testAdjustInterval(t, ethashChainConfig, ethash.NewFaker())
+	// QUANTUM FIX: Use QMPoW test engine for quantum mining tests
+	testAdjustInterval(t, ethashChainConfig, qmpow.NewFaker())
 }
 
 func TestAdjustIntervalClique(t *testing.T) {
@@ -546,7 +551,8 @@ func testAdjustInterval(t *testing.T, chainConfig ctypes.ChainConfigurator, engi
 
 func TestGetSealingWorkEthash(t *testing.T) {
 	t.Parallel()
-	testGetSealingWork(t, ethashChainConfig, ethash.NewFaker())
+	// QUANTUM FIX: Use QMPoW test engine for quantum mining tests
+	testGetSealingWork(t, ethashChainConfig, qmpow.NewFaker())
 }
 
 func TestGetSealingWorkClique(t *testing.T) {
@@ -561,7 +567,8 @@ func TestGetSealingWorkPostMerge(t *testing.T) {
 	t.Parallel()
 	local := (ctypes.ChainConfigurator)(new(goethereum.ChainConfig))
 	local.SetEthashTerminalTotalDifficulty(big.NewInt(0))
-	testGetSealingWork(t, local, ethash.NewFaker())
+	// QUANTUM FIX: Use QMPoW test engine for quantum mining tests
+	testGetSealingWork(t, local, qmpow.NewFaker())
 }
 
 func testGetSealingWork(t *testing.T, chainConfig ctypes.ChainConfigurator, engine consensus.Engine) {

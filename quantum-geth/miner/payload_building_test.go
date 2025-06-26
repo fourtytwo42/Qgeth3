@@ -23,7 +23,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/beacon/engine"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/consensus/ethash"
+	"github.com/ethereum/go-ethereum/consensus/qmpow"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
@@ -35,7 +35,8 @@ func TestBuildPayload(t *testing.T) {
 		db        = rawdb.NewMemoryDatabase()
 		recipient = common.HexToAddress("0xdeadbeef")
 	)
-	w, b := newTestWorker(t, params.TestChainConfig, ethash.NewFaker(), db, 0)
+	// QUANTUM FIX: Use QMPoW test engine for quantum mining tests
+	w, b := newTestWorker(t, params.TestChainConfig, qmpow.NewFaker(), db, 0)
 	defer w.close()
 
 	timestamp := uint64(time.Now().Unix())

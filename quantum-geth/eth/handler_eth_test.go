@@ -25,7 +25,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
-	"github.com/ethereum/go-ethereum/consensus/ethash"
+	"github.com/ethereum/go-ethereum/consensus/qmpow"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/forkid"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -87,7 +87,8 @@ func testForkIDSplit(t *testing.T, protocol uint) {
 	t.Parallel()
 
 	var (
-		engine = ethash.NewFaker()
+		// QUANTUM FIX: Use QMPoW test engine for quantum networking tests
+		engine = qmpow.NewFaker()
 
 		configNoFork  = &goethereum.ChainConfig{HomesteadBlock: big.NewInt(1)}
 		configProFork = &goethereum.ChainConfig{
