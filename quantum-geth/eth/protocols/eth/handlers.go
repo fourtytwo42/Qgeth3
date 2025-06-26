@@ -82,6 +82,11 @@ func serviceNonContiguousBlockHeaderQuery(chain *core.BlockChain, query *GetBloc
 		if origin == nil {
 			break
 		}
+		
+		// CRITICAL FIX: Marshal quantum fields into QBlob before RLP encoding
+		// This ensures quantum fields are properly transmitted to peers
+		origin.MarshalQuantumBlob()
+		
 		if rlpData, err := rlp.EncodeToBytes(origin); err != nil {
 			log.Crit("Unable to encode our own headers", "err", err)
 		} else {
@@ -166,6 +171,10 @@ func serviceContiguousBlockHeaderQuery(chain *core.BlockChain, query *GetBlockHe
 		header  = chain.GetHeaderByHash(hash)
 	)
 	if header != nil {
+		// CRITICAL FIX: Marshal quantum fields into QBlob before RLP encoding
+		// This ensures quantum fields are properly transmitted to peers
+		header.MarshalQuantumBlob()
+		
 		rlpData, _ := rlp.EncodeToBytes(header)
 		headers = append(headers, rlpData)
 	} else {
@@ -194,6 +203,11 @@ func serviceContiguousBlockHeaderQuery(chain *core.BlockChain, query *GetBlockHe
 			if header == nil {
 				break
 			}
+			
+			// CRITICAL FIX: Marshal quantum fields into QBlob before RLP encoding
+			// This ensures quantum fields are properly transmitted to peers
+			header.MarshalQuantumBlob()
+			
 			rlpData, _ := rlp.EncodeToBytes(header)
 			headers = append(headers, rlpData)
 		}
