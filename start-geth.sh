@@ -7,6 +7,7 @@
 NETWORK="testnet"
 MINING=false
 HELP=false
+EXTRA_ARGS=()
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -22,6 +23,16 @@ while [[ $# -gt 0 ]]; do
         --help|-h)
             HELP=true
             shift
+            ;;
+        --*)
+            # Collect all other -- arguments as extra args for geth
+            EXTRA_ARGS+=("$1")
+            shift
+            # If this argument has a value, collect it too
+            if [[ $# -gt 0 && ! "$1" =~ ^-- ]]; then
+                EXTRA_ARGS+=("$1")
+                shift
+            fi
             ;;
         *)
             echo "Unknown option: $1"
@@ -178,6 +189,12 @@ else
     # Enable mining interface for external miners (0 threads = no CPU mining)
     GETH_ARGS+=("--mine" "--miner.threads" "0" "--miner.etherbase" "0x1234567890123456789012345678901234567890")
     echo -e "\033[1;33m🌐 Mining interface enabled for external miners (no CPU mining)\033[0m"
+fi
+
+# Add any extra arguments passed to the script
+if [ ${#EXTRA_ARGS[@]} -gt 0 ]; then
+    GETH_ARGS+=("${EXTRA_ARGS[@]}")
+    echo -e "\033[1;36m🔧 Extra arguments: ${EXTRA_ARGS[*]}\033[0m"
 fi
 
 # Create JWT file if it doesn't exist
