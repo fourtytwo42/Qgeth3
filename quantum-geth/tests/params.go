@@ -179,25 +179,31 @@ func init() {
 		log.Println("converting Istanbul config to Clique consensus engine")
 
 		for _, c := range Forks {
-			if c.GetConsensusEngineType().IsEthash() {
-				err := c.MustSetConsensusEngineType(ctypes.ConsensusEngineT_Clique)
-				if err != nil {
-					log.Fatal(err)
-				}
-				err = c.SetCliqueEpoch(30000)
-				if err != nil {
-					log.Fatal(err)
-				}
-				err = c.SetCliquePeriod(15)
-				if err != nil {
-					log.Fatal(err)
-				}
-			} else if c.GetConsensusEngineType().IsClique() {
-				err := c.MustSetConsensusEngineType(ctypes.ConsensusEngineT_Ethash)
-				if err != nil {
-					log.Fatal(err)
-				}
+					// QUANTUM FIX: For quantum blockchain, convert configs to use QMPoW consensus
+		if c.GetConsensusEngineType().IsEthash() {
+			err := c.MustSetConsensusEngineType(ctypes.ConsensusEngineT_QMPoW)
+			if err != nil {
+				log.Fatal(err)
 			}
+			// Set quantum parameters: 128 puzzles, 16 qubits, 20 T-gates
+			qmpowConfig := &ctypes.QMPoWConfig{
+				QBits:    16,
+				TCount:   20, 
+				LNet:     128,
+				EpochLen: 100,
+				TestMode: true,
+			}
+			err = c.SetQMPoWConfig(qmpowConfig)
+			if err != nil {
+				log.Fatal(err)
+			}
+		} else if c.GetConsensusEngineType().IsClique() {
+			// Convert Clique to QMPoW for quantum blockchain
+			err := c.MustSetConsensusEngineType(ctypes.ConsensusEngineT_QMPoW)
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
 		}
 	}
 }

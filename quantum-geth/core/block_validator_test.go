@@ -345,7 +345,8 @@ func testHeaderConcurrentAbortion(t *testing.T, threads int) {
 	defer runtime.GOMAXPROCS(old)
 
 	// Start the verifications and immediately abort
-	chain, _ := NewBlockChain(rawdb.NewMemoryDatabase(), nil, gspec, nil, ethash.NewFakeDelayer(time.Millisecond), vm.Config{}, nil, nil)
+	// QUANTUM FIX: Use QMPoW test engine with delay instead of ethash
+	chain, _ := NewBlockChain(rawdb.NewMemoryDatabase(), nil, gspec, nil, qmpow.NewFakeDelayer(time.Millisecond), vm.Config{}, nil, nil)
 	defer chain.Stop()
 
 	abort, results := chain.engine.VerifyHeaders(chain, headers, seals)
