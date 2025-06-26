@@ -333,6 +333,21 @@ func handleBlockHeaders(backend Backend, msg Decoder, peer *Peer) error {
 	if err := msg.Decode(res); err != nil {
 		return fmt.Errorf("%w: message %v: %v", errDecode, msg, err)
 	}
+	
+	// CRITICAL FIX: Unmarshal quantum blobs for all received headers
+	// This ensures quantum fields are properly populated from peer data
+	for _, header := range res.BlockHeadersRequest {
+		if err := header.UnmarshalQuantumBlob(); err != nil {
+			log.Warn("Failed to unmarshal quantum blob from peer header", 
+				"hash", header.Hash().Hex()[:8], 
+				"number", header.Number.Uint64(), 
+				"peer", peer.ID(), 
+				"err", err)
+			// Don't reject the entire batch for one bad header,
+			// let the consensus engine handle validation
+		}
+	}
+	
 	metadata := func() interface{} {
 		hashes := make([]common.Hash, len(res.BlockHeadersRequest))
 		for i, header := range res.BlockHeadersRequest {
