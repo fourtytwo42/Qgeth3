@@ -1435,6 +1435,13 @@ func (s *remoteSealer) submitQuantumWork(qnonce uint64, blockHash common.Hash, q
 // - Oversized blocks that could cause DoS attacks
 // - Data corruption during network transmission
 func (s *remoteSealer) validateHeaderRLPIntegrity(header *types.Header) error {
+	// Debug log header state before validation
+	log.Debug("🔬 DEBUG: Header before RLP validation", 
+		"withdrawalsHash", header.WithdrawalsHash,
+		"withdrawalsHashIsNil", header.WithdrawalsHash == nil,
+		"baseFee", header.BaseFee,
+		"blobGasUsed", header.BlobGasUsed)
+
 	// Marshal quantum fields into QBlob before encoding
 	header.MarshalQuantumBlob()
 
@@ -1443,6 +1450,15 @@ func (s *remoteSealer) validateHeaderRLPIntegrity(header *types.Header) error {
 	if err != nil {
 		return fmt.Errorf("header RLP encoding failed: %v", err)
 	}
+
+	// Log encoded data (first 100 bytes)
+	encodedPreview := encoded
+	if len(encoded) > 100 {
+		encodedPreview = encoded[:100]
+	}
+	log.Debug("🔬 DEBUG: Header RLP encoded successfully", 
+		"encodedSize", len(encoded),
+		"encodedHex", fmt.Sprintf("%x", encodedPreview))
 
 	// Validate encoded size (quantum headers should be ~580+ bytes)
 	if len(encoded) < 500 {
@@ -1456,6 +1472,15 @@ func (s *remoteSealer) validateHeaderRLPIntegrity(header *types.Header) error {
 	// Test RLP decoding roundtrip
 	var decodedHeader types.Header
 	if err := rlp.DecodeBytes(encoded, &decodedHeader); err != nil {
+		// Log encoded data (first 50 bytes) for debugging
+		encodedPrefix := encoded
+		if len(encoded) > 50 {
+			encodedPrefix = encoded[:50]
+		}
+		log.Debug("🔬 DEBUG: RLP decoding failed", 
+			"error", err,
+			"encodedSize", len(encoded),
+			"encodedPrefix", fmt.Sprintf("%x", encodedPrefix))
 		return fmt.Errorf("header RLP decoding failed: %v", err)
 	}
 
