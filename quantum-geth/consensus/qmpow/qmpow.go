@@ -499,6 +499,17 @@ func (q *QMPoW) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *t
 	// Finalize the header
 	q.Finalize(chain, header, state, txs, uncles, withdrawals)
 
+	// CRITICAL FIX: Ensure withdrawals slice matches WithdrawalsHash expectations
+	// If WithdrawalsHash is set (non-nil), we MUST provide a withdrawals slice
+	// The block validator requires this consistency
+	if header.WithdrawalsHash != nil {
+		// If WithdrawalsHash is set but withdrawals is nil, create empty slice
+		if withdrawals == nil {
+			withdrawals = make([]*types.Withdrawal, 0)
+			log.Debug("🔧 Created empty withdrawals slice to match non-nil WithdrawalsHash")
+		}
+	}
+
 	// Assemble and return the final block
 	return types.NewBlockWithWithdrawals(header, txs, uncles, receipts, withdrawals, nil), nil
 }
@@ -638,10 +649,10 @@ func (q *QMPoW) initializeOptionalFields(header *types.Header) {
 		header.BaseFee = big.NewInt(0)
 	}
 	
-	// Initialize WithdrawalsHash to empty hash (not nil) for RLP consistency
+	// Initialize WithdrawalsHash to proper empty withdrawals hash for RLP consistency
+	// This must match what NewBlockWithWithdrawals expects for empty withdrawals
 	if header.WithdrawalsHash == nil {
-		emptyHash := common.Hash{}
-		header.WithdrawalsHash = &emptyHash
+		header.WithdrawalsHash = &types.EmptyWithdrawalsHash
 	}
 	
 	if header.BlobGasUsed == nil {
