@@ -505,14 +505,14 @@ Qgeth3/
 
 **✅ Real Quantum Circuits:**
 - 16-qubit quantum circuits per puzzle
-- 8192 T-gates per puzzle for quantum complexity
-- 48 quantum puzzles per block
+- 20 T-gates per puzzle for quantum complexity
+- 128 quantum puzzles per block
 
 **✅ Advanced Acceleration:**
 - **Linux**: Native CUDA + Qiskit-Aer GPU support
 - **Windows**: CuPy GPU acceleration
 - **Both**: CPU fallback with optimization
-- Batch processing optimization (48 puzzles in one call)
+- Batch processing optimization (128 puzzles in one call)
 - Automatic fallback to CPU if GPU unavailable
 
 **✅ Bitcoin-Style Mining:**
@@ -607,7 +607,7 @@ curl -fsSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/install-vps
 
 # Expected output:
 # ✅ GPU mining available - Using GPU mode
-# ⚡ Linux GPU Batch Complete: 48 puzzles in 0.234s (205.1 puzzles/sec)
+# ⚡ Linux GPU Batch Complete: 128 puzzles in 0.234s (547.0 puzzles/sec)
 ```
 
 **Advanced Mining:**

@@ -295,7 +295,7 @@ def solve_puzzles(seed: str, puzzle_count: int, qubits: int = 16) -> dict:
     outcome_data = bytes(all_outcomes)
     outcome_root = hashlib.sha256(outcome_data).hexdigest()
     
-    gate_data = f"T-gates:{puzzle_count * 8192}".encode()
+    gate_data = f"T-gates:{puzzle_count * 20}".encode()
     gate_hash = hashlib.sha256(gate_data).hexdigest()
     
     # Create compressed quantum blob
@@ -307,8 +307,8 @@ def solve_puzzles(seed: str, puzzle_count: int, qubits: int = 16) -> dict:
         "outcome_root": outcome_root,
         "gate_hash": gate_hash,
         "quantum_blob": quantum_blob,
-        "total_gates": puzzle_count * 8192,
-        "t_gates": puzzle_count * 8192,
+        "total_gates": puzzle_count * 20,
+        "t_gates": puzzle_count * 20,
         "circuit_depth": 16,
         "measurements": all_outcomes,
         "success": True
@@ -317,7 +317,7 @@ def solve_puzzles(seed: str, puzzle_count: int, qubits: int = 16) -> dict:
 def main():
     parser = argparse.ArgumentParser(description="Quantum circuit solver")
     parser.add_argument("--seed", required=True, help="Hex seed for circuit generation")
-    parser.add_argument("--puzzles", type=int, default=48, help="Number of puzzles")
+    parser.add_argument("--puzzles", type=int, default=128, help="Number of puzzles")
     parser.add_argument("--qubits", type=int, default=16, help="Number of qubits")
     parser.add_argument("--simulator", default="aer_simulator", help="Simulator type")
     

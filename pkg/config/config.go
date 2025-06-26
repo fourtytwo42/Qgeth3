@@ -51,7 +51,7 @@ type QuantumConfig struct {
 	Backend   string `json:"backend"`   // "qiskit" or "cirq"
 	Simulator string `json:"simulator"` // Simulator type
 	Qubits    int    `json:"qubits"`    // Number of qubits (fixed at 16)
-	Puzzles   int    `json:"puzzles"`   // Number of puzzles per block (fixed at 48)
+	Puzzles   int    `json:"puzzles"`   // Number of puzzles per block (fixed at 128)
 	Python    string `json:"python"`    // Python executable path
 }
 
@@ -94,7 +94,7 @@ func Default() *Config {
 			Backend:   "qiskit-aer-statevector",
 			Simulator: "aer_simulator",
 			Qubits:    16,
-			Puzzles:   48,
+			Puzzles:   128,
 			Python:    "python",
 		},
 		Logging: LoggingConfig{
@@ -187,8 +187,8 @@ func (c *Config) Validate() error {
 	if c.Quantum.Qubits != 16 {
 		return fmt.Errorf("qubits must be 16 for quantum-geth compatibility")
 	}
-	if c.Quantum.Puzzles != 48 {
-		return fmt.Errorf("puzzles must be 48 for quantum-geth compatibility")
+	if c.Quantum.Puzzles != 128 {
+		return fmt.Errorf("puzzles must be 128 for quantum-geth compatibility")
 	}
 
 	return nil

@@ -284,16 +284,16 @@ func TestExecutePuzzleChain(t *testing.T) {
 	}
 
 	// Validate result structure
-	if len(result.Results) != 32 {
-		t.Errorf("Expected 32 puzzle results, got %d", len(result.Results))
+	if len(result.Results) != 128 {
+		t.Errorf("Expected 128 puzzle results, got %d", len(result.Results))
 	}
 
-	if len(result.Outcomes) != 32 {
-		t.Errorf("Expected 32 outcomes, got %d", len(result.Outcomes))
+	if len(result.Outcomes) != 128 {
+		t.Errorf("Expected 128 outcomes, got %d", len(result.Outcomes))
 	}
 
-	if len(result.BranchNibbles) != 32 {
-		t.Errorf("Expected 32 branch nibbles, got %d", len(result.BranchNibbles))
+	if len(result.BranchNibbles) != 128 {
+		t.Errorf("Expected 128 branch nibbles, got %d", len(result.BranchNibbles))
 	}
 
 	if result.OutcomeRoot == (common.Hash{}) {

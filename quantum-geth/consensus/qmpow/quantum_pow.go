@@ -31,7 +31,7 @@ const (
 type QuantumConstants struct {
 	EpochBlocks      uint64 // 50,000 blocks per epoch
 	GlideBlocks      uint64 // 12,500 blocks per qubit increase
-	StartingQBits    uint16 // 12 qubits at start
+	StartingQBits    uint16 // 16 qubits at start
 	FixedTCount      uint32 // 4,096 T-gates constant
 	FixedLNet        uint16 // 128 chained puzzles constant
 	MaxNonceAttempts uint64 // 4 billion nonce attempts
@@ -41,8 +41,8 @@ type QuantumConstants struct {
 var QuantumSpec = QuantumConstants{
 	EpochBlocks:      50000,
 	GlideBlocks:      12500,
-	StartingQBits:    12,
-	FixedTCount:      4096,
+	StartingQBits:    16,
+	FixedTCount:      20,
 	FixedLNet:        128,
 	MaxNonceAttempts: 4000000000,
 }
@@ -164,14 +164,16 @@ func CalculateProofRoot(outcomes [][]byte, gateHash common.Hash) common.Hash {
 	h.Write(gateHash.Bytes())
 
 	// Simulate three Tier-B Nova proof batches
+	puzzlesPerBatch := len(outcomes) / 3  // 128/3 = 42 puzzles per batch (with remainder)
 	for batchIdx := 0; batchIdx < 3; batchIdx++ {
 		batchHash := sha256.New()
 		batchHash.Write([]byte{byte(batchIdx)})
 
-		// Each batch covers 16 puzzles (128/8 = 16)
-		startPuzzle := batchIdx * 16
-		endPuzzle := startPuzzle + 16
-		if endPuzzle > len(outcomes) {
+		// Each batch covers ~42-43 puzzles to handle all 128 puzzles
+		startPuzzle := batchIdx * puzzlesPerBatch
+		endPuzzle := startPuzzle + puzzlesPerBatch
+		if batchIdx == 2 {
+			// Last batch gets any remaining puzzles (128 - 42*2 = 44 puzzles)
 			endPuzzle = len(outcomes)
 		}
 

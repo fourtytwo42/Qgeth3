@@ -21,9 +21,9 @@ const (
 	ChainIDHash          = "0xFEEDFACECAFEFEEDFACECAFEFEEDFACECAFEFEEDFACECAFEFEEDFACECAFECAFE"
 
 	// v0.9 Quantum Parameters (Section 9)
-	DefaultStartingQBits uint16 = 16 // Start n = 16 at epoch 0 (126-bit security)
-	DefaultTCount        uint32 = 20 // ENFORCED MINIMUM: 20 T-gates per puzzle (was 8192)
-	DefaultLNet          uint16 = 32 // 32 chained puzzles per block (was 128)
+	DefaultStartingQBits uint16 = 16  // Start n = 16 at epoch 0 (126-bit security)
+	DefaultTCount        uint32 = 20  // ENFORCED MINIMUM: 20 T-gates per puzzle (was 8192)
+	DefaultLNet          uint16 = 128 // 128 chained puzzles per block (restored for miner compatibility)
 	TargetBlockTime      uint64 = 12 // Target block time in seconds
 
 	// Halving Schedule (Section 11)
@@ -39,11 +39,11 @@ const (
 	// Glide Schedule (immutable - Section 9)
 	// QBits increases according to Security Hardness Table
 	// Height ranges for each QBits level (based on 6-month epochs)
-	QBits16_MaxHeight = 1200000 // QBits=16, TCount=20, LNet=4 (simplified security)
-	QBits17_MaxHeight = 1800000 // QBits=17, TCount=20, LNet=4 (simplified security)
-	QBits18_MaxHeight = 2400000 // QBits=18, TCount=20, LNet=4 (simplified security)
-	QBits19_MaxHeight = 3000000 // QBits=19, TCount=20, LNet=4 (simplified security)
-	QBits20_MaxHeight = 3600000 // QBits=20, TCount=20, LNet=4 (simplified security)
+	QBits16_MaxHeight = 1200000 // QBits=16, TCount=20, LNet=128 (enhanced security)
+	QBits17_MaxHeight = 1800000 // QBits=17, TCount=20, LNet=128 (enhanced security)
+	QBits18_MaxHeight = 2400000 // QBits=18, TCount=20, LNet=128 (enhanced security)
+	QBits19_MaxHeight = 3000000 // QBits=19, TCount=20, LNet=128 (enhanced security)
+	QBits20_MaxHeight = 3600000 // QBits=20, TCount=20, LNet=128 (enhanced security)
 
 	// Mining complexity parameters (for simulation)
 	BaseComplexityMs      = 100 // Base time per puzzle in milliseconds
@@ -78,18 +78,18 @@ func DefaultParams(height uint64) QMPoWParams {
 func CalculateQuantumParamsForHeight(height uint64) (uint16, uint32, uint16) {
 	switch {
 	case height <= QBits16_MaxHeight:
-		return 16, 20, 32 // Enhanced security with 32 chained puzzles
+		return 16, 20, 128 // Enhanced security with 128 chained puzzles
 	case height <= QBits17_MaxHeight:
-		return 17, 20, 32 // Enhanced security with 32 chained puzzles
+		return 17, 20, 128 // Enhanced security with 128 chained puzzles
 	case height <= QBits18_MaxHeight:
-		return 18, 20, 32 // Enhanced security with 32 chained puzzles
+		return 18, 20, 128 // Enhanced security with 128 chained puzzles
 	case height <= QBits19_MaxHeight:
-		return 19, 20, 32 // Enhanced security with 32 chained puzzles
+		return 19, 20, 128 // Enhanced security with 128 chained puzzles
 	case height <= QBits20_MaxHeight:
-		return 20, 20, 32 // Enhanced security with 32 chained puzzles
+		return 20, 20, 128 // Enhanced security with 128 chained puzzles
 	default:
 		// Beyond defined schedule, maintain maximum security
-		return 20, 20, 32
+		return 20, 20, 128
 	}
 }
 

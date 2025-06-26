@@ -26,7 +26,7 @@ type MahadevTranscript struct {
 
 // Test PR-01: Mahadev Trace Integrity
 func TestPR01_MahadevTraceIntegrity(t *testing.T) {
-	puzzleCount := 48
+	puzzleCount := 128
 	qubits := 4 // Toy circuit for testing
 	
 	t.Logf("🔍 PR-01: Testing Mahadev trace integrity for %d puzzles", puzzleCount)
@@ -241,7 +241,7 @@ func bytesEqual(a, b []byte) bool {
 
 // Test batch verification performance
 func TestPR01_BatchVerificationPerformance(t *testing.T) {
-	puzzleCount := 48
+	puzzleCount := 128
 	
 	t.Log("🔍 PR-01 Performance: Testing batch verification performance")
 	

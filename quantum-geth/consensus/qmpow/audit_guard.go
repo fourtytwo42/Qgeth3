@@ -241,10 +241,10 @@ func (ag *AuditGuardRail) verifyGlideTableHash() bool {
 func (ag *AuditGuardRail) verifyGlideTableConsistency() bool {
 	// Verify glide table has expected entries
 	expectedEntries := []GlideEntry{
-		{BlockHeight: 0, QBits: 5, TCount: 10, LNet: 0.1},
-		{BlockHeight: 1000000, QBits: 6, TCount: 12, LNet: 0.12},
-		{BlockHeight: 2000000, QBits: 7, TCount: 14, LNet: 0.14},
-		{BlockHeight: 3000000, QBits: 8, TCount: 16, LNet: 0.16},
+		{BlockHeight: 0, QBits: 16, TCount: 20, LNet: 128},
+		{BlockHeight: 1000000, QBits: 17, TCount: 20, LNet: 128},
+		{BlockHeight: 2000000, QBits: 18, TCount: 20, LNet: 128},
+		{BlockHeight: 3000000, QBits: 19, TCount: 20, LNet: 128},
 	}
 
 	// Compute hash of glide table

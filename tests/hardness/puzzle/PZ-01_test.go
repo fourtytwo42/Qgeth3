@@ -1,5 +1,5 @@
 // PZ-01: Deterministic Seed→Outcome Mapping Test
-// Tests that given a fixed seed and branch templates, the 48 puzzles
+// Tests that given a fixed seed and branch templates, the 128 puzzles
 // execute in sequence and produce deterministic outcomes
 
 package puzzle
@@ -15,7 +15,7 @@ func TestPZ01_DeterministicSeedOutcomeMapping(t *testing.T) {
 	// Golden reference values for deterministic testing
 	goldenSeed := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	
-	// Expected outcomes for the first 8 puzzles (out of 48)
+	// Expected outcomes for the first 8 puzzles (out of 128)
 	// These would be computed from actual quantum circuit execution
 	expectedOutcomes := []uint16{
 		0x1234, 0x5678, 0x9abc, 0xdef0,
