@@ -266,8 +266,8 @@ func ValidateQuantumHeader(t *testing.T, header *qmpow.QuantumHeader) bool {
 		valid = false
 	}
 
-	if len(header.BranchNibbles) != 32 {
-		t.Errorf("Invalid BranchNibbles length: expected 32, got %d", len(header.BranchNibbles))
+	if len(header.BranchNibbles) != 64 {
+		t.Errorf("Invalid BranchNibbles length: expected 64, got %d", len(header.BranchNibbles))
 		valid = false
 	}
 

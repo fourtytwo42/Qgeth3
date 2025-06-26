@@ -156,7 +156,7 @@ type Header struct {
 	QNonce64      *uint64      `json:"qNonce64" rlp:"-"`      // primary nonce (Bitcoin-style)
 	ExtraNonce32  []byte       `json:"extraNonce32" rlp:"-"`  // 32-byte entropy
 	OutcomeRoot   *common.Hash `json:"outcomeRoot" rlp:"-"`   // Merkle root of outcomes
-	BranchNibbles []byte       `json:"branchNibbles" rlp:"-"` // 48 nibbles for template selection
+	BranchNibbles []byte       `json:"branchNibbles" rlp:"-"` // 128 nibbles for template selection (64 bytes)
 	GateHash      *common.Hash `json:"gateHash" rlp:"-"`      // canonical compiler gate hash
 	ProofRoot     *common.Hash `json:"proofRoot" rlp:"-"`     // Nova proof Merkle root
 	AttestMode    *uint8       `json:"attestMode" rlp:"-"`    // attestation mode
@@ -746,12 +746,12 @@ func (h *Header) MarshalQuantumBlob() {
 	// 16.7 OutcomeRoot (32 bytes)
 	pad32(h.OutcomeRoot)
 
-	// 16.8 BranchNibbles (48 bytes)
-	if len(h.BranchNibbles) >= 48 {
-		buf.Write(h.BranchNibbles[:48])
+	// 16.8 BranchNibbles (64 bytes)
+	if len(h.BranchNibbles) >= 64 {
+		buf.Write(h.BranchNibbles[:64])
 	} else {
 		buf.Write(h.BranchNibbles)
-		buf.Write(make([]byte, 48-len(h.BranchNibbles))) // zero pad
+		buf.Write(make([]byte, 64-len(h.BranchNibbles))) // zero pad
 	}
 
 	// 16.9 GateHash (32 bytes)
@@ -788,8 +788,8 @@ func (h *Header) UnmarshalQuantumBlob() error {
 		return nil
 	}
 
-	// Minimum size check (should be exactly 197 bytes for quantum headers)
-	expectedSize := 4 + 2 + 4 + 2 + 8 + 32 + 32 + 48 + 32 + 32 + 1 // 197 bytes
+	// Minimum size check (should be exactly 213 bytes for quantum headers)
+	expectedSize := 4 + 2 + 4 + 2 + 8 + 32 + 32 + 64 + 32 + 32 + 1 // 213 bytes
 	if len(h.QBlob) < expectedSize {
 		return fmt.Errorf("quantum blob too short: got %d bytes, expected %d", len(h.QBlob), expectedSize)
 	}
@@ -859,8 +859,8 @@ func (h *Header) UnmarshalQuantumBlob() error {
 		return err
 	}
 
-	// 16.8 BranchNibbles (48 bytes)
-	h.BranchNibbles = make([]byte, 48)
+	// 16.8 BranchNibbles (64 bytes)
+	h.BranchNibbles = make([]byte, 64)
 	if _, err := buf.Read(h.BranchNibbles); err != nil {
 		return err
 	}

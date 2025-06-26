@@ -545,7 +545,7 @@ func GenesisToBlock(g *genesisT.Genesis, db ethdb.Database) *types.Block {
 
 		// Initialize byte arrays
 		head.ExtraNonce32 = make([]byte, 32)
-		head.BranchNibbles = make([]byte, 32)
+		head.BranchNibbles = make([]byte, 64)
 
 		// Initialize hash fields as zero hashes (genesis has no quantum computation)
 		zeroHash := common.Hash{}
