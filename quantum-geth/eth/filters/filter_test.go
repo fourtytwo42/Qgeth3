@@ -26,7 +26,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/consensus/ethash"
+	"github.com/ethereum/go-ethereum/consensus/qmpow"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -65,7 +65,8 @@ func BenchmarkFilters(b *testing.B) {
 		}
 	)
 	defer db.Close()
-	_, chain, receipts := core.GenerateChainWithGenesis(gspec, ethash.NewFaker(), 100010, func(i int, gen *core.BlockGen) {
+	// QUANTUM FIX: Use QMPoW test engine for filter tests
+	_, chain, receipts := core.GenerateChainWithGenesis(gspec, qmpow.NewFaker(), 100010, func(i int, gen *core.BlockGen) {
 		switch i {
 		case 2403:
 			receipt := makeReceipt(addr1)
@@ -187,7 +188,8 @@ func TestFilters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	chain, _ := core.GenerateChain(gspec.Config, g, ethash.NewFaker(), db, 1000, func(i int, gen *core.BlockGen) {
+	// QUANTUM FIX: Use QMPoW test engine for chain generation
+	chain, _ := core.GenerateChain(gspec.Config, g, qmpow.NewFaker(), db, 1000, func(i int, gen *core.BlockGen) {
 		switch i {
 		case 1:
 			data, err := contractABI.Pack("log1", hash1.Big())
@@ -252,7 +254,8 @@ func TestFilters(t *testing.T) {
 		}
 	})
 	var l uint64
-	bc, err := core.NewBlockChain(db, nil, gspec, nil, ethash.NewFaker(), vm.Config{}, nil, &l)
+	// QUANTUM FIX: Use QMPoW test engine for blockchain creation
+	bc, err := core.NewBlockChain(db, nil, gspec, nil, qmpow.NewFaker(), vm.Config{}, nil, &l)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -265,7 +268,8 @@ func TestFilters(t *testing.T) {
 	bc.SetFinalized(chain[998].Header())
 
 	// Generate pending block
-	pchain, preceipts := core.GenerateChain(gspec.Config, chain[len(chain)-1], ethash.NewFaker(), db, 1, func(i int, gen *core.BlockGen) {
+	// QUANTUM FIX: Use QMPoW test engine for additional chain generation
+	pchain, preceipts := core.GenerateChain(gspec.Config, chain[len(chain)-1], qmpow.NewFaker(), db, 1, func(i int, gen *core.BlockGen) {
 		data, err := contractABI.Pack("log1", hash5.Big())
 		if err != nil {
 			t.Fatal(err)

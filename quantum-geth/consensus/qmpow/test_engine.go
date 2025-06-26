@@ -29,7 +29,7 @@ import (
 )
 
 // NewFaker creates a QMPoW consensus engine with fake quantum proof verification
-// for testing purposes. This replaces ethash.NewFaker() in quantum blockchain tests.
+// for testing purposes. This replaces qmpow.NewFaker() in quantum blockchain tests.
 func NewFaker() *QMPoW {
 	log.Info("🧪 Creating QMPoW faker for testing")
 	return &QMPoW{
@@ -49,7 +49,7 @@ func NewFaker() *QMPoW {
 }
 
 // NewFakeFailer creates a QMPoW consensus engine that fails after a specific block number
-// for testing blockchain error handling. This replaces ethash.NewFakeFailer().
+// for testing blockchain error handling. This replaces qmpow.NewFakeFailer().
 func NewFakeFailer(fail uint64) *QMPoW {
 	log.Info("🧪 Creating QMPoW fake failer for testing", "failAtBlock", fail)
 	qmpow := NewFaker()

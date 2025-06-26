@@ -32,7 +32,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/common/math"
-	"github.com/ethereum/go-ethereum/consensus/ethash"
+	"github.com/ethereum/go-ethereum/consensus/qmpow"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -272,7 +272,7 @@ func generateTestChain() []*types.Block {
 			g.AddTx(testTx2)
 		}
 	}
-	_, blocks, _ := core.GenerateChainWithGenesis(genesis, ethash.NewFaker(), 2, generate)
+	_, blocks, _ := core.GenerateChainWithGenesis(genesis, qmpow.NewFaker(), 2, generate)
 	mem := rawdb.NewMemoryDatabase()
 	genesisBlock := core.MustCommitGenesis(mem, triedb.NewDatabase(mem, nil), genesis)
 	return append([]*types.Block{genesisBlock}, blocks...)
@@ -924,7 +924,7 @@ func TestEthSubscribeNewSideHeads(t *testing.T) {
 	chainConfig := genesis.Config
 
 	gblock := core.GenesisToBlock(genesis, db)
-	engine := ethash.NewFaker()
+	engine := qmpow.NewFaker()
 	originalBlocks, _ := core.GenerateChain(chainConfig, gblock, engine, db, 10, func(i int, gen *core.BlockGen) {
 		gen.OffsetTime(5)
 		gen.SetExtra([]byte("test"))
