@@ -1783,7 +1783,8 @@ func testRepairWithScheme(t *testing.T, tt *rewindTest, snapshots bool, scheme s
 			BaseFee: big.NewInt(vars.InitialBaseFee),
 			Config:  params.AllEthashProtocolChanges,
 		}
-		engine = ethash.NewFullFaker()
+		// QUANTUM FIX: Use QMPoW test engine instead of ethash  
+		engine = qmpow.NewFullFaker()
 		config = &CacheConfig{
 			TrieCleanLimit: 256,
 			TrieDirtyLimit: 256,
@@ -1931,7 +1932,8 @@ func testIssue23496(t *testing.T, scheme string) {
 			Config:  params.TestChainConfig,
 			BaseFee: big.NewInt(vars.InitialBaseFee),
 		}
-		engine = ethash.NewFullFaker()
+		// QUANTUM FIX: Use QMPoW test engine instead of ethash
+		engine = qmpow.NewFullFaker()
 	)
 	chain, err := NewBlockChain(db, DefaultCacheConfigWithScheme(scheme), gspec, nil, engine, vm.Config{}, nil, nil)
 	if err != nil {
