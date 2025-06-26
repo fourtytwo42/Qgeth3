@@ -1,7 +1,7 @@
 // PR-01: Mahadev Trace Integrity Test
-// Tests generation of 48 Mahadev transcripts for quantum circuits and verification
+// Tests generation of 128 Mahadev transcripts for quantum circuits and verification
 // Attack Vector: Faulty trapdoor usage
-// Expected Outcome: Verifier accepts all 48 valid proofs, rejects invalid ones
+// Expected Outcome: Verifier accepts all 128 valid proofs, rejects invalid ones
 
 package proofs
 
@@ -32,7 +32,7 @@ func TestPR01_MahadevTraceIntegrity(t *testing.T) {
 	t.Logf("🔍 PR-01: Testing Mahadev trace integrity for %d puzzles", puzzleCount)
 	t.Logf("   Circuit: %d qubits (toy circuit for testing)", qubits)
 	
-	// Generate 48 Mahadev transcripts
+	// Generate 128 Mahadev transcripts
 	transcripts := make([]*MahadevTranscript, puzzleCount)
 	validCount := 0
 	
