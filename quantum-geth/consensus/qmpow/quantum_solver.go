@@ -87,10 +87,7 @@ func (q *QMPoW) initializeQuantumFields(header *types.Header) {
 
 	// Initialize EIP optional fields to prevent RLP encoding issues
 	// This is critical for proper RLP encoding/decoding
-	if header.WithdrawalsHash == nil {
-		emptyWithdrawalsHash := common.HexToHash("0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421")
-		header.WithdrawalsHash = &emptyWithdrawalsHash
-	}
+	// Don't force WithdrawalsHash - let it remain nil if no withdrawals are provided
 	if header.BlobGasUsed == nil {
 		var zero uint64 = 0
 		header.BlobGasUsed = &zero
