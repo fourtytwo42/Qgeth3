@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/consensus/ethash"
+	"github.com/ethereum/go-ethereum/consensus/qmpow"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -25,7 +25,8 @@ import (
 
 func runMESSTest2(t *testing.T, enableMess bool, easyL, hardL, caN int, easyT, hardT int64) (hardHead bool, err error, hard, easy []*types.Block) {
 	// Generate the original common chain segment and the two competing forks
-	engine := ethash.NewFaker()
+	// QUANTUM FIX: Use QMPoW test engine instead of ethash
+	engine := qmpow.NewFaker()
 
 	db := rawdb.NewMemoryDatabase()
 	genesis := params.DefaultMessNetGenesisBlock()
@@ -205,7 +206,8 @@ AF needs to be implemented at both sites to prevent re-proposed chains from side
 the AF criteria.
 */
 func TestAFKnownBlock(t *testing.T) {
-	engine := ethash.NewFaker()
+	// QUANTUM FIX: Use QMPoW test engine instead of ethash
+	engine := qmpow.NewFaker()
 
 	db := rawdb.NewMemoryDatabase()
 	genesis := params.DefaultMessNetGenesisBlock()
@@ -326,7 +328,8 @@ func TestDifficultyDelta(t *testing.T) {
 
 	for i := uint64(1); i <= 60; i++ {
 		nextTime := parent.Time + i
-		d := ethash.CalcDifficulty(params.MessNetConfig, nextTime, parent)
+		// QUANTUM FIX: Using proper quantum difficulty calculation (ASERT-Q)
+		d := qmpow.CalcDifficulty(params.MessNetConfig, nextTime, parent)
 
 		rat, _ := new(big.Float).Quo(
 			new(big.Float).SetInt(d),
@@ -352,7 +355,8 @@ func TestDifficultyDelta(t *testing.T) {
 
 func TestGenerateChainTargetingHashrate(t *testing.T) {
 	t.Skip("A development test to play with difficulty steps.")
-	engine := ethash.NewFaker()
+	// QUANTUM FIX: Use QMPoW test engine instead of ethash
+	engine := qmpow.NewFaker()
 
 	db := rawdb.NewMemoryDatabase()
 	genesis := params.DefaultMessNetGenesisBlock()
@@ -420,7 +424,8 @@ func TestGenerateChainTargetingHashrate(t *testing.T) {
 
 func runMESSTest(t *testing.T, easyL, hardL, caN int, easyT, hardT int64) (hardHead bool, err error) {
 	// Generate the original common chain segment and the two competing forks
-	engine := ethash.NewFaker()
+	// QUANTUM FIX: Use QMPoW test engine instead of ethash
+	engine := qmpow.NewFaker()
 
 	db := rawdb.NewMemoryDatabase()
 	genesis := params.DefaultMessNetGenesisBlock()
@@ -718,7 +723,8 @@ func TestBlockChain_AF_ECBP1100(t *testing.T) {
 func TestBlockChain_AF_Difficulty_Develop(t *testing.T) {
 	t.Skip("Development version of tests with plotter")
 	// Generate the original common chain segment and the two competing forks
-	engine := ethash.NewFaker()
+	// QUANTUM FIX: Use QMPoW test engine instead of ethash
+	engine := qmpow.NewFaker()
 
 	db := rawdb.NewMemoryDatabase()
 	genesis := params.DefaultMessNetGenesisBlock()

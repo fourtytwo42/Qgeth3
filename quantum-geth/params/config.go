@@ -134,10 +134,50 @@ var (
 		GrayGlacierBlock:              nil,
 		TerminalTotalDifficulty:       nil,
 		TerminalTotalDifficultyPassed: false,
+		// QMPoW quantum consensus engine configuration
+		QMPoW: &ctypes.QMPoWConfig{
+			QBits:    16,  // 16 qubits per puzzle (256-bit security)
+			TCount:   20,  // 20 T-gates per puzzle (enforced minimum)
+			LNet:     128, // 128 puzzles per block (2048-bit security)
+			EpochLen: 100, // Epoch length for difficulty adjustment
+			TestMode: false, // Production quantum mining
+		},
 	}
 
 	// AllEthashProtocolChanges removed - Q Coin uses QMPoW consensus, not Ethash
 	AllEthashProtocolChanges = (*goethereum.ChainConfig)(nil)
+
+	// AllQMPoWProtocolChanges contains every protocol change (EIPs) introduced
+	// and accepted for quantum blockchain testing with QMPoW consensus.
+	AllQMPoWProtocolChanges = &goethereum.ChainConfig{
+		ChainID:                       big.NewInt(73234), // Default quantum devnet chain ID
+		HomesteadBlock:                big.NewInt(0),
+		DAOForkBlock:                  nil,
+		DAOForkSupport:                false,
+		EIP150Block:                   big.NewInt(0),
+		EIP155Block:                   big.NewInt(0),
+		EIP158Block:                   big.NewInt(0),
+		ByzantiumBlock:                big.NewInt(0),
+		ConstantinopleBlock:           big.NewInt(0),
+		PetersburgBlock:               big.NewInt(0),
+		IstanbulBlock:                 big.NewInt(0),
+		MuirGlacierBlock:              big.NewInt(0),
+		BerlinBlock:                   big.NewInt(0),
+		LondonBlock:                   big.NewInt(0),
+		ArrowGlacierBlock:             big.NewInt(0),
+		GrayGlacierBlock:              big.NewInt(0),
+		ShanghaiTime:                  newUint64(0),
+		TerminalTotalDifficulty:       nil, // QMPoW doesn't use TTD
+		TerminalTotalDifficultyPassed: false,
+		// QMPoW quantum consensus engine configuration
+		QMPoW: &ctypes.QMPoWConfig{
+			QBits:    16,  // 16 qubits per puzzle (256-bit security)
+			TCount:   20,  // 20 T-gates per puzzle (enforced minimum)
+			LNet:     128, // 128 puzzles per block (2048-bit security)
+			EpochLen: 100, // Epoch length for difficulty adjustment
+			TestMode: true, // Enable test mode for development
+		},
+	}
 
 	AllDevChainProtocolChanges = &goethereum.ChainConfig{
 		ChainID:                       big.NewInt(1337),
@@ -193,6 +233,7 @@ var (
 
 	// TestChainConfig contains every protocol change (EIPs) introduced
 	// and accepted by the Ethereum core developers for testing purposes.
+	// QUANTUM: Modified to use QMPoW consensus instead of legacy Ethereum algorithms
 	TestChainConfig = &goethereum.ChainConfig{
 		ChainID:                       big.NewInt(1),
 		HomesteadBlock:                big.NewInt(0),
@@ -218,6 +259,14 @@ var (
 		TerminalTotalDifficulty:       nil,
 		TerminalTotalDifficultyPassed: false,
 		Clique:                        nil,
+		// QMPoW quantum consensus engine configuration for testing
+		QMPoW: &ctypes.QMPoWConfig{
+			QBits:    16,  // 16 qubits per puzzle (256-bit security)
+			TCount:   20,  // 20 T-gates per puzzle (enforced minimum)
+			LNet:     128, // 128 puzzles per block (2048-bit security)
+			EpochLen: 100, // Epoch length for difficulty adjustment
+			TestMode: true, // Enable test mode for faster testing
+		},
 	}
 
 	// MergedTestChainConfig contains every protocol change (EIPs) introduced

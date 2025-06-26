@@ -8,7 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/clique"
-	"github.com/ethereum/go-ethereum/consensus/ethash"
+	"github.com/ethereum/go-ethereum/consensus/qmpow"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -38,7 +38,8 @@ func testGenerateBlockAndImportCG(t *testing.T, chainConfig ctypes.ChainConfigur
 			Epoch:  chainConfig.GetCliqueEpoch(),
 		}, db)
 	} else if chainConfig.GetConsensusEngineType().IsEthash() {
-		engine = ethash.NewFaker()
+		// QUANTUM FIX: Use QMPoW test engine for quantum mining tests
+		engine = qmpow.NewFaker()
 	}
 
 	w, b := newTestWorker(t, chainConfig, engine, db, 0)

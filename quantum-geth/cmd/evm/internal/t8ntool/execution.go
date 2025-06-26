@@ -22,7 +22,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
-	"github.com/ethereum/go-ethereum/consensus/ethash"
+	"github.com/ethereum/go-ethereum/consensus/qmpow"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -389,10 +389,10 @@ func rlpHash(x interface{}) (h common.Hash) {
 	return h
 }
 
-// calcDifficulty is based on ethash.CalcDifficulty. This method is used in case
-// the caller does not provide an explicit difficulty, but instead provides only
-// parent timestamp + difficulty.
-// Note: this method only works for ethash engine.
+// calcDifficulty calculates quantum difficulty using ASERT-Q algorithm.
+// This method is used when the caller does not provide an explicit difficulty,
+// but instead provides only parent timestamp + difficulty.
+// QUANTUM FIX: Now uses proper quantum difficulty calculation (ASERT-Q) instead of ethash.
 func calcDifficulty(config ctypes.ChainConfigurator, number, currentTime, parentTime uint64,
 	parentDifficulty *big.Int, parentUncleHash common.Hash) *big.Int {
 	uncleHash := parentUncleHash
@@ -406,5 +406,6 @@ func calcDifficulty(config ctypes.ChainConfigurator, number, currentTime, parent
 		Number:     new(big.Int).SetUint64(number - 1),
 		Time:       parentTime,
 	}
-	return ethash.CalcDifficulty(config, currentTime, parent)
+	// Use quantum difficulty calculation (ASERT-Q) instead of ethash
+	return qmpow.CalcDifficulty(config, currentTime, parent)
 }

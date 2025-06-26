@@ -30,7 +30,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/beacon"
-	"github.com/ethereum/go-ethereum/consensus/ethash"
+	"github.com/ethereum/go-ethereum/consensus/qmpow"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -458,7 +458,8 @@ func newGQLService(t *testing.T, stack *node.Node, shanghai bool, gspec *genesis
 		TrieTimeout:    60 * time.Minute,
 		SnapshotCache:  5,
 	}
-	var engine consensus.Engine = ethash.NewFaker()
+	// QUANTUM FIX: Use QMPoW test engine for quantum blockchain tests
+	var engine consensus.Engine = qmpow.NewFaker()
 	if shanghai {
 		engine = beacon.NewFaker()
 		chainCfg := gspec.Config
