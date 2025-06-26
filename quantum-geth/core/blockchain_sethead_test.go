@@ -1986,7 +1986,8 @@ func testSetHeadWithScheme(t *testing.T, tt *rewindTest, snapshots bool, scheme 
 			BaseFee: big.NewInt(vars.InitialBaseFee),
 			Config:  params.AllEthashProtocolChanges,
 		}
-		engine = ethash.NewFullFaker()
+		// QUANTUM FIX: Use QMPoW test engine instead of ethash
+		engine = qmpow.NewFullFaker()
 		config = &CacheConfig{
 			TrieCleanLimit: 256,
 			TrieDirtyLimit: 256,

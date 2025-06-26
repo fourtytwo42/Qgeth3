@@ -81,7 +81,8 @@ func (basic *snapshotTestBasic) prepare(t *testing.T) (*BlockChain, []*types.Blo
 			BaseFee: big.NewInt(vars.InitialBaseFee),
 			Config:  params.AllEthashProtocolChanges,
 		}
-		engine = ethash.NewFullFaker()
+		// QUANTUM FIX: Use QMPoW test engine instead of ethash
+		engine = qmpow.NewFullFaker()
 	)
 	chain, err := NewBlockChain(db, DefaultCacheConfigWithScheme(basic.scheme), gspec, nil, engine, vm.Config{}, nil, nil)
 	if err != nil {
