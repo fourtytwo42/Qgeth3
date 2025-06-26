@@ -1146,7 +1146,8 @@ func setNodeUserIdent(ctx *cli.Context, cfg *node.Config) {
 // 1. --bootnodes flag
 // 2. Config file
 // 3. Network preset flags (e.g. --classic)
-// 4. default to mainnet nodes
+// 4. Q Coin network auto-detection (based on --networkid)
+// 5. default to mainnet nodes
 func setBootstrapNodes(ctx *cli.Context, cfg *p2p.Config) {
 	urls := params.MainnetBootnodes
 	if ctx.IsSet(BootnodesFlag.Name) {
@@ -1166,6 +1167,19 @@ func setBootstrapNodes(ctx *cli.Context, cfg *p2p.Config) {
 			urls = params.SepoliaBootnodes
 		case ctx.Bool(HoleskyFlag.Name):
 			urls = params.HoleskyBootnodes
+		default:
+			// Auto-detect Q Coin networks based on network ID
+			if ctx.IsSet(NetworkIdFlag.Name) {
+				networkId := ctx.Uint64(NetworkIdFlag.Name)
+				switch networkId {
+				case 73234:
+					urls = params.QCoinDevBootnodes
+				case 73235:
+					urls = params.QCoinTestnetBootnodes
+				case 73236:
+					urls = params.QCoinMainnetBootnodes
+				}
+			}
 		}
 	}
 	cfg.BootstrapNodes = mustParseBootnodes(urls)

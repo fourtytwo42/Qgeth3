@@ -68,7 +68,7 @@ $configs = @{
         genesis = "genesis_quantum_mainnet.json"
         port = 30303
         name = "Q Coin Mainnet"
-        bootnodes = "enode://0bc243936ebc13ebf57895dff1321695064ae4b0ac0c1e047d52d695c396b64c52847f852a9738f0d079af4ba109dfceafd1cf0924587b151765834caf13e5fd@69.243.132.233:30305"
+        bootnodes = "enode://89df9647d6f5b901c63e8a7ad977900b5ce2386b916ed6d204d24069435740c7e2c188c9d3493bfc98c056d9d87c6213df057e9518fb43f12759ba55dff31b4c@143.110.231.183:30303"
     }
     "testnet" = @{
         chainid = 73235
@@ -76,7 +76,7 @@ $configs = @{
         genesis = "genesis_quantum_testnet.json"
         port = 30303
         name = "Q Coin Testnet"
-        bootnodes = "enode://0bc243936ebc13ebf57895dff1321695064ae4b0ac0c1e047d52d695c396b64c52847f852a9738f0d079af4ba109dfceafd1cf0924587b151765834caf13e5fd@69.243.132.233:30305"
+        bootnodes = "enode://89df9647d6f5b901c63e8a7ad977900b5ce2386b916ed6d204d24069435740c7e2c188c9d3493bfc98c056d9d87c6213df057e9518fb43f12759ba55dff31b4c@143.110.231.183:30303"
     }
     "devnet" = @{
         chainid = 73234
@@ -84,7 +84,7 @@ $configs = @{
         genesis = "genesis_quantum_dev.json"
         port = 30305
         name = "Q Coin Dev Network"
-        bootnodes = "enode://0bc243936ebc13ebf57895dff1321695064ae4b0ac0c1e047d52d695c396b64c52847f852a9738f0d079af4ba109dfceafd1cf0924587b151765834caf13e5fd@69.243.132.233:30305"
+        bootnodes = "enode://89df9647d6f5b901c63e8a7ad977900b5ce2386b916ed6d204d24069435740c7e2c188c9d3493bfc98c056d9d87c6213df057e9518fb43f12759ba55dff31b4c@143.110.231.183:30305"
     }
 }
 
@@ -114,6 +114,7 @@ $gethArgs = @(
     "--datadir", $config.datadir,
     "--networkid", $config.chainid,
     "--port", $config.port,
+    "--nat", "extip:143.110.231.183",
     "--http",
     "--http.addr", "0.0.0.0",
     "--http.port", "8545",
