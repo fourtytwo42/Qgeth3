@@ -11,9 +11,9 @@
     "eip170FBlock": 0,
     "terminalTotalDifficulty": null,
     "qmpow": {
-      "qbits": 6,
-      "tcount": 15,
-      "lnet": 20,
+      "qbits": 16,
+      "tcount": 20,
+      "lnet": 128,
       "epochLen": 50
     }
   },

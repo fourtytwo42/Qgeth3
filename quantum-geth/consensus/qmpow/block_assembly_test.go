@@ -89,7 +89,7 @@ func TestAssembleQuantumBlock(t *testing.T) {
 		t.Error("ProofRoot not set")
 	}
 
-	// Validate BranchNibbles (32 bytes for 32 puzzles)
+	// Validate BranchNibbles (128 bytes for 128 puzzles)
 	if len(header.BranchNibbles) != BranchNibblesSize {
 		t.Errorf("Invalid BranchNibbles size: got %d, expected %d", len(header.BranchNibbles), BranchNibblesSize)
 	}

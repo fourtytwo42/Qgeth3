@@ -10,9 +10,9 @@
     "eip161FBlock": 0,
     "eip170FBlock": 0,
     "qmpow": {
-      "qbits": 6,
-      "tcount": 15,
-      "lnet": 20,
+      "qbits": 16,
+      "tcount": 20,
+      "lnet": 128,
       "epochLen": 50
     }
   },

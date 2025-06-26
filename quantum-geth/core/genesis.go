@@ -532,7 +532,7 @@ func GenesisToBlock(g *genesisT.Genesis, db ethdb.Database) *types.Block {
 		epoch := uint32(0)     // Genesis is always epoch 0
 		qbits := uint16(16)    // Starting qubits per new spec
 		tcount := uint32(20)   // Fixed T-count (ENFORCED MINIMUM)
-		lnet := uint16(32)     // 32 chained puzzles per block
+		lnet := uint16(128)    // 128 chained puzzles per block
 		qnonce := uint64(0)    // Genesis nonce
 		attestMode := uint8(0) // Dilithium mode
 

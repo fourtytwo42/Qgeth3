@@ -6,9 +6,12 @@
 param(
     [int]$Threads = 0,
     [string]$GethRpc = "http://localhost:8545",
+    [string]$Node = "",
     [string]$Etherbase = "",
+    [string]$Coinbase = "",
     [switch]$ForceCpu,
-    [switch]$Help
+    [switch]$Help,
+    [switch]$Log
 )
 
 if ($Help) {
@@ -22,16 +25,28 @@ if ($Help) {
     Write-Host ""
     Write-Host "Options:" -ForegroundColor Yellow
     Write-Host "  -threads <n>        Number of mining threads (0 = auto-detect)"
-    Write-Host "  -gethRpc <url>      Geth RPC endpoint (default: http://localhost:8545)"
-    Write-Host "  -etherbase <addr>   Mining reward address (auto-detected if empty)"
+    Write-Host "  -node <url>         Geth RPC endpoint (default: http://localhost:8545)"
+    Write-Host "  -gethRpc <url>      Alias for -node"
+    Write-Host "  -coinbase <addr>    Mining reward address (auto-detected if empty)"
+    Write-Host "  -etherbase <addr>   Alias for -coinbase"
     Write-Host "  -forceCpu           Force CPU mining even if GPU available"
+    Write-Host "  -log                Enable verbose logging"
     Write-Host "  -help               Show this help message"
     Write-Host ""
     Write-Host "Examples:" -ForegroundColor Green
-    Write-Host "  ./start-miner.ps1                    # Smart auto-detection"
-    Write-Host "  ./start-miner.ps1 -threads 32        # 32 threads"
-    Write-Host "  ./start-miner.ps1 -forceCpu          # Force CPU mining"
+    Write-Host "  ./start-miner.ps1                                    # Smart auto-detection"
+    Write-Host "  ./start-miner.ps1 -threads 32                        # 32 threads"
+    Write-Host "  ./start-miner.ps1 -node http://64.23.179.84:8545     # Mine to VPS"
+    Write-Host "  ./start-miner.ps1 -coinbase 0x1234...890 -forceCpu   # CPU mining with specific address"
     exit 0
+}
+
+# Handle parameter aliases and overrides
+if ($Node -ne "") {
+    $GethRpc = $Node
+}
+if ($Coinbase -ne "") {
+    $Etherbase = $Coinbase
 }
 
 Write-Host "Q Coin Smart Miner Starting..." -ForegroundColor Cyan
@@ -170,6 +185,10 @@ $minerArgs = @(
 
 if ($UseGpu) {
     $minerArgs += "-gpu"
+}
+
+if ($Log) {
+    $minerArgs += "-log"
 }
 
 # Display configuration

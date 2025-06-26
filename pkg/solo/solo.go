@@ -245,8 +245,8 @@ func (s *SoloMiner) fetchWork() error {
 		StartTime:     time.Now(),
 		Deadline:      time.Now().Add(60 * time.Second),
 		QBits:         16,  // Default quantum params
-		TCount:        8192,
-		LNet:          48,
+		TCount:        20,   // ENFORCED MINIMUM: 20 T-gates per puzzle
+		LNet:          128,
 	}
 
 	// Parse block number
@@ -284,7 +284,7 @@ func (s *SoloMiner) fetchWork() error {
 
 // parseQuantumParams parses quantum parameters from work
 func (s *SoloMiner) parseQuantumParams(work *QuantumWork, params string) {
-	// Parse "qbits:16,tcount:8192,lnet:48" format
+	// Parse "qbits:16,tcount:20,lnet:128" format
 	parts := strings.Split(params, ",")
 	for _, part := range parts {
 		kv := strings.Split(part, ":")

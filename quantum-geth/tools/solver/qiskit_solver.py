@@ -22,9 +22,9 @@ from qiskit.quantum_info import random_unitary
 import random
 
 # Quantum PoW Constants
-FIXED_TCOUNT = 4096  # 4,096 T-gates per puzzle
+FIXED_TCOUNT = 20    # 20 T-gates per puzzle (ENFORCED MINIMUM)
 FIXED_LNET = 128     # 128 chained puzzles providing enhanced security
-STARTING_QBITS = 12  # Start with 12 qubits
+STARTING_QBITS = 16  # Start with 16 qubits
 GLIDE_BLOCKS = 12500 # Add +1 qubit every 12,500 blocks
 
 # 16 iso-hard branch templates (simplified representation)
@@ -42,7 +42,7 @@ def create_branch_dependent_circuit(seed: bytes, qbits: int, tcount: int, branch
     Args:
         seed: Seed for this puzzle
         qbits: Number of qubits
-        tcount: Number of T-gates (should be 4096)
+        tcount: Number of T-gates (should be 20)
         branch_nibble: High nibble from previous measurement (0-15)
     
     Returns:
