@@ -1282,8 +1282,9 @@ func (s *remoteSealer) makeQuantumWorkUnsafe(block *types.Block) {
 	s.currentWork[3] = hexutil.Encode([]byte(params))   // Quantum parameters
 	s.currentWork[4] = header.Coinbase.Hex()            // Coinbase address
 
-	// Store work for submission verification
-	s.works[workHash] = block
+	// Store work for submission verification - use block with properly initialized header
+	blockWithInitializedHeader := block.WithSeal(header)
+	s.works[workHash] = blockWithInitializedHeader
 
 	log.Info("🔗 Quantum work prepared for external miners",
 		"number", header.Number.Uint64(),
@@ -1323,7 +1324,15 @@ func (s *remoteSealer) submitQuantumWork(qnonce uint64, blockHash common.Hash, q
 	// CRITICAL: Initialize ALL quantum fields (not just optional fields) before RLP validation
 	// This ensures the header structure matches exactly what was used during work preparation
 	// and prevents "input string too short" RLP errors from external miners
+	log.Debug("🔬 DEBUG: Header before initializeQuantumFields", 
+		"withdrawalsHash", header.WithdrawalsHash, 
+		"baseFee", header.BaseFee,
+		"blobGasUsed", header.BlobGasUsed)
 	s.qmpow.initializeQuantumFields(header)
+	log.Debug("🔬 DEBUG: Header after initializeQuantumFields", 
+		"withdrawalsHash", header.WithdrawalsHash, 
+		"baseFee", header.BaseFee,
+		"blobGasUsed", header.BlobGasUsed)
 
 	header.QNonce64 = &qnonce
 	header.OutcomeRoot = &quantumProof.OutcomeRoot
