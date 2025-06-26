@@ -9,7 +9,10 @@ param(
     [string]$Network = "testnet",
     
     [switch]$Mining,
-    [switch]$Help
+    [switch]$Help,
+    
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]]$ExtraArgs
 )
 
 if ($Help) {
@@ -138,6 +141,12 @@ if ($Mining) {
     # Enable mining interface for external miners (0 threads = no CPU mining, external only)
     $gethArgs += @("--mine", "--miner.threads", "0", "--miner.etherbase", "0x1234567890123456789012345678901234567890")
     Write-Host "Mining interface enabled for external miners (no CPU mining)" -ForegroundColor Green
+}
+
+# Add any extra arguments passed to the script
+if ($ExtraArgs) {
+    $gethArgs += $ExtraArgs
+    Write-Host "Extra arguments: $($ExtraArgs -join ' ')" -ForegroundColor Cyan
 }
 
 Write-Host "Network: $($config.name)" -ForegroundColor White
