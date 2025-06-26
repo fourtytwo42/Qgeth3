@@ -80,6 +80,7 @@ case $NETWORK in
         GENESIS="genesis_quantum_mainnet.json"
         PORT=30303
         NAME="Q Coin Mainnet"
+        BOOTNODE_PORT=30303
         ;;
     testnet)
         CHAINID=73235
@@ -87,6 +88,7 @@ case $NETWORK in
         GENESIS="genesis_quantum_testnet.json"
         PORT=30303
         NAME="Q Coin Testnet"
+        BOOTNODE_PORT=30303
         ;;
     devnet)
         CHAINID=73234
@@ -94,10 +96,13 @@ case $NETWORK in
         GENESIS="genesis_quantum_dev.json"
         PORT=30305
         NAME="Q Coin Dev Network"
+        BOOTNODE_PORT=30305
         ;;
 esac
 
-BOOTNODES="enode://89df9647d6f5b901c63e8a7ad977900b5ce2386b916ed6d204d24069435740c7e2c188c9d3493bfc98c056d9d87c6213df057e9518fb43f12759ba55dff31b4c@143.110.231.183:30303"
+# Use fallback bootnodes - geth will discover peers automatically
+# These are just bootstrap nodes to help initial peer discovery
+BOOTNODES="enode://89df9647d6f5b901c63e8a7ad977900b5ce2386b916ed6d204d24069435740c7e2c188c9d3493bfc98c056d9d87c6213df057e9518fb43f12759ba55dff31b4c@69.243.132.233:$BOOTNODE_PORT"
 
 echo -e "\033[1;36m🚀 Starting $NAME (Chain ID: $CHAINID)\033[0m"
 
@@ -137,7 +142,7 @@ GETH_ARGS=(
     "--datadir" "$DATADIR"
     "--networkid" "$CHAINID"
     "--port" "$PORT"
-    "--nat" "extip:143.110.231.183"
+    "--nat" "any"
     "--http"
     "--http.addr" "0.0.0.0"
     "--http.port" "8545"
@@ -177,6 +182,7 @@ echo -e "\033[1;37m🌐 Network: $NAME\033[0m"
 echo -e "\033[1;37m🔗 Chain ID: $CHAINID\033[0m"
 echo -e "\033[1;37m📁 Data Directory: $DATADIR\033[0m"
 echo -e "\033[1;37m🌍 Port: $PORT\033[0m"
+echo -e "\033[1;37m🌐 NAT: Automatic discovery (UPnP/NAT-PMP)\033[0m"
 echo -e "\033[1;37m🌐 HTTP RPC: http://0.0.0.0:8545\033[0m"
 echo -e "\033[1;37m🌐 WebSocket: ws://0.0.0.0:8546\033[0m"
 echo -e "\033[1;37m📡 Bootnodes: $BOOTNODES\033[0m"
