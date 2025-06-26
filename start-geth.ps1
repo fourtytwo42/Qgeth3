@@ -78,7 +78,7 @@ $configs = @{
     }
     "devnet" = @{
         chainid = 73234
-        datadir = "qdata"
+        datadir = "$env:APPDATA\Qcoin\devnet"
         genesis = "genesis_quantum_dev.json"
         port = 30305
         name = "Q Coin Dev Network"

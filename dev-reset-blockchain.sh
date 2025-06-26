@@ -65,7 +65,7 @@ esac
 echo -e "\033[1;33m⚠️  WARNING: This will completely reset the blockchain!\033[0m"
 echo -e "\033[1;37m   Network: $NETWORK_NAME (Chain ID: $CHAIN_ID)\033[0m"
 echo -e "\033[1;37m   Starting Difficulty: $DIFFICULTY\033[0m"
-echo -e "\033[1;37m   Data Directory: qdata/\033[0m"
+echo -e "\033[1;37m   Data Directory: \$HOME/.qcoin/devnet/\033[0m"
 echo ""
 
 if [ "$CONFIRM" = false ]; then
@@ -78,9 +78,10 @@ if [ "$CONFIRM" = false ]; then
 fi
 
 # Remove existing blockchain data
-if [ -d "qdata" ]; then
+DEVNET_DIR="$HOME/.qcoin/devnet"
+if [ -d "$DEVNET_DIR" ]; then
     echo -e "\033[1;33m🗑️  Removing existing blockchain data...\033[0m"
-    rm -rf qdata
+    rm -rf "$DEVNET_DIR"
     echo -e "\033[1;32m✅ Blockchain data removed\033[0m"
 else
     echo -e "\033[1;33m📁 No existing blockchain data found\033[0m"
@@ -143,7 +144,7 @@ EOF
 
 # Initialize blockchain
 echo -e "\033[1;33m🔧 Initializing fresh blockchain...\033[0m"
-./quantum-geth/build/bin/geth init "$GENESIS_FILE" --datadir qdata
+./quantum-geth/build/bin/geth init "$GENESIS_FILE" --datadir "$DEVNET_DIR"
 
 if [ $? -eq 0 ]; then
     echo -e "\033[1;32m✅ Blockchain reset completed successfully!\033[0m"
