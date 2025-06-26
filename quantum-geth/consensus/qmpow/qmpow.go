@@ -37,7 +37,7 @@ const (
 
 	// Proof system sizes
 	OutcomeRootSize   = 32  // Merkle root of outcomes
-	BranchNibblesSize = 64  // One nibble per puzzle (128 puzzles = 128 nibbles = 64 bytes)
+	BranchNibblesSize = 128  // One byte per puzzle (128 puzzles = 128 bytes)
 	GateHashSize      = 32  // SHA-256 of gate streams
 	ProofRootSize     = 32  // Merkle root of Nova proofs
 	ExtraNonce32Size  = 32  // 32-byte entropy field

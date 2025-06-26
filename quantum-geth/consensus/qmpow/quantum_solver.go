@@ -195,7 +195,7 @@ func (q *QMPoW) SolveQuantumPuzzles(header *types.Header) error {
 	header.OutcomeRoot = &outcomeRoot
 
 	// Handle branch nibbles - Python solver returns one nibble per puzzle (lnet nibbles)
-	// but Go expects BranchNibblesSize (64) bytes. We need to pad if necessary.
+			// but Go expects BranchNibblesSize (128) bytes. We need to pad if necessary.
 	if len(branchNibblesBytes) > BranchNibblesSize {
 		// Truncate if too long
 		copy(header.BranchNibbles, branchNibblesBytes[:BranchNibblesSize])
