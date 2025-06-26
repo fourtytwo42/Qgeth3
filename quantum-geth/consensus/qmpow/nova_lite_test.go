@@ -70,9 +70,9 @@ func TestNovaLiteAggregation(t *testing.T) {
 	prover := NewCAPSSProver()
 	witness := NewMahadevWitness()
 
-	// Generate 48 CAPSS proofs for testing
-	capssProofs := make([]*CAPSSProof, 48)
-	for i := 0; i < 48; i++ {
+	// Generate 128 CAPSS proofs for testing
+	capssProofs := make([]*CAPSSProof, 128)
+	for i := 0; i < 128; i++ {
 		seed := []byte(fmt.Sprintf("quantum_puzzle_%d_seed_32bytes", i))
 		if len(seed) < 32 {
 			seed = append(seed, make([]byte, 32-len(seed))...)
@@ -105,8 +105,8 @@ func TestNovaLiteAggregation(t *testing.T) {
 		t.Fatal("ProofRoot is nil")
 	}
 
-	if len(proofRoot.NovaProofs) != 3 {
-		t.Errorf("Expected 3 Nova-Lite proofs, got %d", len(proofRoot.NovaProofs))
+	if len(proofRoot.NovaProofs) != 8 {
+		t.Errorf("Expected 8 Nova-Lite proofs, got %d", len(proofRoot.NovaProofs))
 	}
 
 	if len(proofRoot.Root) != 32 {
@@ -153,12 +153,12 @@ func TestNovaLiteAggregation(t *testing.T) {
 		t.Errorf("Expected 1 successful aggregation, got %d", stats.SuccessfulAggs)
 	}
 
-	if stats.TotalCAPSSProcessed != 48 {
-		t.Errorf("Expected 48 CAPSS proofs processed, got %d", stats.TotalCAPSSProcessed)
+	if stats.TotalCAPSSProcessed != 128 {
+		t.Errorf("Expected 128 CAPSS proofs processed, got %d", stats.TotalCAPSSProcessed)
 	}
 
 	t.Logf("✅ Nova-Lite aggregation successful:")
-	t.Logf("   - 3 Nova-Lite proofs generated")
+	t.Logf("   - 8 Nova-Lite proofs generated")
 	t.Logf("   - Total size: %d bytes", proofRoot.TotalSize)
 	t.Logf("   - Aggregation time: %v", aggregationTime)
 	t.Logf("   - Average proof size: %.1f bytes", stats.AverageProofSize)
@@ -171,9 +171,9 @@ func TestProofBatchCreation(t *testing.T) {
 	prover := NewCAPSSProver()
 	witness := NewMahadevWitness()
 
-	// Generate 48 CAPSS proofs
-	capssProofs := make([]*CAPSSProof, 48)
-	for i := 0; i < 48; i++ {
+	// Generate 128 CAPSS proofs
+	capssProofs := make([]*CAPSSProof, 128)
+	for i := 0; i < 128; i++ {
 		seed := []byte(fmt.Sprintf("batch_test_seed_%d_32bytes", i))
 		if len(seed) < 32 {
 			seed = append(seed, make([]byte, 32-len(seed))...)
@@ -198,8 +198,8 @@ func TestProofBatchCreation(t *testing.T) {
 		t.Fatalf("Failed to create proof batches: %v", err)
 	}
 
-	if len(batches) != 3 {
-		t.Errorf("Expected 3 batches, got %d", len(batches))
+	if len(batches) != 8 {
+		t.Errorf("Expected 8 batches, got %d", len(batches))
 	}
 
 	// Validate each batch
@@ -492,21 +492,21 @@ func TestCompressionRatio(t *testing.T) {
 	}
 
 	// Test compression ratio calculation
-	ratio := EstimateCompressionRatio(48, novaProofs)
+	ratio := EstimateCompressionRatio(128, novaProofs)
 
 	// Expected calculation:
-	// CAPSS total: 48 * 2200 = 105,600 bytes
+	// CAPSS total: 128 * 2200 = 281,600 bytes
 	// Nova total: 5500 + 5600 + 5700 = 16,800 bytes
-	// Ratio: 105,600 / 16,800 = 6.286
-	expectedRatio := 105600.0 / 16800.0
+	// Ratio: 281,600 / 16,800 = 16.762
+	expectedRatio := 281600.0 / 16800.0
 
 	if ratio < expectedRatio*0.95 || ratio > expectedRatio*1.05 {
 		t.Errorf("Expected compression ratio ~%.2f, got %.2f", expectedRatio, ratio)
 	}
 
 	t.Logf("✅ Compression ratio test passed:")
-	t.Logf("   - 48 CAPSS proofs: %d bytes", 48*2200)
-	t.Logf("   - 3 Nova proofs: %d bytes", 16800)
+	t.Logf("   - 128 CAPSS proofs: %d bytes", 128*2200)
+	t.Logf("   - 8 Nova proofs: %d bytes", 16800)
 	t.Logf("   - Compression ratio: %.2fx", ratio)
 }
 
@@ -516,10 +516,10 @@ func TestDeterminism(t *testing.T) {
 	witness := NewMahadevWitness()
 
 	// Generate the same set of CAPSS proofs twice
-	capssProofs1 := make([]*CAPSSProof, 48)
-	capssProofs2 := make([]*CAPSSProof, 48)
-
-	for i := 0; i < 48; i++ {
+		capssProofs1 := make([]*CAPSSProof, 128)
+	capssProofs2 := make([]*CAPSSProof, 128)
+	
+	for i := 0; i < 128; i++ {
 		seed := []byte(fmt.Sprintf("determinism_test_%d_32bytes", i))
 		if len(seed) < 32 {
 			seed = append(seed, make([]byte, 32-len(seed))...)
