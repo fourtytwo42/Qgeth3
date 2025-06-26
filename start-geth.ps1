@@ -135,7 +135,7 @@ if ($Mining) {
     $gethArgs += @("--mine", "--miner.threads", "1", "--miner.etherbase", "0x1234567890123456789012345678901234567890")
     Write-Host "Mining enabled with 1 thread" -ForegroundColor Yellow
 } else {
-    # Enable mining interface for external miners (0 threads = no CPU mining)
+    # Enable mining interface for external miners (0 threads = no CPU mining, external only)
     $gethArgs += @("--mine", "--miner.threads", "0", "--miner.etherbase", "0x1234567890123456789012345678901234567890")
     Write-Host "Mining interface enabled for external miners (no CPU mining)" -ForegroundColor Green
 }

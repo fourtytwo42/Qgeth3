@@ -1320,9 +1320,10 @@ func (s *remoteSealer) submitQuantumWork(qnonce uint64, blockHash common.Hash, q
 	// Create header with quantum proof
 	header := types.CopyHeader(block.Header())
 
-	// CRITICAL: Initialize optional fields (WithdrawalsHash, etc.) before RLP validation
-	// This prevents "input string too short" RLP errors from external miners
-	s.qmpow.initializeOptionalFields(header)
+	// CRITICAL: Initialize ALL quantum fields (not just optional fields) before RLP validation
+	// This ensures the header structure matches exactly what was used during work preparation
+	// and prevents "input string too short" RLP errors from external miners
+	s.qmpow.initializeQuantumFields(header)
 
 	header.QNonce64 = &qnonce
 	header.OutcomeRoot = &quantumProof.OutcomeRoot
