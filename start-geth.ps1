@@ -45,20 +45,20 @@ function Get-LatestGethRelease {
 # Build if latest geth release doesn't exist
 $latestGeth = Get-LatestGethRelease
 if (-not $latestGeth -or -not (Test-Path $latestGeth)) {
-    Write-Host "🔨 Building Q Coin Geth Release..." -ForegroundColor Yellow
+    Write-Host "Building Q Coin Geth Release..." -ForegroundColor Yellow
     & .\build-release.ps1 geth
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "❌ Build failed!" -ForegroundColor Red
+        Write-Host "ERROR: Build failed!" -ForegroundColor Red
         exit 1
     }
     $latestGeth = Get-LatestGethRelease
     if (-not $latestGeth) {
-        Write-Host "❌ No geth release found after build!" -ForegroundColor Red
+        Write-Host "ERROR: No geth release found after build!" -ForegroundColor Red
         exit 1
     }
 }
 
-Write-Host "📦 Using latest geth release: $latestGeth" -ForegroundColor Green
+Write-Host "* Using latest geth release: $latestGeth" -ForegroundColor Green
 
 # Network configurations - bootnodes auto-selected based on chainid
 $configs = @{
@@ -86,24 +86,24 @@ $configs = @{
 }
 
 $config = $configs[$Network]
-Write-Host "🚀 Starting $($config.name) (Chain ID: $($config.chainid))" -ForegroundColor Cyan
+Write-Host "Starting $($config.name) (Chain ID: $($config.chainid))" -ForegroundColor Cyan
 
 # Create data directory if it doesn't exist
 if (-not (Test-Path $config.datadir)) {
     New-Item -ItemType Directory -Path $config.datadir -Force | Out-Null
-    Write-Host "📁 Created data directory: $($config.datadir)" -ForegroundColor Green
+    Write-Host "* Created data directory: $($config.datadir)" -ForegroundColor Green
 }
 
 # Initialize with genesis if needed
 $genesisPath = Join-Path $config.datadir "geth\chaindata"
 if (-not (Test-Path $genesisPath)) {
-    Write-Host "🔧 Initializing blockchain with genesis file..." -ForegroundColor Yellow
+    Write-Host "Initializing blockchain with genesis file..." -ForegroundColor Yellow
     & $latestGeth --datadir $config.datadir init $config.genesis
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "❌ Genesis initialization failed!" -ForegroundColor Red
+        Write-Host "ERROR: Genesis initialization failed!" -ForegroundColor Red
         exit 1
     }
-    Write-Host "✅ Blockchain initialized successfully" -ForegroundColor Green
+    Write-Host "* Blockchain initialized successfully" -ForegroundColor Green
 }
 
 # Prepare geth arguments
@@ -133,21 +133,21 @@ $gethArgs = @(
 # Add mining if requested
 if ($Mining) {
     $gethArgs += @("--mine", "--miner.threads", "1", "--miner.etherbase", "0x1234567890123456789012345678901234567890")
-    Write-Host "⛏️  Mining enabled with 1 thread" -ForegroundColor Yellow
+    Write-Host "Mining enabled with 1 thread" -ForegroundColor Yellow
 } else {
     # Enable mining interface for external miners (0 threads = no CPU mining)
     $gethArgs += @("--mine", "--miner.threads", "0", "--miner.etherbase", "0x1234567890123456789012345678901234567890")
-    Write-Host "🌐 Mining interface enabled for external miners (no CPU mining)" -ForegroundColor Green
+    Write-Host "Mining interface enabled for external miners (no CPU mining)" -ForegroundColor Green
 }
 
-Write-Host "🌐 Network: $($config.name)" -ForegroundColor White
-Write-Host "🔗 Chain ID: $($config.chainid)" -ForegroundColor White
-Write-Host "📁 Data Directory: $($config.datadir)" -ForegroundColor White
-Write-Host "🌍 Port: $($config.port)" -ForegroundColor White
-Write-Host "🌐 NAT: Automatic discovery (UPnP/NAT-PMP)" -ForegroundColor White
-Write-Host "📡 Bootnodes: Auto-selected for $Network network" -ForegroundColor White
+Write-Host "Network: $($config.name)" -ForegroundColor White
+Write-Host "Chain ID: $($config.chainid)" -ForegroundColor White
+Write-Host "Data Directory: $($config.datadir)" -ForegroundColor White
+Write-Host "Port: $($config.port)" -ForegroundColor White
+Write-Host "NAT: Automatic discovery (UPnP/NAT-PMP)" -ForegroundColor White
+Write-Host "Bootnodes: Auto-selected for $Network network" -ForegroundColor White
 Write-Host ""
-Write-Host "🎯 Starting Q Coin Geth node..." -ForegroundColor Green
+Write-Host "Starting Q Coin Geth node..." -ForegroundColor Green
 
 # Start geth
 & $latestGeth @gethArgs 
