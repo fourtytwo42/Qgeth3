@@ -206,8 +206,8 @@ for arg in "$@"; do
             echo "  ./start-linux-geth.sh --mainnet # Easy mainnet startup"
             echo ""
             echo "Manual Usage:"
-            echo "  ./geth --datadir qdata init genesis_quantum_testnet.json"
-            echo "  ./geth --datadir qdata --networkid 73235 --mine --miner.threads 0"
+            echo "  ./geth --datadir \$HOME/.qcoin init genesis_quantum_testnet.json"
+echo "  ./geth --datadir \$HOME/.qcoin --networkid 73235 --mine --miner.threads 0"
             echo ""
             echo "Standard geth options also available."
             exit 0
@@ -234,8 +234,8 @@ if [ ${#FILTERED_ARGS[@]} -eq 0 ] || ([[ ! " ${FILTERED_ARGS[*]} " =~ " --networ
         echo "  ./geth --datadir ~/.qcoin/mainnet --networkid 73236 init genesis_quantum_mainnet.json"
         echo "  ./geth --datadir ~/.qcoin/mainnet --networkid 73236 --mine --miner.threads 0"
     else
-        echo "  ./geth --datadir qdata --networkid 73235 init genesis_quantum_testnet.json"
-        echo "  ./geth --datadir qdata --networkid 73235 --mine --miner.threads 0"
+        echo "  ./geth --datadir \$HOME/.qcoin --networkid 73235 init genesis_quantum_testnet.json"
+echo "  ./geth --datadir \$HOME/.qcoin --networkid 73235 --mine --miner.threads 0"
     fi
     echo ""
     echo "Use --help for more options."
@@ -439,10 +439,10 @@ fi
 echo "🔧 Manual Method:"
 if [ "$TARGET" = "geth" ] || [ "$TARGET" = "both" ]; then
     echo "  # Initialize blockchain:"
-    echo "  ./geth --datadir qdata init genesis_quantum_testnet.json"
-    echo ""
-    echo "  # Start node (testnet, external mining):"
-    echo "  ./geth --datadir qdata --networkid 73235 --mine --miner.threads 0 \\"
+      echo "  ./geth --datadir \$HOME/.qcoin init genesis_quantum_testnet.json"
+  echo ""
+  echo "  # Start node (testnet, external mining):"
+  echo "  ./geth --datadir \$HOME/.qcoin --networkid 73235 --mine --miner.threads 0 \\"
     echo "         --http --http.api eth,net,web3,personal,admin,miner \\"
     echo "         --miner.etherbase 0x742d35C6C4e6d8de6f10E7FF75DD98dd25b02C3A"
 fi

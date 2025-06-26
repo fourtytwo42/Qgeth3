@@ -208,9 +208,10 @@ python3 -c "from qiskit_aer import AerSimulator; print(AerSimulator(device='GPU'
 
 **Attach to the Geth JavaScript Console (Linux, using IPC):**
 ```bash
-./geth.bin attach ipc:qdata/geth.ipc
+./geth.bin attach ipc:$HOME/.qcoin/geth.ipc
 ```
-- Replace `qdata/geth.ipc` with your actual IPC file path if different.
+- Replace `$HOME/.qcoin/geth.ipc` with your actual IPC file path if different.
+- For devnet: `$HOME/.qcoin/devnet/geth.ipc`
 - This opens the interactive geth console for direct blockchain commands.
 
 ## 🌐 VPS Deployment Guide
@@ -416,7 +417,7 @@ curl -X POST -H "Content-Type: application/json" \
 - `start-miner.ps1` / `start-linux-miner.sh` - Smart mining with auto-detection
 
 **Development Scripts:**
-- `dev-start-geth.ps1` / `scripts/dev-start-geth.sh` - Development node (uses qdata/)
+- `start-geth.ps1 devnet` / `start-geth.sh devnet` - Development node (uses $APPDATA\Qcoin\devnet\ or $HOME/.qcoin/devnet/)
 - `dev-start-geth-mining.ps1` / `scripts/dev-start-geth-mining.sh` - Development mining
 - `dev-reset-blockchain.ps1` / `dev-reset-blockchain.sh` - Reset development blockchain
 

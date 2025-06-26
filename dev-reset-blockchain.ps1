@@ -4,7 +4,7 @@
 
 param(
     [float]$difficulty = 200,  # Starting difficulty (quantum-optimized: 200 based on real testing)
-    [string]$datadir = "qdata",
+    [string]$datadir = "$env:APPDATA\Qcoin\devnet",
     [int]$networkid = 73234,
     [int]$chainid = 73234,
     [string]$etherbase = "0x8b61271473f14c80f2B1381Db9CB13b2d5306200",

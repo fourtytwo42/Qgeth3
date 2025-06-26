@@ -92,7 +92,7 @@ case $NETWORK in
         ;;
     devnet)
         CHAINID=73234
-        DATADIR="qdata"
+        DATADIR="$HOME/.qcoin/devnet"
         GENESIS="genesis_quantum_dev.json"
         PORT=30305
         NAME="Q Coin Dev Network"
