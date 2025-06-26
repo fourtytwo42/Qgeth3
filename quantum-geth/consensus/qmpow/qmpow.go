@@ -630,11 +630,8 @@ func (q *QMPoW) SealHashWithNonce(header *types.Header) common.Hash {
 
 // initializeOptionalFields prevents RLP encoding issues
 func (q *QMPoW) initializeOptionalFields(header *types.Header) {
-	// Set WithdrawalsHash to EmptyWithdrawalsHash if it's nil
-	if header.WithdrawalsHash == nil {
-		emptyWithdrawalsHash := common.HexToHash("0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421")
-		header.WithdrawalsHash = &emptyWithdrawalsHash
-	}
+	// Don't force WithdrawalsHash - let it remain nil if no withdrawals are provided
+	// This prevents "missing withdrawals in block body" errors when withdrawals aren't used
 
 	// Initialize other optional fields if they're nil
 	if header.BlobGasUsed == nil {
