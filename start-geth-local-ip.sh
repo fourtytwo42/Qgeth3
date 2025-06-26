@@ -122,12 +122,18 @@ fi
 
 # Determine IP address to use
 if [ -n "$MANUAL_IP" ]; then
-    LOCAL_IP="$MANUAL_IP"
-    echo -e "\033[1;33m🏠 Using manually specified IP: $LOCAL_IP\033[0m"
+    EXTERNAL_IP="$MANUAL_IP"
+    echo -e "\033[1;33m🏠 Using manually specified IP: $EXTERNAL_IP\033[0m"
 else
-    # Auto-detect local IP address
-    LOCAL_IP=$(ip route get 1.1.1.1 | grep -oP 'src \K\S+' 2>/dev/null || echo "192.168.50.254")
-    echo -e "\033[1;33m🏠 Auto-detected local IP: $LOCAL_IP\033[0m"
+    # Try to detect external IP first, fallback to local IP
+    EXTERNAL_IP=$(curl -s https://ipinfo.io/ip 2>/dev/null || curl -s https://api.ipify.org 2>/dev/null || curl -s https://checkip.amazonaws.com 2>/dev/null)
+    if [ -z "$EXTERNAL_IP" ]; then
+        # Fallback to local IP detection
+        EXTERNAL_IP=$(ip route get 1.1.1.1 | grep -oP 'src \K\S+' 2>/dev/null || echo "192.168.50.254")
+        echo -e "\033[1;33m🏠 Using local IP (external detection failed): $EXTERNAL_IP\033[0m"
+    else
+        echo -e "\033[1;32m🌍 Detected external IP: $EXTERNAL_IP\033[0m"
+    fi
 fi
 
 # Prepare geth arguments
@@ -135,7 +141,7 @@ GETH_ARGS=(
     "--datadir" "$DATADIR"
     "--networkid" "$CHAINID"
     "--port" "$PORT"
-    "--nat" "extip:$LOCAL_IP"
+    "--nat" "extip:$EXTERNAL_IP"
     "--http"
     "--http.addr" "0.0.0.0"
     "--http.port" "8545"
@@ -167,7 +173,7 @@ echo -e "\033[1;37m🌐 Network: $NAME\033[0m"
 echo -e "\033[1;37m🔗 Chain ID: $CHAINID\033[0m"
 echo -e "\033[1;37m📁 Data Directory: $DATADIR\033[0m"
 echo -e "\033[1;37m🌍 Port: $PORT\033[0m"
-echo -e "\033[1;37m🏠 Local IP: $LOCAL_IP\033[0m"
+echo -e "\033[1;37m🌍 External IP: $EXTERNAL_IP\033[0m"
 echo -e "\033[1;37m📡 Bootnodes: Auto-selected for $NETWORK network\033[0m"
 echo ""
 echo -e "\033[1;32m🎯 Starting Q Coin Geth node...\033[0m"
