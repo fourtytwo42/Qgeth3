@@ -98,7 +98,8 @@ case $NETWORK in
         ;;
 esac
 
-BOOTNODES="enode://89df9647d6f5b901c63e8a7ad977900b5ce2386b916ed6d204d24069435740c7e2c188c9d3493bfc98c056d9d87c6213df057e9518fb43f12759ba55dff31b4c@69.243.132.233:4294"
+# Bootnodes are automatically selected based on network ID (chainid)
+# No need to specify --bootnodes flag - geth will use params/bootnodes_qcoin.go
 
 echo -e "\033[1;36m🚀 Starting $NAME (Chain ID: $CHAINID)\033[0m"
 
@@ -149,7 +150,6 @@ GETH_ARGS=(
     "--authrpc.port" "8551"
     "--authrpc.vhosts" "localhost"
     "--authrpc.jwtsecret" "jwt.hex"
-    "--bootnodes" "$BOOTNODES"
     "--maxpeers" "25"
     "--verbosity" "3"
 )
@@ -168,7 +168,7 @@ echo -e "\033[1;37m🔗 Chain ID: $CHAINID\033[0m"
 echo -e "\033[1;37m📁 Data Directory: $DATADIR\033[0m"
 echo -e "\033[1;37m🌍 Port: $PORT\033[0m"
 echo -e "\033[1;37m🏠 Local IP: $LOCAL_IP\033[0m"
-echo -e "\033[1;37m📡 Bootnodes: $BOOTNODES\033[0m"
+echo -e "\033[1;37m📡 Bootnodes: Auto-selected for $NETWORK network\033[0m"
 echo ""
 echo -e "\033[1;32m🎯 Starting Q Coin Geth node...\033[0m"
 

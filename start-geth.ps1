@@ -60,7 +60,7 @@ if (-not $latestGeth -or -not (Test-Path $latestGeth)) {
 
 Write-Host "📦 Using latest geth release: $latestGeth" -ForegroundColor Green
 
-# Network configurations with fallback bootnodes
+# Network configurations - bootnodes auto-selected based on chainid
 $configs = @{
     "mainnet" = @{
         chainid = 73236
@@ -68,7 +68,6 @@ $configs = @{
         genesis = "genesis_quantum_mainnet.json"
         port = 30303
         name = "Q Coin Mainnet"
-        bootnodes = "enode://89df9647d6f5b901c63e8a7ad977900b5ce2386b916ed6d204d24069435740c7e2c188c9d3493bfc98c056d9d87c6213df057e9518fb43f12759ba55dff31b4c@69.243.132.233:30303"
     }
     "testnet" = @{
         chainid = 73235
@@ -76,7 +75,6 @@ $configs = @{
         genesis = "genesis_quantum_testnet.json"
         port = 30303
         name = "Q Coin Testnet"
-        bootnodes = "enode://89df9647d6f5b901c63e8a7ad977900b5ce2386b916ed6d204d24069435740c7e2c188c9d3493bfc98c056d9d87c6213df057e9518fb43f12759ba55dff31b4c@69.243.132.233:30303"
     }
     "devnet" = @{
         chainid = 73234
@@ -84,7 +82,6 @@ $configs = @{
         genesis = "genesis_quantum_dev.json"
         port = 30305
         name = "Q Coin Dev Network"
-        bootnodes = "enode://89df9647d6f5b901c63e8a7ad977900b5ce2386b916ed6d204d24069435740c7e2c188c9d3493bfc98c056d9d87c6213df057e9518fb43f12759ba55dff31b4c@69.243.132.233:30305"
     }
 }
 
@@ -129,7 +126,6 @@ $gethArgs = @(
     "--authrpc.port", "8551",
     "--authrpc.vhosts", "localhost",
     "--authrpc.jwtsecret", "jwt.hex",
-    "--bootnodes", $config.bootnodes,
     "--maxpeers", "25",
     "--verbosity", "3"
 )
@@ -149,7 +145,7 @@ Write-Host "🔗 Chain ID: $($config.chainid)" -ForegroundColor White
 Write-Host "📁 Data Directory: $($config.datadir)" -ForegroundColor White
 Write-Host "🌍 Port: $($config.port)" -ForegroundColor White
 Write-Host "🌐 NAT: Automatic discovery (UPnP/NAT-PMP)" -ForegroundColor White
-Write-Host "📡 Bootnodes: $($config.bootnodes)" -ForegroundColor White
+Write-Host "📡 Bootnodes: Auto-selected for $Network network" -ForegroundColor White
 Write-Host ""
 Write-Host "🎯 Starting Q Coin Geth node..." -ForegroundColor Green
 

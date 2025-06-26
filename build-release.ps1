@@ -25,12 +25,14 @@ if ($Component -eq "geth" -or $Component -eq "both") {
     # Build to regular location first
     Push-Location "quantum-geth"
     try {
-        # Disable CGO for geth (not needed on Windows)
+        # CRITICAL: Always use CGO_ENABLED=0 for geth to ensure compatibility
+        # This ensures Windows and Linux builds have identical quantum field handling
         $env:CGO_ENABLED = "0"
+        Write-Host "ENFORCING: CGO_ENABLED=0 for geth build (quantum field compatibility)" -ForegroundColor Yellow
         & go build -o "build/bin/geth.exe" "./cmd/geth"
         
         if ($LASTEXITCODE -eq 0) {
-            Write-Host "quantum-geth built successfully" -ForegroundColor Green
+            Write-Host "quantum-geth built successfully (CGO_ENABLED=0)" -ForegroundColor Green
             
             # Create timestamped release
             $releaseDir = "../releases/quantum-geth-$timestamp"
@@ -68,8 +70,9 @@ if ($Component -eq "miner" -or $Component -eq "both") {
     # Build to regular location first
     Push-Location "quantum-miner"
     try {
-        # Disable CGO for Windows miner (uses CuPy instead of native CUDA)
+        # Use CGO_ENABLED=0 for Windows miner (uses CuPy instead of native CUDA)
         $env:CGO_ENABLED = "0"
+        Write-Host "INFO: Using CGO_ENABLED=0 for Windows miner (CuPy GPU support)" -ForegroundColor Cyan
         & go build -o "quantum-miner.exe" "."
         
         if ($LASTEXITCODE -eq 0) {
@@ -86,50 +89,53 @@ if ($Component -eq "miner" -or $Component -eq "both") {
             }
             
             # Create release scripts
-            @"
+            $gpuScript = @'
 # Quantum-Miner GPU Launcher (PowerShell)
 param(
-    [string]`$Coinbase = "",
-    [int]`$Threads = 1,
-    [int]`$GpuId = 0,
-    [string]`$NodeURL = "http://localhost:8545"
+    [string]$Coinbase = "",
+    [int]$Threads = 1,
+    [int]$GpuId = 0,
+    [string]$NodeURL = "http://localhost:8545"
 )
 
-if (`$Coinbase -eq "") {
-    Write-Host "Usage: .\start-miner-gpu.ps1 -Coinbase <address>" -ForegroundColor Yellow
+if ($Coinbase -eq "") {
+    Write-Host "Usage: .\start-miner-gpu.ps1 -Coinbase [address]" -ForegroundColor Yellow
     exit 1
 }
 
-& ".\quantum-miner.exe" -gpu -coinbase "`$Coinbase" -threads `$Threads -gpu-id `$GpuId -node "`$NodeURL"
-"@ | Out-File -FilePath "$releaseDir/start-miner-gpu.ps1" -Encoding UTF8
+& ".\quantum-miner.exe" -gpu -coinbase "$Coinbase" -threads $Threads -gpu-id $GpuId -node "$NodeURL"
+'@
+            $gpuScript | Out-File -FilePath "$releaseDir/start-miner-gpu.ps1" -Encoding UTF8
 
-            @"
+            $cpuScript = @'
 # Quantum-Miner CPU Launcher (PowerShell)
 param(
-    [string]`$Coinbase = "",
-    [int]`$Threads = 4,
-    [string]`$NodeURL = "http://localhost:8545"
+    [string]$Coinbase = "",
+    [int]$Threads = 4,
+    [string]$NodeURL = "http://localhost:8545"
 )
 
-if (`$Coinbase -eq "") {
-    Write-Host "Usage: .\start-miner-cpu.ps1 -Coinbase <address>" -ForegroundColor Yellow
+if ($Coinbase -eq "") {
+    Write-Host "Usage: .\start-miner-cpu.ps1 -Coinbase [address]" -ForegroundColor Yellow
     exit 1
 }
 
-& ".\quantum-miner.exe" -coinbase "`$Coinbase" -threads `$Threads -node "`$NodeURL"
-"@ | Out-File -FilePath "$releaseDir/start-miner-cpu.ps1" -Encoding UTF8
+& ".\quantum-miner.exe" -coinbase "$Coinbase" -threads $Threads -node "$NodeURL"
+'@
+            $cpuScript | Out-File -FilePath "$releaseDir/start-miner-cpu.ps1" -Encoding UTF8
 
             # Create release info
-            @"
-# Quantum-Miner Release $timestamp
-Built: $(Get-Date)
-Component: quantum-miner
-Version: Latest
-
-## Usage
-- GPU Mining: .\start-miner-gpu.ps1 -Coinbase <address>
-- CPU Mining: .\start-miner-cpu.ps1 -Coinbase <address>
-"@ | Out-File -FilePath "$releaseDir/README.md" -Encoding UTF8
+            $readmeLines = @(
+                "# Quantum-Miner Release $timestamp",
+                "Built: $(Get-Date)",
+                "Component: quantum-miner", 
+                "Version: Latest",
+                "",
+                "## Usage",
+                "* GPU Mining: .\start-miner-gpu.ps1 -Coinbase [address]",
+                "* CPU Mining: .\start-miner-cpu.ps1 -Coinbase [address]"
+            )
+            $readmeLines -join "`r`n" | Out-File -FilePath "$releaseDir/README.md" -Encoding UTF8
             
             Write-Host "Created release: $releaseDir" -ForegroundColor Green
         } else {
