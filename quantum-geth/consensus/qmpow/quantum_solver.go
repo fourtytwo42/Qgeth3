@@ -15,7 +15,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"math/big"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -85,24 +84,10 @@ func (q *QMPoW) initializeQuantumFields(header *types.Header) {
 		header.BranchNibbles = make([]byte, BranchNibblesSize)
 	}
 
-	// Initialize EIP optional fields to prevent RLP encoding issues
-	// This is critical for proper RLP encoding/decoding
-	// Don't force WithdrawalsHash - let it remain nil if no withdrawals are provided
-	if header.BlobGasUsed == nil {
-		var zero uint64 = 0
-		header.BlobGasUsed = &zero
-	}
-	if header.ExcessBlobGas == nil {
-		var zero uint64 = 0
-		header.ExcessBlobGas = &zero
-	}
-	if header.BaseFee == nil {
-		header.BaseFee = big.NewInt(0)
-	}
-	if header.ParentBeaconRoot == nil {
-		emptyHash := common.Hash{}
-		header.ParentBeaconRoot = &emptyHash
-	}
+	// CRITICAL: Initialize ALL optional fields consistently for proper RLP encoding/decoding
+	// This delegates to the centralized function that ensures all optional fields
+	// are properly initialized to prevent RLP validation failures
+	q.initializeOptionalFields(header)
 
 	// Marshal quantum fields into QBlob for proper RLP encoding
 	header.MarshalQuantumBlob()

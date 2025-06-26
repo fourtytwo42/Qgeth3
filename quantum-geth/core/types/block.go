@@ -164,7 +164,6 @@ type Header struct {
 	// Note: Dilithium signature & proofs are stored in block body, not header
 }
 
-// EncodeRLP implements rlp.Encoder for Header to properly handle all fields.
 // RuntimeAssertHeaderSize adds a paranoid check to ensure header encoding is correct
 func (h *Header) RuntimeAssertHeaderSize() {
 	// Marshal quantum blob before encoding
@@ -772,8 +771,15 @@ func (h *Header) MarshalQuantumBlob() {
 
 // UnmarshalQuantumBlob decodes quantum fields from the QBlob byte slice
 func (h *Header) UnmarshalQuantumBlob() error {
+	// Debug log conditions
+	log.Debug("🔬 DEBUG: UnmarshalQuantumBlob conditions", 
+		"isQuantumActive", IsQuantumActive(h.Number),
+		"qblobLen", len(h.QBlob),
+		"blockNumber", h.Number.Uint64())
+
 	if !IsQuantumActive(h.Number) || len(h.QBlob) == 0 {
 		// Clear all quantum fields for non-quantum blocks
+		log.Debug("🔬 DEBUG: Clearing quantum fields - early return")
 		h.Epoch = nil
 		h.QBits = nil
 		h.TCount = nil
@@ -794,6 +800,7 @@ func (h *Header) UnmarshalQuantumBlob() error {
 		return fmt.Errorf("quantum blob too short: got %d bytes, expected %d", len(h.QBlob), expectedSize)
 	}
 
+	log.Debug("🔬 DEBUG: Starting QBlob unmarshaling", "qblobSize", len(h.QBlob), "expectedSize", expectedSize)
 	buf := bytes.NewReader(h.QBlob)
 
 	// Helper function to read 32-byte hashes
@@ -814,36 +821,46 @@ func (h *Header) UnmarshalQuantumBlob() error {
 	// 16.1 Epoch (4 bytes)
 	var epoch uint32
 	if err := binary.Read(buf, binary.LittleEndian, &epoch); err != nil {
+		log.Debug("🔬 DEBUG: Epoch read error", "error", err)
 		return err
 	}
+	log.Debug("🔬 DEBUG: Epoch unmarshaled", "value", epoch)
 	h.Epoch = &epoch
 
 	// 16.2 QBits (2 bytes)
 	var qbits uint16
 	if err := binary.Read(buf, binary.LittleEndian, &qbits); err != nil {
+		log.Debug("🔬 DEBUG: QBits read error", "error", err)
 		return err
 	}
+	log.Debug("🔬 DEBUG: QBits unmarshaled", "value", qbits)
 	h.QBits = &qbits
 
 	// 16.3 TCount (4 bytes)
 	var tcount uint32
 	if err := binary.Read(buf, binary.LittleEndian, &tcount); err != nil {
+		log.Debug("🔬 DEBUG: TCount read error", "error", err)
 		return err
 	}
+	log.Debug("🔬 DEBUG: TCount unmarshaled", "value", tcount)
 	h.TCount = &tcount
 
 	// 16.4 LNet (2 bytes)
 	var lnet uint16
 	if err := binary.Read(buf, binary.LittleEndian, &lnet); err != nil {
+		log.Debug("🔬 DEBUG: LNet read error", "error", err)
 		return err
 	}
+	log.Debug("🔬 DEBUG: LNet unmarshaled", "value", lnet)
 	h.LNet = &lnet
 
 	// 16.5 QNonce64 (8 bytes)
 	var qnonce uint64
 	if err := binary.Read(buf, binary.LittleEndian, &qnonce); err != nil {
+		log.Debug("🔬 DEBUG: QNonce64 read error", "error", err)
 		return err
 	}
+	log.Debug("🔬 DEBUG: QNonce64 unmarshaled", "value", qnonce)
 	h.QNonce64 = &qnonce
 
 	// 16.6 ExtraNonce32 (32 bytes)

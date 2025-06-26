@@ -630,21 +630,30 @@ func (q *QMPoW) SealHashWithNonce(header *types.Header) common.Hash {
 
 // initializeOptionalFields prevents RLP encoding issues
 func (q *QMPoW) initializeOptionalFields(header *types.Header) {
-	// Don't force WithdrawalsHash - let it remain nil if no withdrawals are provided
-	// This prevents "missing withdrawals in block body" errors when withdrawals aren't used
-
-	// Initialize other optional fields if they're nil
+	// CRITICAL: Initialize ALL optional fields to ensure consistent RLP encoding/decoding
+	// The RLP library expects optional fields to be present in a specific order
+	// Having some nil and others initialized causes "input string too short" errors
+	
+	if header.BaseFee == nil {
+		header.BaseFee = big.NewInt(0)
+	}
+	
+	// Initialize WithdrawalsHash to empty hash (not nil) for RLP consistency
+	if header.WithdrawalsHash == nil {
+		emptyHash := common.Hash{}
+		header.WithdrawalsHash = &emptyHash
+	}
+	
 	if header.BlobGasUsed == nil {
 		var zero uint64 = 0
 		header.BlobGasUsed = &zero
 	}
+	
 	if header.ExcessBlobGas == nil {
 		var zero uint64 = 0
 		header.ExcessBlobGas = &zero
 	}
-	if header.BaseFee == nil {
-		header.BaseFee = big.NewInt(0)
-	}
+	
 	if header.ParentBeaconRoot == nil {
 		emptyHash := common.Hash{}
 		header.ParentBeaconRoot = &emptyHash
@@ -1321,18 +1330,14 @@ func (s *remoteSealer) submitQuantumWork(qnonce uint64, blockHash common.Hash, q
 	// Create header with quantum proof
 	header := types.CopyHeader(block.Header())
 
-	// CRITICAL: Initialize ALL quantum fields (not just optional fields) before RLP validation
-	// This ensures the header structure matches exactly what was used during work preparation
-	// and prevents "input string too short" RLP errors from external miners
-	log.Debug("🔬 DEBUG: Header before initializeQuantumFields", 
+	// DO NOT call initializeQuantumFields() here!
+	// The header already has the correct quantum field structure from the work template.
+	// Calling initializeQuantumFields() again would modify the QBlob and cause RLP mismatches.
+	log.Debug("🔬 DEBUG: Header structure from work template", 
 		"withdrawalsHash", header.WithdrawalsHash, 
 		"baseFee", header.BaseFee,
-		"blobGasUsed", header.BlobGasUsed)
-	s.qmpow.initializeQuantumFields(header)
-	log.Debug("🔬 DEBUG: Header after initializeQuantumFields", 
-		"withdrawalsHash", header.WithdrawalsHash, 
-		"baseFee", header.BaseFee,
-		"blobGasUsed", header.BlobGasUsed)
+		"blobGasUsed", header.BlobGasUsed,
+		"qblobSize", len(header.QBlob))
 
 	header.QNonce64 = &qnonce
 	header.OutcomeRoot = &quantumProof.OutcomeRoot
@@ -1346,6 +1351,12 @@ func (s *remoteSealer) submitQuantumWork(qnonce uint64, blockHash common.Hash, q
 	if len(quantumProof.ExtraNonce32) >= ExtraNonce32Size {
 		copy(header.ExtraNonce32, quantumProof.ExtraNonce32[:ExtraNonce32Size])
 	}
+
+	// CRITICAL: Re-marshal quantum blob after updating quantum fields
+	// The external miner provided new quantum field values (qnonce, outcomes, etc.)
+	// but the QBlob still contains the old marshaled data from the work template.
+	// We must re-marshal to ensure QBlob matches the updated quantum fields.
+	header.MarshalQuantumBlob()
 
 	// CRITICAL: Comprehensive RLP validation before accepting external miner blocks
 	// This prevents malformed blocks from jamming the blockchain
@@ -1366,14 +1377,14 @@ func (s *remoteSealer) submitQuantumWork(qnonce uint64, blockHash common.Hash, q
 		return false
 	}
 
-	// Step 3: Validate quantum fields structure
+	// Step 3: Validate quantum field consistency
 	if err := s.validateQuantumFieldsIntegrity(header); err != nil {
 		log.Warn("❌ External miner block rejected - Quantum fields validation failed",
 			"qnonce", qnonce, "hash", blockHash.Hex(), "error", err)
 		return false
 	}
 
-	log.Debug("✅ External miner block passed RLP validation", "qnonce", qnonce, "hash", blockHash.Hex())
+	log.Debug("✅ External miner block passed comprehensive RLP validation", "qnonce", qnonce, "hash", blockHash.Hex())
 
 	// Verify quantum proof meets target
 	if !s.qmpow.checkQuantumTarget(header) {
@@ -1422,28 +1433,34 @@ func (s *remoteSealer) submitQuantumWork(qnonce uint64, blockHash common.Hash, q
 // consensus failures. All external miner submissions MUST pass this validation.
 //
 // Validation steps:
-// 1. Marshal quantum fields into QBlob for proper RLP encoding
-// 2. Test RLP encoding to catch malformed data structures
-// 3. Validate encoded size to prevent oversized/undersized blocks
-// 4. Test RLP decoding roundtrip to ensure data integrity
-// 5. Unmarshal quantum blob to verify quantum field consistency
-// 6. Verify all critical fields survived the encoding/decoding process
+// 1. Test RLP encoding to catch malformed data structures (header as-is)
+// 2. Validate encoded size to prevent oversized/undersized blocks
+// 3. Test RLP decoding roundtrip to ensure data integrity
+// 4. Unmarshal quantum blob to verify quantum field consistency
+// 5. Verify all critical fields survived the encoding/decoding process
 //
 // This prevents:
 // - Malformed RLP that could crash nodes during decoding
 // - Corrupted quantum fields that could break consensus
 // - Oversized blocks that could cause DoS attacks
 // - Data corruption during network transmission
+//
+// NOTE: We validate the header structure as-is from external miners.
+// External miners receive work templates with properly structured headers,
+// so we should not modify the header during validation (no MarshalQuantumBlob).
 func (s *remoteSealer) validateHeaderRLPIntegrity(header *types.Header) error {
 	// Debug log header state before validation
 	log.Debug("🔬 DEBUG: Header before RLP validation", 
 		"withdrawalsHash", header.WithdrawalsHash,
 		"withdrawalsHashIsNil", header.WithdrawalsHash == nil,
 		"baseFee", header.BaseFee,
-		"blobGasUsed", header.BlobGasUsed)
+		"blobGasUsed", header.BlobGasUsed,
+		"qblobSize", len(header.QBlob))
 
-	// Marshal quantum fields into QBlob before encoding
-	header.MarshalQuantumBlob()
+	// DO NOT call header.MarshalQuantumBlob() here!
+	// External miners submit headers that already have the correct QBlob structure
+	// from the work template. Calling MarshalQuantumBlob() would modify the header
+	// and cause RLP structure mismatches during validation.
 
 	// Test RLP encoding
 	encoded, err := rlp.EncodeToBytes(header)
@@ -1484,10 +1501,57 @@ func (s *remoteSealer) validateHeaderRLPIntegrity(header *types.Header) error {
 		return fmt.Errorf("header RLP decoding failed: %v", err)
 	}
 
+	// Debug log QBlob before unmarshaling
+	qblobHex := ""
+	if len(decodedHeader.QBlob) > 20 {
+		qblobHex = fmt.Sprintf("%x...", decodedHeader.QBlob[:20])
+	} else {
+		qblobHex = fmt.Sprintf("%x", decodedHeader.QBlob)
+	}
+	log.Debug("🔬 DEBUG: QBlob before unmarshaling", 
+		"qblobSize", len(decodedHeader.QBlob),
+		"qblobHex", qblobHex)
+
 	// Unmarshal quantum blob to populate virtual quantum fields
 	if err := decodedHeader.UnmarshalQuantumBlob(); err != nil {
 		return fmt.Errorf("quantum blob unmarshaling failed: %v", err)
 	}
+
+	// Debug log quantum fields after unmarshaling
+	qnonceAfter := "<nil>"
+	if decodedHeader.QNonce64 != nil {
+		qnonceAfter = fmt.Sprintf("%d", *decodedHeader.QNonce64)
+	}
+	outcomeAfter := "<nil>"
+	if decodedHeader.OutcomeRoot != nil {
+		outcomeAfter = decodedHeader.OutcomeRoot.Hex()[:10] + ".."
+	}
+	log.Debug("🔬 DEBUG: Quantum fields after unmarshaling", 
+		"qnonce", qnonceAfter,
+		"outcome", outcomeAfter)
+
+	// Debug log quantum field comparison
+	originalQNonce := "<nil>"
+	if header.QNonce64 != nil {
+		originalQNonce = fmt.Sprintf("%d", *header.QNonce64)
+	}
+	decodedQNonce := "<nil>"
+	if decodedHeader.QNonce64 != nil {
+		decodedQNonce = fmt.Sprintf("%d", *decodedHeader.QNonce64)
+	}
+	originalOutcome := "<nil>"
+	if header.OutcomeRoot != nil {
+		originalOutcome = header.OutcomeRoot.Hex()[:10] + ".."
+	}
+	decodedOutcome := "<nil>"
+	if decodedHeader.OutcomeRoot != nil {
+		decodedOutcome = decodedHeader.OutcomeRoot.Hex()[:10] + ".."
+	}
+	log.Debug("🔬 DEBUG: Quantum field comparison", 
+		"originalQNonce", originalQNonce,
+		"decodedQNonce", decodedQNonce,
+		"originalOutcome", originalOutcome,
+		"decodedOutcome", decodedOutcome)
 
 	// Verify critical fields survived roundtrip
 	if decodedHeader.Number == nil || decodedHeader.Number.Cmp(header.Number) != 0 {
@@ -1504,7 +1568,15 @@ func (s *remoteSealer) validateHeaderRLPIntegrity(header *types.Header) error {
 
 	// Verify quantum fields survived roundtrip
 	if decodedHeader.QNonce64 == nil || *decodedHeader.QNonce64 != *header.QNonce64 {
-		return fmt.Errorf("QNonce64 corrupted in RLP roundtrip")
+		originalVal := uint64(0)
+		if header.QNonce64 != nil {
+			originalVal = *header.QNonce64
+		}
+		decodedVal := uint64(0)
+		if decodedHeader.QNonce64 != nil {
+			decodedVal = *decodedHeader.QNonce64
+		}
+		return fmt.Errorf("QNonce64 corrupted in RLP roundtrip: original=%d, decoded=%d", originalVal, decodedVal)
 	}
 
 	if decodedHeader.OutcomeRoot == nil || *decodedHeader.OutcomeRoot != *header.OutcomeRoot {
