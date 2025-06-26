@@ -100,6 +100,16 @@ case $NETWORK in
         ;;
 esac
 
+# Detect external IP for proper enode advertising
+EXTERNAL_IP=$(curl -s https://ipinfo.io/ip 2>/dev/null || curl -s https://api.ipify.org 2>/dev/null || curl -s https://checkip.amazonaws.com 2>/dev/null)
+if [ -z "$EXTERNAL_IP" ]; then
+    echo -e "\033[1;33m⚠️  Could not detect external IP, using NAT discovery\033[0m"
+    NAT_CONFIG="any"
+else
+    echo -e "\033[1;32m🌍 Detected external IP: $EXTERNAL_IP\033[0m"
+    NAT_CONFIG="extip:$EXTERNAL_IP"
+fi
+
 # Bootnodes are automatically selected based on network ID (chainid)
 # No need to specify --bootnodes flag - geth will use params/bootnodes_qcoin.go
 
@@ -141,7 +151,7 @@ GETH_ARGS=(
     "--datadir" "$DATADIR"
     "--networkid" "$CHAINID"
     "--port" "$PORT"
-    "--nat" "any"
+    "--nat" "$NAT_CONFIG"
     "--http"
     "--http.addr" "0.0.0.0"
     "--http.port" "8545"
@@ -180,7 +190,7 @@ echo -e "\033[1;37m🌐 Network: $NAME\033[0m"
 echo -e "\033[1;37m🔗 Chain ID: $CHAINID\033[0m"
 echo -e "\033[1;37m📁 Data Directory: $DATADIR\033[0m"
 echo -e "\033[1;37m🌍 Port: $PORT\033[0m"
-echo -e "\033[1;37m🌐 NAT: Automatic discovery (UPnP/NAT-PMP)\033[0m"
+echo -e "\033[1;37m🌐 NAT: $NAT_CONFIG\033[0m"
 echo -e "\033[1;37m🌐 HTTP RPC: http://0.0.0.0:8545\033[0m"
 echo -e "\033[1;37m🌐 WebSocket: ws://0.0.0.0:8546\033[0m"
 echo -e "\033[1;37m📡 Bootnodes: Auto-selected for $NETWORK network\033[0m"
