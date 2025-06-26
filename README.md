@@ -234,6 +234,132 @@ git clone https://github.com/fourtytwo42/Qgeth3.git && \
 cd Qgeth3 && chmod +x *.sh && ./build-linux.sh both
 ```
 
+### ⚠️ Important: Low-Memory VPS Build Fix
+
+**If building on a VPS with 1-2GB RAM, you MUST add swap space to prevent build failures:**
+
+```bash
+# Add 3GB swap file (required for compilation)
+sudo fallocate -l 3G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+
+# Make swap permanent (survives reboot)
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+
+# Verify swap is active
+free -h
+# Should show 3.0G swap available
+
+# Now build normally
+./build-linux.sh both
+```
+
+**Why is swap needed?**
+- Go compilation uses significant memory during linking phase
+- 1GB VPS runs out of memory during `quantum-geth` build
+- 3GB swap provides enough virtual memory to complete compilation
+- After build completes, swap usage returns to minimal levels
+
+### VPS Security & Optimization
+
+**Firewall Setup:**
+```bash
+# Allow Q Coin ports
+sudo ufw allow 22/tcp      # SSH
+sudo ufw allow 8545/tcp    # RPC
+sudo ufw allow 30303/tcp   # P2P
+sudo ufw enable
+```
+
+**Performance Optimization:**
+```bash
+# Set CPU governor to performance
+echo 'performance' | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
+
+# Increase file limits
+echo '* soft nofile 65536' | sudo tee -a /etc/security/limits.conf
+echo '* hard nofile 65536' | sudo tee -a /etc/security/limits.conf
+
+# Optimize network
+echo 'net.core.rmem_max = 134217728' | sudo tee -a /etc/sysctl.conf
+echo 'net.core.wmem_max = 134217728' | sudo tee -a /etc/sysctl.conf
+sudo sysctl -p
+```
+
+**Monitoring & Maintenance:**
+```bash
+# Monitor mining performance
+./start-linux-miner.sh --verbose | grep "puzzles/sec"
+
+# Monitor system resources
+htop
+iotop
+nvidia-smi -l 1  # For GPU VPS
+
+# Check geth sync status
+curl -X POST -H "Content-Type: application/json" \
+  --data '{"jsonrpc":"2.0","method":"eth_syncing","params":[],"id":1}' \
+  http://localhost:8545
+```
+
+## 🌐 VPS Deployment Guide
+
+### VPS Providers & Specs
+
+**Recommended VPS Configurations:**
+
+| Provider | vCPU | RAM | Storage | Est. Performance | Monthly Cost |
+|----------|------|-----|---------|------------------|--------------|
+| DigitalOcean | 2 | 2GB | 50GB | ~0.3 puzzles/sec | $12 |
+| Vultr | 2 | 4GB | 80GB | ~0.4 puzzles/sec | $12 |
+| Linode | 4 | 8GB | 160GB | ~0.6 puzzles/sec | $48 |
+| AWS EC2 | 4 | 16GB | 100GB | ~0.8 puzzles/sec | $50 |
+| **GPU VPS** | 4 | 16GB | 100GB + GPU | **2.0+ puzzles/sec** | $100+ |
+
+### VPS Setup (One-Command Install)
+
+```bash
+# Ubuntu VPS quick setup
+curl -fsSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/install-vps.sh | bash
+
+# Or manual setup:
+apt update && apt upgrade -y && \
+apt install -y golang-go python3 python3-pip git build-essential && \
+pip3 install qiskit qiskit-aer numpy && \
+git clone https://github.com/fourtytwo42/Qgeth3.git && \
+cd Qgeth3 && chmod +x *.sh && ./build-linux.sh both
+```
+
+### ⚠️ Important: Low-Memory VPS Build Fix
+
+**If building on a VPS with 1-2GB RAM, you MUST add swap space to prevent build failures:**
+
+```bash
+# Add 3GB swap file (required for compilation)
+sudo fallocate -l 3G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+
+# Make swap permanent (survives reboot)
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+
+# Verify swap is active
+free -h
+# Should show 3.0G swap available
+
+# Now build normally
+./build-linux.sh both
+```
+
+**Why is swap needed?**
+- Go compilation uses significant memory during linking phase
+- 1GB VPS runs out of memory during `quantum-geth` build
+- 3GB swap provides enough virtual memory to complete compilation
+- After build completes, swap usage returns to minimal levels
+
 ### VPS Security & Optimization
 
 **Firewall Setup:**
