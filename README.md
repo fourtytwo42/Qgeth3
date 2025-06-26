@@ -206,6 +206,13 @@ python3 -c "from qiskit_aer import AerSimulator; print(AerSimulator(device='GPU'
 ./quantum-miner -threads 8 -coinbase 0xYourAddress -node http://localhost:8545 -log
 ```
 
+**Attach to the Geth JavaScript Console (Linux, using IPC):**
+```bash
+./geth.bin attach ipc:qdata/geth.ipc
+```
+- Replace `qdata/geth.ipc` with your actual IPC file path if different.
+- This opens the interactive geth console for direct blockchain commands.
+
 ## 🌐 VPS Deployment Guide
 
 ### VPS Providers & Specs
