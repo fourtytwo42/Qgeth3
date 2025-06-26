@@ -25,11 +25,6 @@ const (
 	FixedQBits  = 16  // ENFORCED: Exactly 16 qubits per puzzle
 	FixedTCount = 20  // ENFORCED: Minimum 20 T-gates per puzzle (was 8192)
 	FixedLNet   = 128 // ENFORCED: Exactly 128 chained puzzles per block for maximum entropy
-
-	// Quantum field sizes
-	ExtraNonce32Size  = 32  // 32-byte entropy field
-	BranchNibblesSize = 64  // One nibble per puzzle (128 puzzles = 128 nibbles = 64 bytes)
-	EpochBlocks       = 100 // Epoch length in blocks
 )
 
 // QuantumConstants defines the constants for quantum proof-of-work
