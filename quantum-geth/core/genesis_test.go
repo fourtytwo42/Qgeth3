@@ -161,7 +161,8 @@ func testSetupGenesis(t *testing.T, scheme string) {
 				tdb := triedb.NewDatabase(db, newDbConfig(scheme))
 				MustCommitGenesis(db, tdb, &oldcustomg)
 
-				bc, _ := NewBlockChain(db, DefaultCacheConfigWithScheme(scheme), &oldcustomg, nil, ethash.NewFullFaker(), vm.Config{}, nil, nil)
+				// QUANTUM FIX: Use QMPoW test engine instead of ethash
+	bc, _ := NewBlockChain(db, DefaultCacheConfigWithScheme(scheme), &oldcustomg, nil, qmpow.NewFullFaker(), vm.Config{}, nil, nil)
 				defer bc.Stop()
 
 				_, blocks, _ := GenerateChainWithGenesis(&oldcustomg, qmpow.NewFaker(), 4, nil)

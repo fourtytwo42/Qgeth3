@@ -37,7 +37,7 @@ func testGenerateBlockAndImportCG(t *testing.T, chainConfig ctypes.ChainConfigur
 			Period: chainConfig.GetCliquePeriod(),
 			Epoch:  chainConfig.GetCliqueEpoch(),
 		}, db)
-	} else if chainConfig.GetConsensusEngineType().IsEthash() {
+	} else if chainConfig.GetConsensusEngineType().IsEthash() || chainConfig.GetConsensusEngineType().IsQMPoW() {
 		// QUANTUM FIX: Use QMPoW test engine for quantum mining tests
 		engine = qmpow.NewFaker()
 	}
