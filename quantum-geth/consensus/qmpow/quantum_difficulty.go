@@ -7,7 +7,6 @@
 package qmpow
 
 import (
-	"errors"
 	"math/big"
 	
 	"github.com/ethereum/go-ethereum/core/types"
@@ -20,33 +19,16 @@ const (
 	DefaultMinDifficulty = 131072 // 2^17, reasonable for quantum networks
 )
 
-var (
-	// ErrInvalidDifficulty is returned when difficulty transition is invalid
-	ErrInvalidDifficulty = errors.New("invalid quantum difficulty transition")
-)
-
 // CalcDifficulty calculates the quantum difficulty for a given time and parent header
 // This replaces ethash.CalcDifficulty for quantum blockchain compatibility
 func CalcDifficulty(config ctypes.ChainConfigurator, time uint64, parent *types.Header) *big.Int {
-	// Get quantum configuration from chain config
-	qmpowConfig := config.GetQMPoWConfig()
-	if qmpowConfig == nil {
-		log.Warn("⚠️  No QMPoW config found, using default quantum parameters")
-		qmpowConfig = &ctypes.QMPoWConfig{
-			QBits:    16,
-			TCount:   20,
-			LNet:     128,
-			EpochLen: 100,
-			TestMode: true,
-		}
-	}
-	
 	// Calculate quantum difficulty using ASERT-Q algorithm
-	return CalcQuantumDifficulty(config, time, parent, qmpowConfig)
+	// Parameters are derived from height-based glide schedule
+	return CalcQuantumDifficulty(config, time, parent)
 }
 
 // CalcQuantumDifficulty calculates quantum difficulty using ASERT-Q algorithm
-func CalcQuantumDifficulty(config ctypes.ChainConfigurator, time uint64, parent *types.Header, qmpowConfig *ctypes.QMPoWConfig) *big.Int {
+func CalcQuantumDifficulty(config ctypes.ChainConfigurator, time uint64, parent *types.Header) *big.Int {
 	blockNumber := parent.Number.Uint64() + 1
 	
 	log.Debug("🔢 Calculating quantum difficulty",
@@ -57,7 +39,7 @@ func CalcQuantumDifficulty(config ctypes.ChainConfigurator, time uint64, parent 
 	
 	// For genesis block, use minimum quantum difficulty
 	if parent.Number.Uint64() == 0 {
-		minDiff := CalculateMinimumQuantumDifficulty(qmpowConfig)
+		minDiff := CalculateMinimumQuantumDifficulty(blockNumber)
 		log.Debug("📍 Genesis block quantum difficulty", "difficulty", minDiff)
 		return minDiff
 	}
@@ -70,7 +52,7 @@ func CalcQuantumDifficulty(config ctypes.ChainConfigurator, time uint64, parent 
 	newDifficulty := calculateASERTQDifficulty(parent.Difficulty, timeDiff, targetBlockTime, blockNumber)
 	
 	// Ensure minimum quantum difficulty
-	minDiff := CalculateMinimumQuantumDifficulty(qmpowConfig)
+	minDiff := CalculateMinimumQuantumDifficulty(blockNumber)
 	if newDifficulty.Cmp(minDiff) < 0 {
 		log.Debug("⬆️  Clamping to minimum quantum difficulty", "calculated", newDifficulty, "minimum", minDiff)
 		newDifficulty = minDiff
@@ -146,22 +128,14 @@ func calculateASERTQDifficulty(parentDifficulty *big.Int, timeDiff, targetTime i
 }
 
 // CalculateMinimumQuantumDifficulty calculates the minimum difficulty for quantum mining
-func CalculateMinimumQuantumDifficulty(qmpowConfig *ctypes.QMPoWConfig) *big.Int {
-	// Minimum difficulty based on quantum parameters
+func CalculateMinimumQuantumDifficulty(blockNumber uint64) *big.Int {
+	// Minimum difficulty based on quantum parameters from glide schedule
 	// Base difficulty = 2^(QBits + log2(LNet) + log2(TCount))
 	
-	qbits := uint32(16)
-	lnet := uint32(128)
-	tcount := uint32(20)
-	
-	if qmpowConfig != nil {
-		qbits = qmpowConfig.QBits
-		lnet = qmpowConfig.LNet
-		tcount = qmpowConfig.TCount
-	}
+	qbits, tcount, lnet := CalculateQuantumParamsForHeight(blockNumber)
 	
 	// Calculate complexity factor
-	complexityBits := qbits + 7 + 5 // log2(128) ≈ 7, log2(20) ≈ 5
+	complexityBits := uint32(qbits) + 7 + 5 // log2(128) ≈ 7, log2(20) ≈ 5
 	
 	// Minimum difficulty = 2^complexityBits / 1024 (to keep manageable)
 	minDiff := new(big.Int).Exp(big.NewInt(2), big.NewInt(int64(complexityBits)), nil)
@@ -178,12 +152,12 @@ func CalculateMinimumQuantumDifficulty(qmpowConfig *ctypes.QMPoWConfig) *big.Int
 }
 
 // IsQuantumDifficultyValid validates if a difficulty value is valid for quantum mining
-func IsQuantumDifficultyValid(difficulty *big.Int, qmpowConfig *ctypes.QMPoWConfig) bool {
+func IsQuantumDifficultyValid(difficulty *big.Int, blockNumber uint64) bool {
 	if difficulty == nil || difficulty.Sign() <= 0 {
 		return false
 	}
 	
-	minDiff := CalculateMinimumQuantumDifficulty(qmpowConfig)
+	minDiff := CalculateMinimumQuantumDifficulty(blockNumber)
 	return difficulty.Cmp(minDiff) >= 0
 }
 
@@ -196,9 +170,9 @@ func GetQuantumTargetFromDifficulty(difficulty *big.Int) *big.Int {
 }
 
 // ValidateQuantumDifficultyTransition validates difficulty change between blocks
-func ValidateQuantumDifficultyTransition(parent, current *types.Header, qmpowConfig *ctypes.QMPoWConfig) error {
+func ValidateQuantumDifficultyTransition(parent, current *types.Header) error {
 	// Calculate expected difficulty
-	expectedDiff := CalcQuantumDifficulty(nil, current.Time, parent, qmpowConfig)
+	expectedDiff := CalcQuantumDifficulty(nil, current.Time, parent)
 	
 	// Allow some tolerance for network conditions
 	tolerance := new(big.Int).Div(expectedDiff, big.NewInt(100)) // 1% tolerance
