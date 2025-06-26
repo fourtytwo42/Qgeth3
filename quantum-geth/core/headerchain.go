@@ -525,6 +525,11 @@ func (hc *HeaderChain) GetHeadersFrom(number, count uint64) []rlp.RawValue {
 		if !ok {
 			break
 		}
+		
+		// CRITICAL FIX: Marshal quantum fields into QBlob before RLP encoding
+		// This ensures quantum fields are properly transmitted to peers
+		header.MarshalQuantumBlob()
+		
 		rlpData, _ := rlp.EncodeToBytes(header)
 		headers = append(headers, rlpData)
 		hash = header.ParentHash
