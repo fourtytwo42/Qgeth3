@@ -1188,12 +1188,12 @@ func (w *worker) prepareWork(genParams *generateParams) (*environment, error) {
 		header.ParentBeaconRoot = genParams.beaconRoot
 	}
 	// Run the consensus preparation with the default or customized consensus engine.
-	log.Error("🔬 DEBUG: About to call engine.Prepare", "engineType", fmt.Sprintf("%T", w.engine), "blockNumber", header.Number.Uint64())
+	log.Debug("🔬 DEBUG: About to call engine.Prepare", "engineType", fmt.Sprintf("%T", w.engine), "blockNumber", header.Number.Uint64())
 	if err := w.engine.Prepare(w.chain, header); err != nil {
 		log.Error("Failed to prepare header for sealing", "err", err)
 		return nil, err
 	}
-	log.Error("🔬 DEBUG: engine.Prepare completed successfully", "blockNumber", header.Number.Uint64())
+	log.Debug("🔬 DEBUG: engine.Prepare completed successfully", "blockNumber", header.Number.Uint64())
 	// If we are care about TheDAO hard-fork check whether to override the extra-data or not
 	if daoBlockUint64 := w.chainConfig.GetEthashEIP779Transition(); daoBlockUint64 != nil {
 		daoBlock := new(big.Int).SetUint64(*daoBlockUint64)
