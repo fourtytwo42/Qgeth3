@@ -29,6 +29,92 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+# Function to create swap file
+create_swap() {
+    local size_mb=$1
+    local swap_file="/swapfile"
+    
+    print_step "🔧 Creating ${size_mb}MB swap file..."
+    
+    # Check if swap file already exists
+    if [ -f "$swap_file" ]; then
+        print_warning "Swap file already exists at $swap_file"
+        echo -n "Replace existing swap file? (y/N): "
+        read -r RESPONSE
+        if [[ ! "$RESPONSE" =~ ^([yY][eE][sS]|[yY])$ ]]; then
+            return 0
+        fi
+        
+        # Turn off existing swap
+        swapoff "$swap_file" 2>/dev/null || true
+        rm -f "$swap_file"
+    fi
+    
+    # Create swap file
+    echo "Creating swap file..."
+    if command -v fallocate >/dev/null 2>&1; then
+        fallocate -l "${size_mb}M" "$swap_file"
+    else
+        dd if=/dev/zero of="$swap_file" bs=1024 count=$((size_mb * 1024))
+    fi
+    
+    # Set permissions
+    chmod 600 "$swap_file"
+    
+    # Make swap
+    echo "Setting up swap..."
+    mkswap "$swap_file"
+    swapon "$swap_file"
+    
+    # Add to fstab for persistence
+    if ! grep -q "$swap_file" /etc/fstab; then
+        echo "$swap_file none swap sw 0 0" >> /etc/fstab
+        echo "Added swap to /etc/fstab for persistence"
+    fi
+    
+    # Verify swap
+    if swapon --show | grep -q "$swap_file"; then
+        print_success "Swap file created and activated successfully"
+        
+        # Update global variable
+        SWAP_KB=$(awk 'NR>1 {sum+=$3} END {print sum+0}' /proc/swaps)
+        SWAP_TOTAL=$((SWAP_KB / 1024))
+    else
+        print_error "Failed to activate swap file"
+        return 1
+    fi
+}
+
+# Function to install dependencies
+install_dependencies() {
+    print_step "📦 Installing dependencies..."
+    
+    # Update package list
+    echo "Updating package list..."
+    apt update -qq
+    
+    # Install packages
+    echo "Installing packages: ${MISSING_DEPS[*]}"
+    apt install -y "${MISSING_DEPS[@]}"
+    
+    # Verify Go installation
+    if command -v go >/dev/null 2>&1; then
+        GO_VERSION=$(go version | awk '{print $3}')
+        echo "Go installed: $GO_VERSION"
+        
+        # Check if Go version is recent enough
+        GO_MAJOR=$(echo "$GO_VERSION" | sed 's/go//' | cut -d. -f1)
+        GO_MINOR=$(echo "$GO_VERSION" | sed 's/go//' | cut -d. -f2)
+        
+        if [ "$GO_MAJOR" -lt 1 ] || ([ "$GO_MAJOR" -eq 1 ] && [ "$GO_MINOR" -lt 18 ]); then
+            print_warning "Go version may be too old (need 1.18+)"
+            echo "Consider installing a newer Go version from https://golang.org/dl/"
+        fi
+    fi
+    
+    print_success "Dependencies installed successfully"
+}
+
 # Check if running with sudo
 if [ "$EUID" -ne 0 ]; then
     print_error "Please run this script with sudo"
@@ -36,11 +122,11 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-print_step "ðŸš€ Preparing VPS for Q Geth Build"
+print_step "🚀 Preparing VPS for Q Geth Build"
 echo ""
 
 # System info
-print_step "ðŸ“Š System Information"
+print_step "📊 System Information"
 if command -v lsb_release >/dev/null 2>&1; then
     echo "OS: $(lsb_release -d | cut -f2)"
 elif [ -f /etc/os-release ]; then
@@ -55,7 +141,7 @@ fi
 echo ""
 
 # Memory check
-print_step "ðŸ’¾ Memory Analysis"
+print_step "💾 Memory Analysis"
 REQUIRED_MB=3072  # 3GB minimum
 AVAILABLE_MB=0
 TOTAL_MB=0
@@ -119,7 +205,7 @@ fi
 echo ""
 
 # Storage check
-print_step "ðŸ’½ Storage Analysis"
+print_step "💽 Storage Analysis"
 AVAILABLE_GB=0
 if command -v df >/dev/null 2>&1; then
     AVAILABLE_KB=$(df . | awk 'NR==2 {print $4}')
@@ -141,7 +227,7 @@ fi
 echo ""
 
 # Dependencies check
-print_step "ðŸ“¦ Dependencies Check"
+print_step "📦 Dependencies Check"
 MISSING_DEPS=()
 
 # Check for essential tools
@@ -177,7 +263,7 @@ fi
 echo ""
 
 # Final recommendations
-print_step "ðŸŽ¯ Final Recommendations"
+print_step "🎯 Final Recommendations"
 echo ""
 echo "Build Environment Tips:"
 echo "  1. Close unnecessary applications during build"
@@ -187,14 +273,14 @@ echo "  4. Consider building during off-peak hours"
 echo ""
 
 if [ $AVAILABLE_MB -ge $REQUIRED_MB ]; then
-    print_success "âœ… VPS is ready for building Q Geth!"
+    print_success "✅ VPS is ready for building Q Geth!"
     echo ""
     echo "Next steps:"
     echo "  ./build-linux.sh            # Build both geth and miner"
     echo "  ./build-linux.sh geth       # Build geth only"
     echo "  ./build-linux.sh miner      # Build miner only"
 else
-    print_warning "âš ï¸  VPS may have issues building due to low memory"
+    print_warning "⚠️  VPS may have issues building due to low memory"
     echo ""
     echo "Consider:"
     echo "  - Upgrading to a VPS with at least 4GB RAM"
@@ -203,92 +289,8 @@ else
 fi
 
 echo ""
-print_step "ðŸ” System Summary"
+print_step "📋 System Summary"
 echo "RAM: ${AVAILABLE_MB}MB available / ${TOTAL_MB}MB total"
 echo "Swap: ${SWAP_TOTAL}MB"
 echo "Storage: ${AVAILABLE_GB}GB available"
-echo "Status: $([ $AVAILABLE_MB -ge $REQUIRED_MB ] && echo "âœ… Ready" || echo "âš ï¸  May need optimization")"
-
-create_swap() {
-    local size_mb=$1
-    local swap_file="/swapfile"
-    
-    print_step "ðŸ”§ Creating ${size_mb}MB swap file..."
-    
-    # Check if swap file already exists
-    if [ -f "$swap_file" ]; then
-        print_warning "Swap file already exists at $swap_file"
-        echo -n "Replace existing swap file? (y/N): "
-        read -r RESPONSE
-        if [[ ! "$RESPONSE" =~ ^([yY][eE][sS]|[yY])$ ]]; then
-            return 0
-        fi
-        
-        # Turn off existing swap
-        swapoff "$swap_file" 2>/dev/null || true
-        rm -f "$swap_file"
-    fi
-    
-    # Create swap file
-    echo "Creating swap file..."
-    if command -v fallocate >/dev/null 2>&1; then
-        fallocate -l "${size_mb}M" "$swap_file"
-    else
-        dd if=/dev/zero of="$swap_file" bs=1024 count=$((size_mb * 1024))
-    fi
-    
-    # Set permissions
-    chmod 600 "$swap_file"
-    
-    # Make swap
-    echo "Setting up swap..."
-    mkswap "$swap_file"
-    swapon "$swap_file"
-    
-    # Add to fstab for persistence
-    if ! grep -q "$swap_file" /etc/fstab; then
-        echo "$swap_file none swap sw 0 0" >> /etc/fstab
-        echo "Added swap to /etc/fstab for persistence"
-    fi
-    
-    # Verify swap
-    if swapon --show | grep -q "$swap_file"; then
-        print_success "Swap file created and activated successfully"
-        
-        # Update global variable
-        SWAP_KB=$(awk 'NR>1 {sum+=$3} END {print sum+0}' /proc/swaps)
-        SWAP_TOTAL=$((SWAP_KB / 1024))
-    else
-        print_error "Failed to activate swap file"
-        return 1
-    fi
-}
-
-install_dependencies() {
-    print_step "ðŸ“¦ Installing dependencies..."
-    
-    # Update package list
-    echo "Updating package list..."
-    apt update -qq
-    
-    # Install packages
-    echo "Installing packages: ${MISSING_DEPS[*]}"
-    apt install -y "${MISSING_DEPS[@]}"
-    
-    # Verify Go installation
-    if command -v go >/dev/null 2>&1; then
-        GO_VERSION=$(go version | awk '{print $3}')
-        echo "Go installed: $GO_VERSION"
-        
-        # Check if Go version is recent enough
-        GO_MAJOR=$(echo "$GO_VERSION" | sed 's/go//' | cut -d. -f1)
-        GO_MINOR=$(echo "$GO_VERSION" | sed 's/go//' | cut -d. -f2)
-        
-        if [ "$GO_MAJOR" -lt 1 ] || ([ "$GO_MAJOR" -eq 1 ] && [ "$GO_MINOR" -lt 18 ]); then
-            print_warning "Go version may be too old (need 1.18+)"
-            echo "Consider installing a newer Go version from https://golang.org/dl/"
-        fi
-    fi
-    
-    print_success "Dependencies installed successfully"
-} 
+echo "Status: $([ $AVAILABLE_MB -ge $REQUIRED_MB ] && echo "✅ Ready" || echo "⚠️  May need optimization")" 
