@@ -2,9 +2,23 @@
 # VPS Preparation Script for Q Geth
 # Prepares low-memory VPS environments for building
 # Checks memory, sets up swap space, and installs dependencies
-# Usage: sudo ./prepare-vps.sh
+# Usage: sudo ./prepare-vps.sh [-y|--yes]
 
 set -e
+
+# Parse command line arguments
+AUTO_CONFIRM=false
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -y|--yes)
+            AUTO_CONFIRM=true
+            shift
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
 
 # Colors for output
 RED='\033[0;31m'
@@ -39,10 +53,14 @@ create_swap() {
     # Check if swap file already exists
     if [ -f "$swap_file" ]; then
         print_warning "Swap file already exists at $swap_file"
-        echo -n "Replace existing swap file? (y/N): "
-        read -r RESPONSE
-        if [[ ! "$RESPONSE" =~ ^([yY][eE][sS]|[yY])$ ]]; then
-            return 0
+        if [ "$AUTO_CONFIRM" = true ]; then
+            print_step "Auto-confirming: Replacing existing swap file"
+        else
+            echo -n "Replace existing swap file? (y/N): "
+            read -r RESPONSE
+            if [[ ! "$RESPONSE" =~ ^([yY][eE][sS]|[yY])$ ]]; then
+                return 0
+            fi
         fi
         
         # Turn off existing swap
@@ -91,11 +109,11 @@ install_dependencies() {
     
     # Update package list
     echo "Updating package list..."
-    apt update -qq
+    DEBIAN_FRONTEND=noninteractive apt update -qq
     
     # Install packages
     echo "Installing packages: ${MISSING_DEPS[*]}"
-    apt install -y "${MISSING_DEPS[@]}"
+    DEBIAN_FRONTEND=noninteractive apt install -y "${MISSING_DEPS[@]}"
     
     # Verify Go installation
     if command -v go >/dev/null 2>&1; then
@@ -203,12 +221,17 @@ if [ -f /proc/meminfo ]; then
             echo "This will give total: $((TOTAL_MB + SWAP_TOTAL + NEEDED_SWAP))MB"
             echo ""
             
-            echo -n "Create swap file to reach 4GB total memory? (y/N): "
-            read -r RESPONSE
-            if [[ "$RESPONSE" =~ ^([yY][eE][sS]|[yY])$ ]]; then
+            if [ "$AUTO_CONFIRM" = true ]; then
+                print_step "Auto-confirming: Creating swap file to reach 4GB total memory"
                 create_swap $NEEDED_SWAP
             else
-                print_warning "Swap file not created. Build may fail due to insufficient memory."
+                echo -n "Create swap file to reach 4GB total memory? (y/N): "
+                read -r RESPONSE
+                if [[ "$RESPONSE" =~ ^([yY][eE][sS]|[yY])$ ]]; then
+                    create_swap $NEEDED_SWAP
+                else
+                    print_warning "Swap file not created. Build may fail due to insufficient memory."
+                fi
             fi
         else
             print_success "Total memory check passed"
@@ -308,10 +331,15 @@ if [ ${#MISSING_DEPS[@]} -gt 0 ]; then
     print_warning "Missing dependencies detected"
     echo "Missing: ${MISSING_DEPS[*]}"
     echo ""
-    echo -n "Install missing dependencies? (y/N): "
-    read -r RESPONSE
-    if [[ "$RESPONSE" =~ ^([yY][eE][sS]|[yY])$ ]]; then
+    if [ "$AUTO_CONFIRM" = true ]; then
+        print_step "Auto-confirming: Installing missing dependencies"
         install_dependencies
+    else
+        echo -n "Install missing dependencies? (y/N): "
+        read -r RESPONSE
+        if [[ "$RESPONSE" =~ ^([yY][eE][sS]|[yY])$ ]]; then
+            install_dependencies
+        fi
     fi
 else
     print_success "All dependencies are installed"
