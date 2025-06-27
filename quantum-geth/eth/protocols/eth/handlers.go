@@ -34,22 +34,23 @@ func handleGetBlockHeaders(backend Backend, msg Decoder, peer *Peer) error {
 	if err := msg.Decode(&query); err != nil {
 		return fmt.Errorf("%w: message %v: %v", errDecode, msg, err)
 	}
-	response := ServiceGetBlockHeadersQuery(backend.Chain(), query.GetBlockHeadersRequest, peer)
+	response := ServiceGetBlockHeadersQuery(backend, query.GetBlockHeadersRequest, peer)
 	return peer.ReplyBlockHeadersRLP(query.RequestId, response)
 }
 
 // ServiceGetBlockHeadersQuery assembles the response to a header query. It is
 // exposed to allow external packages to test protocol behavior.
-func ServiceGetBlockHeadersQuery(chain *core.BlockChain, query *GetBlockHeadersRequest, peer *Peer) []rlp.RawValue {
+func ServiceGetBlockHeadersQuery(backend Backend, query *GetBlockHeadersRequest, peer *Peer) []rlp.RawValue {
 	if query.Skip == 0 {
 		// The fast path: when the request is for a contiguous segment of headers.
-		return serviceContiguousBlockHeaderQuery(chain, query)
+		return serviceContiguousBlockHeaderQuery(backend, query)
 	} else {
-		return serviceNonContiguousBlockHeaderQuery(chain, query, peer)
+		return serviceNonContiguousBlockHeaderQuery(backend, query, peer)
 	}
 }
 
-func serviceNonContiguousBlockHeaderQuery(chain *core.BlockChain, query *GetBlockHeadersRequest, peer *Peer) []rlp.RawValue {
+func serviceNonContiguousBlockHeaderQuery(backend Backend, query *GetBlockHeadersRequest, peer *Peer) []rlp.RawValue {
+	chain := backend.Chain()
 	hashMode := query.Origin.Hash != (common.Hash{})
 	first := true
 	maxNonCanonical := uint64(100)
@@ -83,12 +84,9 @@ func serviceNonContiguousBlockHeaderQuery(chain *core.BlockChain, query *GetBloc
 			break
 		}
 		
-		// CRITICAL FIX: Marshal quantum fields into QBlob before RLP encoding
-		// This ensures quantum fields are properly transmitted to peers
-		origin.MarshalQuantumBlob()
-		
-		if rlpData, err := rlp.EncodeToBytes(origin); err != nil {
-			log.Crit("Unable to encode our own headers", "err", err)
+		// CENTRALIZED FIX: Use quantum RLP manager for consistent encoding
+		if rlpData, err := backend.QuantumRLP().EncodeHeaderForTransmission(origin); err != nil {
+			log.Crit("Unable to encode quantum header", "err", err)
 		} else {
 			headers = append(headers, rlp.RawValue(rlpData))
 			bytes += common.StorageSize(len(rlpData))
@@ -143,7 +141,8 @@ func serviceNonContiguousBlockHeaderQuery(chain *core.BlockChain, query *GetBloc
 	return headers
 }
 
-func serviceContiguousBlockHeaderQuery(chain *core.BlockChain, query *GetBlockHeadersRequest) []rlp.RawValue {
+func serviceContiguousBlockHeaderQuery(backend Backend, query *GetBlockHeadersRequest) []rlp.RawValue {
+	chain := backend.Chain()
 	count := query.Amount
 	if count > maxHeadersServe {
 		count = maxHeadersServe
@@ -171,12 +170,12 @@ func serviceContiguousBlockHeaderQuery(chain *core.BlockChain, query *GetBlockHe
 		header  = chain.GetHeaderByHash(hash)
 	)
 	if header != nil {
-		// CRITICAL FIX: Marshal quantum fields into QBlob before RLP encoding
-		// This ensures quantum fields are properly transmitted to peers
-		header.MarshalQuantumBlob()
-		
-		rlpData, _ := rlp.EncodeToBytes(header)
-		headers = append(headers, rlpData)
+		// CENTRALIZED FIX: Use quantum RLP manager for consistent encoding
+		if rlpData, err := backend.QuantumRLP().EncodeHeaderForTransmission(header); err != nil {
+			log.Error("Unable to encode quantum header in contiguous query", "err", err)
+		} else {
+			headers = append(headers, rlpData)
+		}
 	} else {
 		// We don't even have the origin header
 		return headers
@@ -204,12 +203,13 @@ func serviceContiguousBlockHeaderQuery(chain *core.BlockChain, query *GetBlockHe
 				break
 			}
 			
-			// CRITICAL FIX: Marshal quantum fields into QBlob before RLP encoding
-			// This ensures quantum fields are properly transmitted to peers
-			header.MarshalQuantumBlob()
-			
-			rlpData, _ := rlp.EncodeToBytes(header)
-			headers = append(headers, rlpData)
+			// CENTRALIZED FIX: Use quantum RLP manager for consistent encoding
+			if rlpData, err := backend.QuantumRLP().EncodeHeaderForTransmission(header); err != nil {
+				log.Error("Unable to encode quantum header for ancestor", "err", err)
+				break
+			} else {
+				headers = append(headers, rlpData)
+			}
 		}
 		return headers
 	}

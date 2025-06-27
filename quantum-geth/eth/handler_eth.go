@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/consensus/qmpow"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/protocols/eth"
@@ -35,6 +36,15 @@ type ethHandler handler
 
 func (h *ethHandler) Chain() *core.BlockChain { return h.chain }
 func (h *ethHandler) TxPool() eth.TxPool      { return h.txpool }
+
+// QuantumRLP retrieves the centralized quantum RLP manager from the consensus engine
+func (h *ethHandler) QuantumRLP() *qmpow.QuantumRLPManager {
+	if engine, ok := h.chain.Engine().(*qmpow.QMPoW); ok {
+		return engine.GetRLPManager()
+	}
+	// Return a default manager if not using QMPoW (for compatibility)
+	return qmpow.NewQuantumRLPManager()
+}
 
 // RunPeer is invoked when a peer joins on the `eth` protocol.
 func (h *ethHandler) RunPeer(peer *eth.Peer, hand eth.Handler) error {
