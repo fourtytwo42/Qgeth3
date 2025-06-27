@@ -44,6 +44,12 @@ echo "User: $ACTUAL_USER"
 echo "Home: $ACTUAL_HOME"
 echo ""
 
+# Make all shell scripts in current directory executable
+print_step "🔧 Making all scripts executable"
+chmod +x *.sh 2>/dev/null || true
+print_success "✅ All shell scripts are now executable"
+echo ""
+
 # Configuration
 GITHUB_REPO="fourtytwo42/Qgeth3"
 GITHUB_BRANCH="main"
