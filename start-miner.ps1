@@ -139,6 +139,39 @@ if ($Etherbase -eq "") {
     }
 }
 
+# CRITICAL FIX: Set the coinbase address on Geth node
+Write-Host "Setting coinbase address on Geth node..." -ForegroundColor Yellow
+try {
+    $setEtherbaseBody = @{
+        jsonrpc = "2.0"
+        method = "miner_setEtherbase"
+        params = @($Etherbase)
+        id = 1
+    } | ConvertTo-Json
+    
+    $setResponse = Invoke-RestMethod -Uri "$GethRpc" -Method POST -Headers @{"Content-Type"="application/json"} -Body $setEtherbaseBody -ErrorAction Stop
+    if ($setResponse.result -eq $true) {
+        Write-Host "SUCCESS: Coinbase address set to $Etherbase" -ForegroundColor Green
+    } else {
+        Write-Host "WARNING: Failed to set coinbase address" -ForegroundColor Yellow
+    }
+} catch {
+    Write-Host "WARNING: Could not set coinbase address: $_" -ForegroundColor Yellow
+}
+
+# Verify the coinbase was set correctly
+try {
+    $verifyResponse = Invoke-RestMethod -Uri "$GethRpc" -Method POST -Headers @{"Content-Type"="application/json"} -Body '{"jsonrpc":"2.0","method":"eth_etherbase","params":[],"id":1}' -ErrorAction Stop
+    $currentEtherbase = $verifyResponse.result
+    if ($currentEtherbase -eq $Etherbase) {
+        Write-Host "✅ VERIFIED: Geth coinbase correctly set to $Etherbase" -ForegroundColor Green
+    } else {
+        Write-Host "⚠️  WARNING: Geth coinbase is $currentEtherbase, expected $Etherbase" -ForegroundColor Yellow
+    }
+} catch {
+    Write-Host "WARNING: Could not verify coinbase address" -ForegroundColor Yellow
+}
+
 # Auto-detect mining mode (GPU vs CPU)
 $UseGpu = $false
 $MiningMode = "CPU"

@@ -135,12 +135,14 @@ $gethArgs = @(
 
 # Add mining if requested
 if ($Mining) {
-    $gethArgs += @("--mine", "--miner.threads", "1", "--miner.etherbase", "0x1234567890123456789012345678901234567890")
+    $gethArgs += @("--mine", "--miner.threads", "1", "--miner.etherbase", "0x0000000000000000000000000000000000000000")
     Write-Host "Mining enabled with 1 thread" -ForegroundColor Yellow
+    Write-Host "NOTE: Use miner_setEtherbase RPC call to set your actual mining address" -ForegroundColor Cyan
 } else {
     # Enable mining interface for external miners (0 threads = no CPU mining, external only)
-    $gethArgs += @("--mine", "--miner.threads", "0", "--miner.etherbase", "0x1234567890123456789012345678901234567890")
+    $gethArgs += @("--mine", "--miner.threads", "0", "--miner.etherbase", "0x0000000000000000000000000000000000000000")
     Write-Host "Mining interface enabled for external miners (no CPU mining)" -ForegroundColor Green
+    Write-Host "NOTE: External miners will set their own coinbase addresses via RPC" -ForegroundColor Cyan
 }
 
 # Add any extra arguments passed to the script
