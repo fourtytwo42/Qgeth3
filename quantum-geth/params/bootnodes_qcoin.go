@@ -18,6 +18,6 @@ var QCoinTestnetBootnodes = []string{
 // QCoinDevBootnodes are the enode URLs of the P2P bootstrap nodes running on
 // the Q Coin development network.
 var QCoinDevBootnodes = []string{
-	"enode://fd85117c596739432dcd5030ba9173b8cfcdda6f53767526a9cbe8b6c7e83afa69e9048e5a7629ddd1a718fd4c00ff3e7fc1584cc8ed7b1963394f43d87fd1b0@64.23.179.84:30305",  // Q Coin Dev VPS 1
-	"enode://6cd6f9185e7cc14bf68a502b272d3624d5778334ddfb1704dc9a7dd54c94512f28822df551a29b5d4c39eca6d7fa11b7dfc4149f88fc806e9463307f7ff240dd@143.110.231.183:30305", // Q Coin Dev VPS 2
+	"enode://ebdd335675512b75c925c87776c6e2ada956dd1436782940dc457158da86ca77a9e6c638f01990ba14eab45f01a0e8d9dbe963569bddb16832cb9bbc27f5eb8c@143.110.231.183:30305", // Q Coin Dev VPS 1 (updated)
+	"enode://a4e05766ef3b8ba5cc3445cb0500a9c37f8b713e43528d9a9089ce478c85d8472a1b6d088b079631cf2f4aa6ad4265f776eba062194aa83f49f086c27d380e17@64.23.179.84:30305",    // Q Coin Dev VPS 2 (updated)
 } 
