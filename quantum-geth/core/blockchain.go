@@ -1377,9 +1377,32 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 					"genesisHash", genesisBlock.Hash().Hex(),
 					"parentTD", ptd)
 				
-				// Also ensure genesis TD is properly stored in database
+				// CRITICAL FIX: Ensure genesis TD is properly stored in database
+				// This is essential for network synchronization to work properly
+				log.Info("🔗 Ensuring genesis total difficulty is stored in database",
+					"genesisHash", genesisBlock.Hash().Hex(),
+					"genesisNumber", genesisBlock.NumberU64(),
+					"genesisDifficulty", genesisBlock.Difficulty())
 				rawdb.WriteTd(bc.db, genesisBlock.Hash(), genesisBlock.NumberU64(), genesisBlock.Difficulty())
+				
+				// Verify the TD was written correctly
+				storedTd := rawdb.ReadTd(bc.db, genesisBlock.Hash(), genesisBlock.NumberU64())
+				if storedTd == nil || storedTd.Cmp(genesisBlock.Difficulty()) != 0 {
+					log.Error("❌ Failed to store genesis total difficulty properly",
+						"expected", genesisBlock.Difficulty(),
+						"stored", storedTd)
+				} else {
+					log.Info("✅ Genesis total difficulty stored successfully",
+						"hash", genesisBlock.Hash().Hex(),
+						"td", storedTd)
+				}
 			}
+		} else if block.NumberU64() == 0 {
+			// This is the genesis block itself - use its difficulty as TD
+			ptd = big.NewInt(0) // Genesis parent TD is 0
+			log.Info("🔗 Genesis block detected, parent TD is zero",
+				"block", block.NumberU64(),
+				"blockDifficulty", block.Difficulty())
 		}
 		
 		// If still nil after genesis check, return unknown ancestor error
@@ -1394,6 +1417,13 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 	
 	// Make sure no inconsistent state is leaked during insertion
 	externTd := new(big.Int).Add(block.Difficulty(), ptd)
+	
+	log.Info("🔗 Calculated total difficulty for block",
+		"block", block.NumberU64(),
+		"blockHash", block.Hash().Hex(),
+		"blockDifficulty", block.Difficulty(),
+		"parentTD", ptd,
+		"totalDifficulty", externTd)
 
 	// Irrelevant of the canonical status, write the block itself to the database.
 	//
@@ -1406,6 +1436,22 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 	rawdb.WritePreimages(blockBatch, state.Preimages())
 	if err := blockBatch.Write(); err != nil {
 		log.Crit("Failed to write block into disk", "err", err)
+	}
+	
+	// CRITICAL: Verify the TD was written correctly to database
+	storedTd := rawdb.ReadTd(bc.db, block.Hash(), block.NumberU64())
+	if storedTd == nil || storedTd.Cmp(externTd) != 0 {
+		log.Error("❌ Total difficulty verification failed after write",
+			"block", block.NumberU64(),
+			"hash", block.Hash().Hex(),
+			"expected", externTd,
+			"stored", storedTd)
+		return fmt.Errorf("total difficulty storage verification failed")
+	} else {
+		log.Debug("✅ Total difficulty stored and verified successfully",
+			"block", block.NumberU64(),
+			"hash", block.Hash().Hex(),
+			"td", storedTd)
 	}
 	
 	// Commit all cached state changes into underlying memory database.
