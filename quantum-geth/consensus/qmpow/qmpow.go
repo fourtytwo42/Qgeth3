@@ -1408,6 +1408,12 @@ func (s *remoteSealer) submitQuantumWork(qnonce uint64, blockHash common.Hash, q
 
 	// Submit successful block if we have a result channel
 	if s.results != nil {
+		log.Debug("🔬 DEBUG: Submitting external miner block via result channel", 
+			"qnonce", qnonce, 
+			"blockNumber", header.Number.Uint64(),
+			"stateRoot", header.Root.Hex(),
+			"parentHash", header.ParentHash.Hex())
+
 		select {
 		case s.results <- sealedBlock:
 			log.Info("✅ Quantum block submitted by external miner",
@@ -1425,7 +1431,8 @@ func (s *remoteSealer) submitQuantumWork(qnonce uint64, blockHash common.Hash, q
 		log.Info("✅ Quantum block found by external miner (template work)",
 			"number", header.Number.Uint64(),
 			"qnonce", qnonce,
-			"miner", "external")
+			"miner", "external",
+			"stateRoot", header.Root.Hex())
 
 		// For template blocks, we don't have a direct submission path
 		// The external miner found a valid solution but we need the miner
@@ -1809,7 +1816,30 @@ func (s *remoteSealer) tryPrepareWork() {
 		return
 	}
 
-	// Create template block
+	// CRITICAL FIX: Set the correct state root for empty template blocks
+	// Template blocks have no transactions and empty state, so they should use
+	// the parent's state root to ensure consistency when external miners submit solutions
+	//
+	// The issue was that template blocks were created with an incorrect state root,
+	// causing "state root mismatch" errors when external miners submitted valid solutions.
+	// By using the parent's state root, we ensure that when the block is processed,
+	// the state transitions will be applied correctly and the final state root will match.
+	header.Root = parent.Root
+
+	// Set correct empty hashes for template blocks with no transactions
+	header.TxHash = types.EmptyTxsHash
+	header.ReceiptHash = types.EmptyReceiptsHash
+	header.Bloom = types.Bloom{} // Empty bloom filter
+	header.UncleHash = types.EmptyUncleHash
+
+	log.Debug("🔧 Template block state root set", 
+		"blockNumber", header.Number.Uint64(),
+		"parentRoot", parent.Root.Hex(),
+		"templateRoot", header.Root.Hex(),
+		"txHash", header.TxHash.Hex(),
+		"receiptHash", header.ReceiptHash.Hex())
+
+	// Create template block with empty transactions and receipts
 	block := types.NewBlock(header, nil, nil, nil, nil)
 
 	// Prepare work for external miners
@@ -1820,7 +1850,8 @@ func (s *remoteSealer) tryPrepareWork() {
 	log.Info("🔗 Quantum work automatically prepared for external miners",
 		"number", header.Number.Uint64(),
 		"difficulty", FormatDifficulty(header.Difficulty),
-		"parentHash", header.ParentHash.Hex()[:10]+"...")
+		"parentHash", header.ParentHash.Hex()[:10]+"...",
+		"stateRoot", header.Root.Hex()[:10]+"...")
 }
 
 // invalidateOldWork immediately clears all work templates to force external miners
