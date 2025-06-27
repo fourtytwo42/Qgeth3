@@ -20,9 +20,26 @@ A complete quantum blockchain platform featuring **Q Coin** testnet with **Quant
 
 ### Linux Quick Start
 
-**Option 1: Full Auto-Service (Recommended for VPS)**
+**🎯 Option 1: Ultimate One-Command Setup (Easiest!)**
 ```bash
-# One-command setup: VPS prep + auto-updating service
+# One-liner: Downloads everything and sets up complete auto-service
+curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qgeth.sh | sudo bash
+
+# Alternative with wget:
+wget -qO- https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qgeth.sh | sudo bash
+
+# This single command:
+# ✅ Installs all dependencies (git, curl, golang, build tools)
+# ✅ Downloads the Q Geth repository automatically
+# ✅ Prepares VPS (memory checks, swap creation, firewall)
+# ✅ Builds and configures Q Geth with auto-updating service
+# ✅ Sets up crash recovery and GitHub monitoring
+# No manual git clone, chmod, or dependency installation needed!
+```
+
+**Option 2: Full Auto-Service (Manual Clone)**
+```bash
+# Multi-step setup: Clone repo first, then run auto-service
 git clone https://github.com/fourtytwo42/Qgeth3.git
 cd Qgeth3
 sudo ./auto-geth-service.sh
@@ -564,6 +581,7 @@ curl -X POST -H "Content-Type: application/json" \
 - `build-linux.sh` - Linux build system with GPU auto-detection and memory optimization
 - `prepare-vps.sh` - 🆕 VPS preparation script with automatic memory management
 - `auto-geth-service.sh` - 🆕 Complete auto-updating service setup (one-command VPS setup)
+- `bootstrap-qgeth.sh` - 🆕 **Ultimate one-command bootstrap** (downloads & sets up everything)
 
 ## 🏗️ Release Build System
 
@@ -632,6 +650,7 @@ Qgeth3/
 ├── build-linux.sh        # 🆕 Linux build system with GPU detection & memory optimization
 ├── prepare-vps.sh         # 🆕 VPS preparation script with automatic memory management
 ├── auto-geth-service.sh   # 🆕 Complete auto-updating service setup (one-command VPS)
+├── bootstrap-qgeth.sh     # 🆕 **Ultimate one-command bootstrap** (downloads everything)
 ├── start-geth.sh         # 🐧 Linux geth launcher
 ├── start-linux-miner.sh  # 🐧 Linux smart miner launcher
 ├── geth                   # 🐧 Linux binary (created by build-linux.sh)
