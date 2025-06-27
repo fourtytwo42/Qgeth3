@@ -22,11 +22,14 @@ A complete quantum blockchain platform featuring **Q Coin** testnet with **Quant
 
 **🎯 Option 1: Ultimate One-Command Setup (Easiest!)**
 ```bash
-# One-liner: Downloads everything and sets up complete auto-service
+# Interactive mode (asks for confirmations)
 curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qgeth.sh | sudo bash
 
+# Non-interactive mode (auto-confirms all prompts - perfect for automation)
+curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qgeth.sh | sudo bash -s -- -y
+
 # Alternative with wget:
-wget -qO- https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qgeth.sh | sudo bash
+wget -qO- https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qgeth.sh | sudo bash -s -- -y
 
 # This single command:
 # ✅ Installs all dependencies (git, curl, golang, build tools)
@@ -35,6 +38,8 @@ wget -qO- https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qg
 # ✅ Builds and configures Q Geth with auto-updating service
 # ✅ Sets up crash recovery and GitHub monitoring
 # No manual git clone, chmod, or dependency installation needed!
+
+# Use -y flag for completely unattended installation - perfect for automated deployments!
 ```
 
 **Option 2: Full Auto-Service (Manual Clone)**

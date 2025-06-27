@@ -1,9 +1,23 @@
 #!/bin/bash
 # Auto-Geth Service Setup Script
 # Complete VPS setup with auto-updating Q Geth service
-# Usage: sudo ./auto-geth-service.sh
+# Usage: sudo ./auto-geth-service.sh [-y|--yes]
 
 set -e
+
+# Parse command line arguments
+AUTO_CONFIRM=false
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -y|--yes)
+            AUTO_CONFIRM=true
+            shift
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
 
 # Colors for output
 RED='\033[0;31m'
@@ -78,7 +92,11 @@ echo ""
 print_step "💾 Step 1: Preparing VPS Environment"
 if [ -f "./prepare-vps.sh" ]; then
     print_step "Running VPS preparation script..."
-    ./prepare-vps.sh
+    if [ "$AUTO_CONFIRM" = true ]; then
+        ./prepare-vps.sh -y
+    else
+        ./prepare-vps.sh
+    fi
 else
     print_warning "prepare-vps.sh not found in current directory"
     print_step "Creating basic VPS preparation..."
@@ -105,8 +123,8 @@ else
     
     # Install dependencies
     print_step "Installing dependencies..."
-    apt update -qq
-    apt install -y git curl golang-go build-essential systemd jq python3 python3-pip
+    DEBIAN_FRONTEND=noninteractive apt update -qq
+    DEBIAN_FRONTEND=noninteractive apt install -y git curl golang-go build-essential systemd jq python3 python3-pip
     print_success "Dependencies installed"
 fi
 
@@ -116,7 +134,7 @@ print_step "🔥 Step 2: Configuring UFW firewall"
 # Install UFW if not present
 if ! command -v ufw >/dev/null 2>&1; then
     print_step "Installing UFW firewall..."
-    apt install -y ufw
+    DEBIAN_FRONTEND=noninteractive apt install -y ufw
 fi
 
 print_step "Configuring firewall rules..."

@@ -2,8 +2,23 @@
 # Q Geth Bootstrap Script
 # One-command setup for Q Geth auto-updating service
 # Usage: curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qgeth.sh | sudo bash
+# Usage: curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qgeth.sh | sudo bash -s -- -y
 
 set -e
+
+# Parse command line arguments
+AUTO_CONFIRM=false
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -y|--yes)
+            AUTO_CONFIRM=true
+            shift
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
 
 # Colors for output
 RED='\033[0;31m'
@@ -57,8 +72,8 @@ ACTUAL_HOME=$(eval echo ~$ACTUAL_USER)
 
 print_step "🔧 Installing basic dependencies"
 if command -v apt >/dev/null 2>&1; then
-    apt update -qq
-    apt install -y git curl
+    DEBIAN_FRONTEND=noninteractive apt update -qq
+    DEBIAN_FRONTEND=noninteractive apt install -y git curl
 elif command -v yum >/dev/null 2>&1; then
     yum install -y git curl
 elif command -v dnf >/dev/null 2>&1; then
@@ -125,4 +140,8 @@ echo "========================================"
 echo ""
 
 # Run the auto-service setup
-exec ./auto-geth-service.sh 
+if [ "$AUTO_CONFIRM" = true ]; then
+    exec ./auto-geth-service.sh -y
+else
+    exec ./auto-geth-service.sh
+fi 
