@@ -489,6 +489,11 @@ func (q *QMPoW) Finalize(chain consensus.ChainHeaderReader, header *types.Header
 		"transactionFees", totalFees,
 		"totalReward", totalReward,
 		"coinbase", header.Coinbase.Hex())
+	
+	// CRITICAL FIX: Set state root after applying all state changes
+	// This was missing and causing "invalid merkle root" validation errors
+	// The state root represents the final state after all transactions and rewards
+	header.Root = state.IntermediateRoot(chain.Config().IsEnabled(chain.Config().GetEIP161dTransition, header.Number))
 }
 
 // FinalizeAndAssemble runs any post-transaction state modifications and assembles the final block
