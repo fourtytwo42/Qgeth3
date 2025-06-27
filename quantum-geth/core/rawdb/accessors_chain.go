@@ -373,18 +373,20 @@ func ReadHeader(db ethdb.Reader, hash common.Hash, number uint64) *types.Header 
 	log.Debug("🔍 Reading header RLP", "hash", hash.Hex()[:8], "number", number, "dataSize", len(data))
 
 	// QUANTUM-GETH FIX: Use quantum-aware RLP decoding for headers
-	// This handles the WithdrawalsHash optional field properly for quantum consensus
+	// This handles RLP optional field issues properly for quantum consensus
 	if err := rlp.DecodeBytes(data, header); err != nil {
-		// Check if this is the known optional field issue
-		if strings.Contains(err.Error(), "WithdrawalsHash") {
+		log.Debug("🔍 RLP decoding failed", "hash", hash.Hex()[:8], "error", err.Error())
+		
+		// Check if this is a known RLP structure issue (WithdrawalsHash or other optional fields)
+		if strings.Contains(err.Error(), "WithdrawalsHash") || 
+		   strings.Contains(err.Error(), "input string too short") || 
+		   strings.Contains(err.Error(), "optional") {
 			log.Debug("🔧 Attempting quantum-compatible header decoding", "hash", hash.Hex()[:8], "error", err.Error())
 			
-			// Force quantum consensus compatibility during decoding
-			header.WithdrawalsHash = nil
-			
-			// Try decoding again with normalized structure
-			if err2 := rlp.DecodeBytes(data, header); err2 != nil {
-				log.Error("Invalid block header RLP", "hash", hash, "err", err2)
+			// Use a custom decoder that can handle the optional field gracefully
+			header = decodeQuantumCompatibleHeader(data)
+			if header == nil {
+				log.Error("Invalid block header RLP", "hash", hash, "err", err)
 				return nil
 			}
 			log.Debug("✅ Quantum-compatible header decoding succeeded", "hash", hash.Hex()[:8])
@@ -406,6 +408,74 @@ func ReadHeader(db ethdb.Reader, hash common.Hash, number uint64) *types.Header 
 	}
 	log.Debug("🔍 Quantum blob unmarshaled successfully", "hash", hash.Hex()[:8])
 
+	return header
+}
+
+// decodeQuantumCompatibleHeader attempts to decode a header with quantum consensus compatibility
+// This function handles the WithdrawalsHash optional field issue by trying multiple decoding strategies
+func decodeQuantumCompatibleHeader(data []byte) *types.Header {
+	// Strategy 1: Try decoding with a temporary struct that includes all possible fields
+	// but handles the problematic WithdrawalsHash field as a raw byte slice to avoid decode errors
+	type compatHeader struct {
+		ParentHash  common.Hash    `json:"parentHash"       gencodec:"required"`
+		UncleHash   common.Hash    `json:"sha3Uncles"       gencodec:"required"`
+		Coinbase    common.Address `json:"miner"`
+		Root        common.Hash    `json:"stateRoot"        gencodec:"required"`
+		TxHash      common.Hash    `json:"transactionsRoot" gencodec:"required"`
+		ReceiptHash common.Hash    `json:"receiptsRoot"     gencodec:"required"`
+		Bloom       types.Bloom    `json:"logsBloom"        gencodec:"required"`
+		Difficulty  *big.Int       `json:"difficulty"       gencodec:"required"`
+		Number      *big.Int       `json:"number"           gencodec:"required"`
+		GasLimit    uint64         `json:"gasLimit"         gencodec:"required"`
+		GasUsed     uint64         `json:"gasUsed"          gencodec:"required"`
+		Time        uint64         `json:"timestamp"        gencodec:"required"`
+		Extra       []byte         `json:"extraData"        gencodec:"required"`
+		MixDigest   common.Hash    `json:"mixHash"`
+		Nonce       types.BlockNonce `json:"nonce"`
+		
+		// Optional fields - include all possible fields to match RLP structure
+		BaseFee          *big.Int     `rlp:"optional"`
+		WithdrawalsHash  []byte       `rlp:"optional"` // Use []byte instead of *common.Hash to avoid decode errors
+		BlobGasUsed      *uint64      `rlp:"optional"`
+		ExcessBlobGas    *uint64      `rlp:"optional"`
+		ParentBeaconRoot *common.Hash `rlp:"optional"`
+		QBlob            []byte       `rlp:"optional"`
+	}
+	
+	var tempHeader compatHeader
+	if err := rlp.DecodeBytes(data, &tempHeader); err != nil {
+		log.Debug("🔧 Quantum-compatible decoding also failed", "error", err.Error())
+		return nil
+	}
+	
+	// Convert the compatible header to a standard header
+	header := &types.Header{
+		ParentHash:  tempHeader.ParentHash,
+		UncleHash:   tempHeader.UncleHash,
+		Coinbase:    tempHeader.Coinbase,
+		Root:        tempHeader.Root,
+		TxHash:      tempHeader.TxHash,
+		ReceiptHash: tempHeader.ReceiptHash,
+		Bloom:       tempHeader.Bloom,
+		Difficulty:  tempHeader.Difficulty,
+		Number:      tempHeader.Number,
+		GasLimit:    tempHeader.GasLimit,
+		GasUsed:     tempHeader.GasUsed,
+		Time:        tempHeader.Time,
+		Extra:       tempHeader.Extra,
+		MixDigest:   tempHeader.MixDigest,
+		Nonce:       tempHeader.Nonce,
+		BaseFee:     tempHeader.BaseFee,
+		QBlob:       tempHeader.QBlob,
+		// IMPORTANT: Always set post-merge fields to nil for quantum consensus
+		// We ignore the WithdrawalsHash bytes since quantum consensus doesn't use withdrawals
+		WithdrawalsHash:  nil,
+		BlobGasUsed:      tempHeader.BlobGasUsed,
+		ExcessBlobGas:    tempHeader.ExcessBlobGas,
+		ParentBeaconRoot: tempHeader.ParentBeaconRoot,
+	}
+	
+	log.Debug("✅ Quantum-compatible header decoding succeeded", "blockNumber", header.Number.Uint64())
 	return header
 }
 
