@@ -1804,6 +1804,16 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals, setHead bool)
 		if parent == nil {
 			parent = bc.GetHeader(block.ParentHash(), block.NumberU64()-1)
 		}
+		
+		// Additional nil check after GetHeader - parent block must exist
+		if parent == nil {
+			log.Error("❌ Parent block not found during chain insertion", 
+				"block", block.NumberU64(),
+				"parentHash", block.ParentHash().Hex(),
+				"parentNumber", block.NumberU64()-1)
+			return it.index, consensus.ErrUnknownAncestor
+		}
+		
 		statedb, err := state.New(parent.Root, bc.stateCache, bc.snaps)
 		if err != nil {
 			return it.index, err
