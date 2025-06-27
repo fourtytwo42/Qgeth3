@@ -84,9 +84,13 @@ func serviceNonContiguousBlockHeaderQuery(backend Backend, query *GetBlockHeader
 			break
 		}
 		
-		// CENTRALIZED FIX: Use quantum RLP manager for consistent encoding
-		if rlpData, err := backend.QuantumRLP().EncodeHeaderForTransmission(origin); err != nil {
-			log.Crit("Unable to encode quantum header", "err", err)
+		// CRITICAL FIX: Ensure quantum fields are marshaled before RLP encoding
+		// This ensures consistent header transmission during sync
+		origin.MarshalQuantumBlob()
+		
+		if rlpData, err := rlp.EncodeToBytes(origin); err != nil {
+			log.Error("Unable to encode header for transmission", "err", err)
+			break
 		} else {
 			headers = append(headers, rlp.RawValue(rlpData))
 			bytes += common.StorageSize(len(rlpData))
@@ -170,9 +174,11 @@ func serviceContiguousBlockHeaderQuery(backend Backend, query *GetBlockHeadersRe
 		header  = chain.GetHeaderByHash(hash)
 	)
 	if header != nil {
-		// CENTRALIZED FIX: Use quantum RLP manager for consistent encoding
-		if rlpData, err := backend.QuantumRLP().EncodeHeaderForTransmission(header); err != nil {
-			log.Error("Unable to encode quantum header in contiguous query", "err", err)
+		// CRITICAL FIX: Ensure quantum fields are marshaled before RLP encoding
+		header.MarshalQuantumBlob()
+		
+		if rlpData, err := rlp.EncodeToBytes(header); err != nil {
+			log.Error("Unable to encode header in contiguous query", "err", err)
 		} else {
 			headers = append(headers, rlpData)
 		}
@@ -203,9 +209,11 @@ func serviceContiguousBlockHeaderQuery(backend Backend, query *GetBlockHeadersRe
 				break
 			}
 			
-			// CENTRALIZED FIX: Use quantum RLP manager for consistent encoding
-			if rlpData, err := backend.QuantumRLP().EncodeHeaderForTransmission(header); err != nil {
-				log.Error("Unable to encode quantum header for ancestor", "err", err)
+			// CRITICAL FIX: Ensure quantum fields are marshaled before RLP encoding
+			header.MarshalQuantumBlob()
+			
+			if rlpData, err := rlp.EncodeToBytes(header); err != nil {
+				log.Error("Unable to encode header for ancestor", "err", err)
 				break
 			} else {
 				headers = append(headers, rlpData)
