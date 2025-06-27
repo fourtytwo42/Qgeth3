@@ -357,14 +357,9 @@ func NewBlock(header *Header, txs []*Transaction, uncles []*Header, receipts []*
 func NewBlockWithWithdrawals(header *Header, txs []*Transaction, uncles []*Header, receipts []*Receipt, withdrawals []*Withdrawal, hasher TrieHasher) *Block {
 	b := NewBlock(header, txs, uncles, receipts, hasher)
 
-	if withdrawals == nil {
-		b.header.WithdrawalsHash = nil
-	} else if len(withdrawals) == 0 {
-		b.header.WithdrawalsHash = &EmptyWithdrawalsHash
-	} else {
-		h := DeriveSha(Withdrawals(withdrawals), hasher)
-		b.header.WithdrawalsHash = &h
-	}
+	// QUANTUM BLOCKCHAIN: All blocks are quantum blocks, always use nil for quantum compatibility
+	// Withdrawals are not supported in quantum consensus, so WithdrawalsHash is always nil
+	b.header.WithdrawalsHash = nil
 
 	return b.WithWithdrawals(withdrawals)
 }
@@ -385,22 +380,12 @@ func CopyHeader(h *Header) *Header {
 		cpy.Extra = make([]byte, len(h.Extra))
 		copy(cpy.Extra, h.Extra)
 	}
-	if h.WithdrawalsHash != nil {
-		cpy.WithdrawalsHash = new(common.Hash)
-		*cpy.WithdrawalsHash = *h.WithdrawalsHash
-	}
-	if h.ExcessBlobGas != nil {
-		cpy.ExcessBlobGas = new(uint64)
-		*cpy.ExcessBlobGas = *h.ExcessBlobGas
-	}
-	if h.BlobGasUsed != nil {
-		cpy.BlobGasUsed = new(uint64)
-		*cpy.BlobGasUsed = *h.BlobGasUsed
-	}
-	if h.ParentBeaconRoot != nil {
-		cpy.ParentBeaconRoot = new(common.Hash)
-		*cpy.ParentBeaconRoot = *h.ParentBeaconRoot
-	}
+	// QUANTUM BLOCKCHAIN: All blocks are quantum blocks, enforce consistent nil initialization
+	// for post-merge fields to ensure deterministic RLP encoding across all code paths
+	cpy.WithdrawalsHash = nil
+	cpy.ExcessBlobGas = nil
+	cpy.BlobGasUsed = nil
+	cpy.ParentBeaconRoot = nil
 	// Deep copy quantum fields
 	if h.Epoch != nil {
 		cpy.Epoch = new(uint32)
