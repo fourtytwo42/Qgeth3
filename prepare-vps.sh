@@ -36,11 +36,11 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-print_step "🚀 Preparing VPS for Q Geth Build"
+print_step "ðŸš€ Preparing VPS for Q Geth Build"
 echo ""
 
 # System info
-print_step "📊 System Information"
+print_step "ðŸ“Š System Information"
 if command -v lsb_release >/dev/null 2>&1; then
     echo "OS: $(lsb_release -d | cut -f2)"
 elif [ -f /etc/os-release ]; then
@@ -55,7 +55,7 @@ fi
 echo ""
 
 # Memory check
-print_step "💾 Memory Analysis"
+print_step "ðŸ’¾ Memory Analysis"
 REQUIRED_MB=3072  # 3GB minimum
 AVAILABLE_MB=0
 TOTAL_MB=0
@@ -119,7 +119,7 @@ fi
 echo ""
 
 # Storage check
-print_step "💽 Storage Analysis"
+print_step "ðŸ’½ Storage Analysis"
 AVAILABLE_GB=0
 if command -v df >/dev/null 2>&1; then
     AVAILABLE_KB=$(df . | awk 'NR==2 {print $4}')
@@ -141,7 +141,7 @@ fi
 echo ""
 
 # Dependencies check
-print_step "📦 Dependencies Check"
+print_step "ðŸ“¦ Dependencies Check"
 MISSING_DEPS=()
 
 # Check for essential tools
@@ -177,7 +177,7 @@ fi
 echo ""
 
 # Final recommendations
-print_step "🎯 Final Recommendations"
+print_step "ðŸŽ¯ Final Recommendations"
 echo ""
 echo "Build Environment Tips:"
 echo "  1. Close unnecessary applications during build"
@@ -187,14 +187,14 @@ echo "  4. Consider building during off-peak hours"
 echo ""
 
 if [ $AVAILABLE_MB -ge $REQUIRED_MB ]; then
-    print_success "✅ VPS is ready for building Q Geth!"
+    print_success "âœ… VPS is ready for building Q Geth!"
     echo ""
     echo "Next steps:"
     echo "  ./build-linux.sh            # Build both geth and miner"
     echo "  ./build-linux.sh geth       # Build geth only"
     echo "  ./build-linux.sh miner      # Build miner only"
 else
-    print_warning "⚠️  VPS may have issues building due to low memory"
+    print_warning "âš ï¸  VPS may have issues building due to low memory"
     echo ""
     echo "Consider:"
     echo "  - Upgrading to a VPS with at least 4GB RAM"
@@ -203,17 +203,17 @@ else
 fi
 
 echo ""
-print_step "🔍 System Summary"
+print_step "ðŸ” System Summary"
 echo "RAM: ${AVAILABLE_MB}MB available / ${TOTAL_MB}MB total"
 echo "Swap: ${SWAP_TOTAL}MB"
 echo "Storage: ${AVAILABLE_GB}GB available"
-echo "Status: $([ $AVAILABLE_MB -ge $REQUIRED_MB ] && echo "✅ Ready" || echo "⚠️  May need optimization")"
+echo "Status: $([ $AVAILABLE_MB -ge $REQUIRED_MB ] && echo "âœ… Ready" || echo "âš ï¸  May need optimization")"
 
 create_swap() {
     local size_mb=$1
     local swap_file="/swapfile"
     
-    print_step "🔧 Creating ${size_mb}MB swap file..."
+    print_step "ðŸ”§ Creating ${size_mb}MB swap file..."
     
     # Check if swap file already exists
     if [ -f "$swap_file" ]; then
@@ -265,7 +265,7 @@ create_swap() {
 }
 
 install_dependencies() {
-    print_step "📦 Installing dependencies..."
+    print_step "ðŸ“¦ Installing dependencies..."
     
     # Update package list
     echo "Updating package list..."
