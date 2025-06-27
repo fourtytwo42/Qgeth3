@@ -468,9 +468,9 @@ func (q *QMPoW) Prepare(chain consensus.ChainHeaderReader, header *types.Header)
 				"difficulty", FormatDifficulty(header.Difficulty),
 				"puzzles", params.LNet)
 		} else {
-			// Fallback if parent not found
-			header.Difficulty = big.NewInt(int64(params.LNet))
-			log.Info("🔗 Parent not found in Prepare, using default difficulty",
+			// Fallback if parent not found - use genesis difficulty (200)
+			header.Difficulty = big.NewInt(200)
+			log.Info("🔗 Parent not found in Prepare, using genesis difficulty",
 				"blockNumber", header.Number.Uint64(),
 				"difficulty", header.Difficulty,
 				"fixedPuzzles", params.LNet)
