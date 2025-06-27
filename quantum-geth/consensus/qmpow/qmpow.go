@@ -665,6 +665,15 @@ func (q *QMPoW) SealHash(header *types.Header) common.Hash {
 	headerCopy.GateHash = nil
 	headerCopy.ProofRoot = nil
 
+	// CRITICAL FIX: Exclude variable quantum mining fields from seal hash
+	// These fields are filled by external miners after work distribution and
+	// SHOULD NOT affect the unique identifier (sealhash) used for matching
+	// mining tasks. Excluding them ensures the miner task can be located when
+	// the solution comes back.
+	headerCopy.QNonce64 = nil
+	headerCopy.BranchNibbles = nil
+	headerCopy.ExtraNonce32 = nil
+
 	return rlpHash(headerCopy)
 }
 
