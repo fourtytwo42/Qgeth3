@@ -1811,6 +1811,30 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals, setHead bool)
 				"block", block.NumberU64(),
 				"parentHash", block.ParentHash().Hex(),
 				"parentNumber", block.NumberU64()-1)
+			
+			// Additional debugging for genesis block lookup
+			if block.NumberU64() == 1 {
+				log.Info("🔍 Debugging genesis block lookup for block 1")
+				genesisBlock := bc.GetBlockByNumber(0)
+				genesisHeader := bc.GetHeaderByNumber(0)
+				log.Info("🔍 Genesis block lookup results",
+					"genesisBlock", genesisBlock != nil,
+					"genesisHeader", genesisHeader != nil,
+					"expectedParentHash", block.ParentHash().Hex())
+				if genesisBlock != nil {
+					log.Info("🔍 Found genesis block",
+						"hash", genesisBlock.Hash().Hex(),
+						"number", genesisBlock.NumberU64(),
+						"difficulty", genesisBlock.Difficulty())
+				}
+				if genesisHeader != nil {
+					log.Info("🔍 Found genesis header",
+						"hash", genesisHeader.Hash().Hex(),
+						"number", genesisHeader.Number.Uint64(),
+						"difficulty", genesisHeader.Difficulty)
+				}
+			}
+			
 			return it.index, consensus.ErrUnknownAncestor
 		}
 		
