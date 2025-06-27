@@ -305,9 +305,45 @@ func ReadHeaderRange(db ethdb.Reader, number uint64, count uint64) []rlp.RawValu
 		hash := ReadCanonicalHash(db, number)
 		for ; i >= limit && count > 0; i-- {
 			if data, _ := db.Get(headerKey(i, hash)); len(data) > 0 {
-				rlpHeaders = append(rlpHeaders, data)
+				// QUANTUM-GETH FIX: Process headers through quantum-compatible decoding
+				// This ensures headers are properly formatted for network transmission
+				header := new(types.Header)
+				if err := rlp.DecodeBytes(data, header); err != nil {
+					// Try quantum-compatible decoding for RLP structure issues
+					if strings.Contains(err.Error(), "WithdrawalsHash") || 
+					   strings.Contains(err.Error(), "input string too short") || 
+					   strings.Contains(err.Error(), "optional") {
+						header = decodeQuantumCompatibleHeader(data)
+						if header == nil {
+							log.Error("Failed to decode header in range", "number", i, "err", err)
+							break
+						}
+					} else {
+						log.Error("Failed to decode header in range", "number", i, "err", err)
+						break
+					}
+				}
+				
+				// Ensure quantum consensus compatibility
+				header.WithdrawalsHash = nil
+				
+				// Unmarshal quantum blob
+				if err := header.UnmarshalQuantumBlob(); err != nil {
+					log.Error("Failed to unmarshal quantum blob in range", "number", i, "err", err)
+					break
+				}
+				
+				// Re-encode with quantum compatibility for network transmission
+				header.MarshalQuantumBlob()
+				reencoded, err := rlp.EncodeToBytes(header)
+				if err != nil {
+					log.Error("Failed to re-encode header in range", "number", i, "err", err)
+					break
+				}
+				
+				rlpHeaders = append(rlpHeaders, reencoded)
 				// Get the parent hash for next query
-				hash = types.HeaderParentHashFromRLP(data)
+				hash = header.ParentHash
 			} else {
 				break // Maybe got moved to ancients
 			}
@@ -328,8 +364,46 @@ func ReadHeaderRange(db ethdb.Reader, number uint64, count uint64) []rlp.RawValu
 		return rlpHeaders
 	}
 	// The data is on the order [h, h+1, .., n] -- reordering needed
+	// QUANTUM-GETH FIX: Process ancient headers through quantum-compatible decoding
 	for i := range data {
-		rlpHeaders = append(rlpHeaders, data[len(data)-1-i])
+		rawData := data[len(data)-1-i]
+		
+		// Process through quantum-compatible decoding
+		header := new(types.Header)
+		if err := rlp.DecodeBytes(rawData, header); err != nil {
+			// Try quantum-compatible decoding for RLP structure issues
+			if strings.Contains(err.Error(), "WithdrawalsHash") || 
+			   strings.Contains(err.Error(), "input string too short") || 
+			   strings.Contains(err.Error(), "optional") {
+				header = decodeQuantumCompatibleHeader(rawData)
+				if header == nil {
+					log.Error("Failed to decode ancient header in range", "err", err)
+					continue
+				}
+			} else {
+				log.Error("Failed to decode ancient header in range", "err", err)
+				continue
+			}
+		}
+		
+		// Ensure quantum consensus compatibility
+		header.WithdrawalsHash = nil
+		
+		// Unmarshal quantum blob
+		if err := header.UnmarshalQuantumBlob(); err != nil {
+			log.Error("Failed to unmarshal ancient quantum blob in range", "err", err)
+			continue
+		}
+		
+		// Re-encode with quantum compatibility for network transmission
+		header.MarshalQuantumBlob()
+		reencoded, err := rlp.EncodeToBytes(header)
+		if err != nil {
+			log.Error("Failed to re-encode ancient header in range", "err", err)
+			continue
+		}
+		
+		rlpHeaders = append(rlpHeaders, reencoded)
 	}
 	return rlpHeaders
 }
