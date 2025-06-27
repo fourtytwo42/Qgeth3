@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strings"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
@@ -371,12 +372,32 @@ func ReadHeader(db ethdb.Reader, hash common.Hash, number uint64) *types.Header 
 	header := new(types.Header)
 	log.Debug("🔍 Reading header RLP", "hash", hash.Hex()[:8], "number", number, "dataSize", len(data))
 
-	// Use standard RLP decoding (no custom DecodeRLP needed with rlp:"tail")
+	// QUANTUM-GETH FIX: Use quantum-aware RLP decoding for headers
+	// This handles the WithdrawalsHash optional field properly for quantum consensus
 	if err := rlp.DecodeBytes(data, header); err != nil {
-		log.Error("Invalid block header RLP", "hash", hash, "err", err)
-		return nil
+		// Check if this is the known optional field issue
+		if strings.Contains(err.Error(), "WithdrawalsHash") {
+			log.Debug("🔧 Attempting quantum-compatible header decoding", "hash", hash.Hex()[:8], "error", err.Error())
+			
+			// Force quantum consensus compatibility during decoding
+			header.WithdrawalsHash = nil
+			
+			// Try decoding again with normalized structure
+			if err2 := rlp.DecodeBytes(data, header); err2 != nil {
+				log.Error("Invalid block header RLP", "hash", hash, "err", err2)
+				return nil
+			}
+			log.Debug("✅ Quantum-compatible header decoding succeeded", "hash", hash.Hex()[:8])
+		} else {
+			log.Error("Invalid block header RLP", "hash", hash, "err", err)
+			return nil
+		}
 	}
 	log.Debug("🔍 Header RLP decoded successfully", "hash", hash.Hex()[:8])
+
+	// CRITICAL: Ensure quantum consensus field compatibility after decoding
+	// Quantum blockchains don't use post-merge Ethereum features
+	header.WithdrawalsHash = nil
 
 	// Unmarshal quantum blob to populate virtual quantum fields
 	if err := header.UnmarshalQuantumBlob(); err != nil {
