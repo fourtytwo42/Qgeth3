@@ -289,8 +289,24 @@ func (p *Peer) AsyncSendNewBlockHash(block *types.Block) {
 func (p *Peer) SendNewBlock(block *types.Block, td *big.Int) error {
 	// Mark all the block hash as known, but ensure we don't overflow our limits
 	p.knownBlocks.Add(block.Hash())
+	
+	// CRITICAL FIX: Ensure quantum fields are properly marshaled before network transmission
+	// This prevents "Header broke chain ancestry" errors during peer synchronization
+	quantumBlock := block
+	if block.Header().QBlob != nil {
+		// Create a copy with properly marshaled quantum fields
+		header := block.Header()
+		header.MarshalQuantumBlob()
+		quantumBlock = block.WithSeal(header)
+		
+		p.Log().Debug("🔗 Quantum block prepared for network transmission", 
+			"number", header.Number.Uint64(),
+			"hash", quantumBlock.Hash().Hex()[:10],
+			"qblobSize", len(header.QBlob))
+	}
+	
 	return p2p.Send(p.rw, NewBlockMsg, &NewBlockPacket{
-		Block: block,
+		Block: quantumBlock,
 		TD:    td,
 	})
 }
