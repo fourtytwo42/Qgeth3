@@ -491,13 +491,13 @@ func GenesisToBlock(g *genesisT.Genesis, db ethdb.Database) *types.Block {
 	}
 	var withdrawals []*types.Withdrawal
 
-	// Always initialize EIP fields to prevent RLP decoding issues
-	// Even if EIPs are not enabled, we need proper values for RLP compatibility
-	head.WithdrawalsHash = &types.EmptyWithdrawalsHash
-	head.ExcessBlobGas = new(uint64)
-	head.BlobGasUsed = new(uint64)
-	head.ParentBeaconRoot = new(common.Hash)
-	withdrawals = make([]*types.Withdrawal, 0)
+	// QUANTUM BLOCKCHAIN: All blocks are quantum blocks, so always use quantum-compatible initialization
+	// This ensures deterministic RLP encoding across all nodes and code paths
+	head.WithdrawalsHash = nil
+	head.ExcessBlobGas = nil
+	head.BlobGasUsed = nil
+	head.ParentBeaconRoot = nil
+	withdrawals = nil
 
 	// Override with genesis values if provided
 	if g.ExcessBlobGas != nil {
@@ -527,12 +527,6 @@ func GenesisToBlock(g *genesisT.Genesis, db ethdb.Database) *types.Block {
 	// Initialize quantum fields for quantum-enabled chains (genesis block)
 	if types.IsQuantumActive(head.Number) {
 		log.Info("🌱 Initializing quantum fields for genesis block")
-
-		// CRITICAL FIX: Quantum consensus doesn't use post-merge fields - always nil
-		// This ensures consistency with all other quantum block creation paths
-		// and prevents "Header broke chain ancestry" errors during sync
-		head.WithdrawalsHash = nil
-		head.ParentBeaconRoot = nil
 
 		// Initialize quantum fields for genesis block (block 0)
 		epoch := uint32(0)     // Genesis is always epoch 0
