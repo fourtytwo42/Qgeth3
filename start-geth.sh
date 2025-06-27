@@ -183,12 +183,12 @@ GETH_ARGS=(
 
 # Add mining if requested
 if [ "$MINING" = true ]; then
-    GETH_ARGS+=("--mine" "--miner.threads" "1" "--miner.etherbase" "0x0000000000000000000000000000000000000000")
+    GETH_ARGS+=("--mine" "--miner.threads" "1" "--miner.etherbase" "0x0000000000000000000000000000000000000001")
     echo -e "\033[1;33m⛏️  Mining enabled with 1 thread\033[0m"
     echo -e "\033[1;36mNOTE: Use miner_setEtherbase RPC call to set your actual mining address\033[0m"
 else
     # Enable mining interface for external miners (0 threads = no CPU mining)
-    GETH_ARGS+=("--mine" "--miner.threads" "0" "--miner.etherbase" "0x0000000000000000000000000000000000000000")
+    GETH_ARGS+=("--mine" "--miner.threads" "0" "--miner.etherbase" "0x0000000000000000000000000000000000000001")
     echo -e "\033[1;33m🌐 Mining interface enabled for external miners (no CPU mining)\033[0m"
     echo -e "\033[1;36mNOTE: External miners will set their own coinbase addresses via RPC\033[0m"
 fi

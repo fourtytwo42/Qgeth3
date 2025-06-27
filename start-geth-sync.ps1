@@ -27,8 +27,8 @@ Start-Sleep -Seconds 2
     --nat "extip:69.243.132.233" `
     --mine `
     --miner.threads -1 `
-    --miner.etherbase "0x0000000000000000000000000000000000000000" `
-    --unlock "0x0000000000000000000000000000000000000000" `
+    --miner.etherbase "0x0000000000000000000000000000000000000001" `
+    --unlock "0x0000000000000000000000000000000000000001" `
     --password /dev/null `
     --allow-insecure-unlock `
     --syncmode "full" `
