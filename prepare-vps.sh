@@ -198,7 +198,7 @@ if [ -f /proc/meminfo ]; then
     effective_required=$((REQUIRED_MB - tolerance_mb))
     
     if [ $CURRENT_TOTAL -lt $effective_required ]; then
-        local deficit=$((REQUIRED_MB - CURRENT_TOTAL))
+        deficit=$((REQUIRED_MB - CURRENT_TOTAL))
         print_warning "Insufficient total memory for building!"
         echo "  Current total: ${CURRENT_TOTAL}MB"
         echo "  Required total: ${REQUIRED_MB}MB"
@@ -242,7 +242,7 @@ if [ -f /proc/meminfo ]; then
             print_success "Total memory check passed"
         fi
     elif [ $CURRENT_TOTAL -lt $REQUIRED_MB ]; then
-        local deficit=$((REQUIRED_MB - CURRENT_TOTAL))
+        deficit=$((REQUIRED_MB - CURRENT_TOTAL))
         print_step "💡 Memory within tolerance range"
         echo "  Current total: ${CURRENT_TOTAL}MB"
         echo "  Required total: ${REQUIRED_MB}MB" 
