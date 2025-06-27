@@ -192,14 +192,16 @@ func (qrm *QuantumRLPManager) ValidateRLPConsistency(block *types.Block) error {
 
 // ValidateHeaderRLPConsistency performs roundtrip validation for headers only
 func (qrm *QuantumRLPManager) ValidateHeaderRLPConsistency(header *types.Header) error {
-	originalHash := header.Hash()
+	// Create a copy to avoid modifying the original header during validation
+	headerCopy := types.CopyHeader(header)
+	originalHash := headerCopy.Hash()
 	
 	log.Debug("🔍 Quantum RLP: Starting header consistency validation",
-		"blockNumber", header.Number.Uint64(),
+		"blockNumber", headerCopy.Number.Uint64(),
 		"originalHash", originalHash.Hex()[:10])
 	
-	// Test header encoding roundtrip
-	encoded, err := qrm.EncodeHeaderForTransmission(header)
+	// Test header encoding roundtrip using the copy
+	encoded, err := qrm.EncodeHeaderForTransmission(headerCopy)
 	if err != nil {
 		return fmt.Errorf("header encoding failed: %v", err)
 	}
@@ -218,12 +220,12 @@ func (qrm *QuantumRLPManager) ValidateHeaderRLPConsistency(header *types.Header)
 	}
 	
 	// Verify quantum field consistency
-	if err := qrm.validateQuantumFieldConsistency(header, decoded); err != nil {
+	if err := qrm.validateQuantumFieldConsistency(headerCopy, decoded); err != nil {
 		return fmt.Errorf("quantum field consistency failed: %v", err)
 	}
 	
 	log.Debug("✅ Quantum RLP: Header consistency validation passed",
-		"blockNumber", header.Number.Uint64(),
+		"blockNumber", headerCopy.Number.Uint64(),
 		"hash", originalHash.Hex()[:10])
 	
 	return nil

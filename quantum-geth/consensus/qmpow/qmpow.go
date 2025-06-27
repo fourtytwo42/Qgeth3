@@ -487,16 +487,17 @@ func (q *QMPoW) Prepare(chain consensus.ChainHeaderReader, header *types.Header)
 	// Initialize optional fields to prevent RLP encoding issues
 	q.initializeOptionalFields(header)
 
+	// Marshal quantum fields into QBlob for proper RLP encoding
+	header.MarshalQuantumBlob()
+
 	// CENTRALIZED: Use RLP manager to ensure consistent preparation
-	// This validates the header structure before external miners receive it
+	// This validates the header structure AFTER quantum fields are marshaled
+	// to ensure the header is in its final state for external miners
 	if err := q.rlpManager.ValidateHeaderRLPConsistency(header); err != nil {
 		log.Warn("❌ Header failed RLP consistency check during preparation", 
 			"blockNumber", header.Number.Uint64(), "error", err)
 		return fmt.Errorf("header RLP validation failed: %v", err)
 	}
-
-	// Marshal quantum fields into QBlob for proper RLP encoding
-	header.MarshalQuantumBlob()
 
 	return nil
 }
