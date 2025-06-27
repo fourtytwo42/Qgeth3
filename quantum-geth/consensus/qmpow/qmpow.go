@@ -674,6 +674,12 @@ func (q *QMPoW) SealHash(header *types.Header) common.Hash {
 	headerCopy.BranchNibbles = nil
 	headerCopy.ExtraNonce32 = nil
 
+	// CRITICAL FIX: Also exclude QBlob since it changes when quantum fields are marshaled
+	// The QBlob is just a serialized representation of the quantum fields above.
+	// When external miners fill in quantum fields and re-marshal, the QBlob content changes,
+	// which would change the sealhash and prevent task matching.
+	headerCopy.QBlob = nil
+
 	return rlpHash(headerCopy)
 }
 
