@@ -41,12 +41,43 @@ func handleGetBlockHeaders(backend Backend, msg Decoder, peer *Peer) error {
 // ServiceGetBlockHeadersQuery assembles the response to a header query. It is
 // exposed to allow external packages to test protocol behavior.
 func ServiceGetBlockHeadersQuery(backend Backend, query *GetBlockHeadersRequest, peer *Peer) []rlp.RawValue {
+	// COMPREHENSIVE DEBUG LOGGING for header serving at verbosity 4
+	log.Debug("🔍 HEADER REQUEST: Received header query", 
+		"peer", peer.ID()[:8],
+		"hash", query.Origin.Hash.Hex()[:8], 
+		"number", query.Origin.Number,
+		"amount", query.Amount,
+		"skip", query.Skip,
+		"reverse", query.Reverse,
+		"hashMode", query.Origin.Hash != (common.Hash{}))
+	
+	var result []rlp.RawValue
 	if query.Skip == 0 {
+		log.Debug("🚀 HEADER REQUEST: Using contiguous query path", "peer", peer.ID()[:8])
 		// The fast path: when the request is for a contiguous segment of headers.
-		return serviceContiguousBlockHeaderQuery(backend, query)
+		result = serviceContiguousBlockHeaderQuery(backend, query)
 	} else {
-		return serviceNonContiguousBlockHeaderQuery(backend, query, peer)
+		log.Debug("🚀 HEADER REQUEST: Using non-contiguous query path", "peer", peer.ID()[:8])
+		result = serviceNonContiguousBlockHeaderQuery(backend, query, peer)
 	}
+	
+	log.Debug("✅ HEADER REQUEST: Returning headers", 
+		"peer", peer.ID()[:8],
+		"requested", query.Amount,
+		"returned", len(result),
+		"success", len(result) > 0)
+	
+	if len(result) == 0 {
+		log.Warn("❌ HEADER REQUEST: ZERO HEADERS RETURNED", 
+			"peer", peer.ID()[:8],
+			"hash", query.Origin.Hash.Hex()[:8], 
+			"number", query.Origin.Number,
+			"amount", query.Amount,
+			"skip", query.Skip,
+			"reverse", query.Reverse)
+	}
+	
+	return result
 }
 
 func serviceNonContiguousBlockHeaderQuery(backend Backend, query *GetBlockHeadersRequest, peer *Peer) []rlp.RawValue {
@@ -54,6 +85,15 @@ func serviceNonContiguousBlockHeaderQuery(backend Backend, query *GetBlockHeader
 	hashMode := query.Origin.Hash != (common.Hash{})
 	first := true
 	maxNonCanonical := uint64(100)
+
+	log.Debug("🔍 NON-CONTIGUOUS: Starting query", 
+		"peer", peer.ID()[:8],
+		"hashMode", hashMode, 
+		"originHash", query.Origin.Hash.Hex()[:8],
+		"originNumber", query.Origin.Number,
+		"amount", query.Amount,
+		"skip", query.Skip,
+		"reverse", query.Reverse)
 
 	// Gather headers until the fetch or network limits is reached
 	var (
@@ -65,22 +105,61 @@ func serviceNonContiguousBlockHeaderQuery(backend Backend, query *GetBlockHeader
 	for !unknown && len(headers) < int(query.Amount) && bytes < softResponseLimit &&
 		len(headers) < maxHeadersServe && lookups < 2*maxHeadersServe {
 		lookups++
+		log.Debug("🔍 NON-CONTIGUOUS: Lookup iteration", 
+			"peer", peer.ID()[:8],
+			"lookup", lookups, 
+			"headersSoFar", len(headers),
+			"originHash", query.Origin.Hash.Hex()[:8],
+			"originNumber", query.Origin.Number)
+		
 		// Retrieve the next header satisfying the query
 		var origin *types.Header
 		if hashMode {
 			if first {
 				first = false
+				log.Debug("🔍 NON-CONTIGUOUS: First hash lookup", 
+					"peer", peer.ID()[:8],
+					"hash", query.Origin.Hash.Hex()[:8])
 				origin = chain.GetHeaderByHash(query.Origin.Hash)
 				if origin != nil {
 					query.Origin.Number = origin.Number.Uint64()
+					log.Debug("✅ NON-CONTIGUOUS: Found origin header", 
+						"peer", peer.ID()[:8],
+						"hash", query.Origin.Hash.Hex()[:8],
+						"number", origin.Number.Uint64())
+				} else {
+					log.Warn("❌ NON-CONTIGUOUS: Origin header not found", 
+						"peer", peer.ID()[:8],
+						"hash", query.Origin.Hash.Hex()[:8])
 				}
 			} else {
+				log.Debug("🔍 NON-CONTIGUOUS: Subsequent hash lookup", 
+					"peer", peer.ID()[:8],
+					"hash", query.Origin.Hash.Hex()[:8],
+					"number", query.Origin.Number)
 				origin = chain.GetHeader(query.Origin.Hash, query.Origin.Number)
+				if origin == nil {
+					log.Debug("❌ NON-CONTIGUOUS: Header not found", 
+						"peer", peer.ID()[:8],
+						"hash", query.Origin.Hash.Hex()[:8],
+						"number", query.Origin.Number)
+				}
 			}
 		} else {
+			log.Debug("🔍 NON-CONTIGUOUS: Number lookup", 
+				"peer", peer.ID()[:8],
+				"number", query.Origin.Number)
 			origin = chain.GetHeaderByNumber(query.Origin.Number)
+			if origin == nil {
+				log.Debug("❌ NON-CONTIGUOUS: Header not found by number", 
+					"peer", peer.ID()[:8],
+					"number", query.Origin.Number)
+			}
 		}
 		if origin == nil {
+			log.Debug("❌ NON-CONTIGUOUS: Breaking due to nil header", 
+				"peer", peer.ID()[:8],
+				"lookup", lookups)
 			break
 		}
 		
@@ -100,11 +179,36 @@ func serviceNonContiguousBlockHeaderQuery(backend Backend, query *GetBlockHeader
 		case hashMode && query.Reverse:
 			// Hash based traversal towards the genesis block
 			ancestor := query.Skip + 1
+			log.Debug("🔍 NON-CONTIGUOUS: Hash reverse traversal", 
+				"peer", peer.ID()[:8],
+				"currentHash", query.Origin.Hash.Hex()[:8],
+				"currentNumber", query.Origin.Number,
+				"ancestor", ancestor)
 			if ancestor == 0 {
+				log.Debug("❌ NON-CONTIGUOUS: Ancestor == 0, marking unknown", 
+					"peer", peer.ID()[:8])
 				unknown = true
 			} else {
-				query.Origin.Hash, query.Origin.Number = chain.GetAncestor(query.Origin.Hash, query.Origin.Number, ancestor, &maxNonCanonical)
-				unknown = (query.Origin.Hash == common.Hash{})
+				// CRITICAL FIX: Check if we're trying to go beyond genesis
+				if query.Origin.Number < ancestor {
+					log.Debug("❌ NON-CONTIGUOUS: Cannot go beyond genesis", 
+						"peer", peer.ID()[:8],
+						"currentNumber", query.Origin.Number,
+						"ancestor", ancestor,
+						"reason", "would result in negative block number")
+					unknown = true
+				} else {
+					oldHash, oldNumber := query.Origin.Hash, query.Origin.Number
+					query.Origin.Hash, query.Origin.Number = chain.GetAncestor(query.Origin.Hash, query.Origin.Number, ancestor, &maxNonCanonical)
+					unknown = (query.Origin.Hash == common.Hash{})
+					log.Debug("🔍 NON-CONTIGUOUS: Ancestor lookup result", 
+						"peer", peer.ID()[:8],
+						"oldHash", oldHash.Hex()[:8],
+						"oldNumber", oldNumber,
+						"newHash", query.Origin.Hash.Hex()[:8],
+						"newNumber", query.Origin.Number,
+						"unknown", unknown)
+				}
 			}
 		case hashMode && !query.Reverse:
 			// Hash based traversal towards the leaf block
@@ -131,9 +235,24 @@ func serviceNonContiguousBlockHeaderQuery(backend Backend, query *GetBlockHeader
 			}
 		case query.Reverse:
 			// Number based traversal towards the genesis block
-			if query.Origin.Number >= query.Skip+1 {
-				query.Origin.Number -= query.Skip + 1
+			skipAmount := query.Skip + 1
+			log.Debug("🔍 NON-CONTIGUOUS: Number reverse traversal", 
+				"peer", peer.ID()[:8],
+				"currentNumber", query.Origin.Number,
+				"skipAmount", skipAmount)
+			if query.Origin.Number >= skipAmount {
+				oldNumber := query.Origin.Number
+				query.Origin.Number -= skipAmount
+				log.Debug("✅ NON-CONTIGUOUS: Number traversal success", 
+					"peer", peer.ID()[:8],
+					"oldNumber", oldNumber,
+					"newNumber", query.Origin.Number)
 			} else {
+				log.Debug("❌ NON-CONTIGUOUS: Cannot traverse beyond genesis", 
+					"peer", peer.ID()[:8],
+					"currentNumber", query.Origin.Number,
+					"skipAmount", skipAmount,
+					"reason", "would result in negative block number")
 				unknown = true
 			}
 
@@ -142,6 +261,15 @@ func serviceNonContiguousBlockHeaderQuery(backend Backend, query *GetBlockHeader
 			query.Origin.Number += query.Skip + 1
 		}
 	}
+	
+	log.Debug("✅ NON-CONTIGUOUS: Query complete", 
+		"peer", peer.ID()[:8],
+		"requested", query.Amount,
+		"returned", len(headers),
+		"totalLookups", lookups,
+		"unknown", unknown,
+		"bytes", bytes)
+	
 	return headers
 }
 
@@ -151,6 +279,15 @@ func serviceContiguousBlockHeaderQuery(backend Backend, query *GetBlockHeadersRe
 	if count > maxHeadersServe {
 		count = maxHeadersServe
 	}
+	
+	log.Debug("🔍 CONTIGUOUS: Starting query", 
+		"hashMode", query.Origin.Hash != (common.Hash{}),
+		"originHash", query.Origin.Hash.Hex()[:8],
+		"originNumber", query.Origin.Number,
+		"amount", query.Amount,
+		"count", count,
+		"reverse", query.Reverse)
+	
 	if query.Origin.Hash == (common.Hash{}) {
 		// Number mode, just return the canon chain segment. The backend
 		// delivers in [N, N-1, N-2..] descending order, so we need to
@@ -159,12 +296,20 @@ func serviceContiguousBlockHeaderQuery(backend Backend, query *GetBlockHeadersRe
 		if !query.Reverse {
 			from = from + count - 1
 		}
+		log.Debug("🔍 CONTIGUOUS: Number mode lookup", 
+			"originNumber", query.Origin.Number,
+			"from", from,
+			"count", count,
+			"reverse", query.Reverse)
 		headers := chain.GetHeadersFrom(from, count)
 		if !query.Reverse {
 			for i, j := 0, len(headers)-1; i < j; i, j = i+1, j-1 {
 				headers[i], headers[j] = headers[j], headers[i]
 			}
 		}
+		log.Debug("✅ CONTIGUOUS: Number mode result", 
+			"requested", count,
+			"returned", len(headers))
 		return headers
 	}
 	// Hash mode.
@@ -173,7 +318,15 @@ func serviceContiguousBlockHeaderQuery(backend Backend, query *GetBlockHeadersRe
 		hash    = query.Origin.Hash
 		header  = chain.GetHeaderByHash(hash)
 	)
+	
+	log.Debug("🔍 CONTIGUOUS: Hash mode lookup", 
+		"hash", hash.Hex()[:8])
+	
 	if header != nil {
+		log.Debug("✅ CONTIGUOUS: Found origin header", 
+			"hash", hash.Hex()[:8],
+			"number", header.Number.Uint64())
+		
 		// CRITICAL FIX: Ensure quantum fields are marshaled before RLP encoding
 		header.MarshalQuantumBlob()
 		
@@ -181,8 +334,13 @@ func serviceContiguousBlockHeaderQuery(backend Backend, query *GetBlockHeadersRe
 			log.Error("Unable to encode header in contiguous query", "err", err)
 		} else {
 			headers = append(headers, rlpData)
+			log.Debug("✅ CONTIGUOUS: Encoded origin header", 
+				"hash", hash.Hex()[:8],
+				"size", len(rlpData))
 		}
 	} else {
+		log.Warn("❌ CONTIGUOUS: Origin header not found", 
+			"hash", hash.Hex()[:8])
 		// We don't even have the origin header
 		return headers
 	}
