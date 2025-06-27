@@ -201,7 +201,11 @@ chmod +x *.sh
 
 # Step 5: Initial build
 print_step "🔨 Step 5: Initial build"
-sudo -u $ACTUAL_USER ./build-linux.sh geth
+if [ "$AUTO_CONFIRM" = true ]; then
+    sudo -u $ACTUAL_USER ./build-linux.sh geth -y
+else
+    sudo -u $ACTUAL_USER ./build-linux.sh geth
+fi
 if [ $? -ne 0 ]; then
     print_error "Initial build failed"
     exit 1

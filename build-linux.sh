@@ -3,18 +3,38 @@
 # Ensures complete compatibility between Windows and Linux builds
 # Handles minimal Linux environments with missing utilities
 # Optimized for low-memory VPS environments (requires minimum 3GB RAM)
-# Usage: ./build-linux.sh [geth|miner|both] [--clean]
+# Usage: ./build-linux.sh [geth|miner|both] [--clean] [-y|--yes]
 
 # Set robust PATH for minimal Linux environments
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/go/bin:$PATH"
 
-TARGET=${1:-both}
-CLEAN=${2:-false}
+# Parse command line arguments
+AUTO_CONFIRM=false
+TARGET="both"
+CLEAN="false"
+
+for arg in "$@"; do
+    case $arg in
+        -y|--yes)
+            AUTO_CONFIRM=true
+            ;;
+        --clean)
+            CLEAN="--clean"
+            ;;
+        geth|miner|both)
+            TARGET="$arg"
+            ;;
+    esac
+done
+
 VERSION="1.0.0"
 
 echo "🚀 Building Q Coin Linux Binaries (Memory-Optimized)..."
 echo "Target: $TARGET"
 echo "Version: $VERSION"
+if [ "$AUTO_CONFIRM" = true ]; then
+    echo "Mode: Non-interactive (auto-confirm enabled)"
+fi
 echo ""
 
 # Memory check function
@@ -44,21 +64,28 @@ check_memory() {
         echo "  Required Total: ${required_mb}MB (4GB)"
         
         if [ $combined_mb -lt $required_mb ]; then
+            local deficit=$((required_mb - combined_mb))
             echo "⚠️  WARNING: Insufficient total memory!"
             echo "   Current total: ${combined_mb}MB"
             echo "   Required total: ${required_mb}MB"
-            echo "   Deficit: $((required_mb - combined_mb))MB"
+            echo "   Deficit: ${deficit}MB"
             echo ""
             echo "🔧 Recommendations:"
             echo "  1. Run ./prepare-vps.sh to set up swap automatically"
             echo "  2. Close unnecessary programs"
             echo "  3. Use a VPS with more RAM"
             echo ""
-            echo -n "Continue anyway? (y/N): "
-            read -r RESPONSE
-            if [[ ! "$RESPONSE" =~ ^([yY][eE][sS]|[yY])$ ]]; then
-                echo "Build aborted."
-                exit 1
+            
+            # Auto-continue if non-interactive mode and deficit is small (< 100MB)
+            if [ "$AUTO_CONFIRM" = true ] && [ $deficit -lt 100 ]; then
+                echo "💡 Auto-continuing: Memory deficit is small (${deficit}MB < 100MB) and non-interactive mode is enabled"
+            else
+                echo -n "Continue anyway? (y/N): "
+                read -r RESPONSE
+                if [[ ! "$RESPONSE" =~ ^([yY][eE][sS]|[yY])$ ]]; then
+                    echo "Build aborted."
+                    exit 1
+                fi
             fi
         else
             echo "✅ Memory check passed (${combined_mb}MB total)"
