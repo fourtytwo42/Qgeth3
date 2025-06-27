@@ -1017,6 +1017,13 @@ func (bc *BlockChain) Stop() {
 			for _, offset := range []uint64{0, 1, TriesInMemory - 1} {
 				if number := bc.CurrentBlock().Number.Uint64(); number > offset {
 					recent := bc.GetBlockByNumber(number - offset)
+					
+					// QUANTUM-GETH FIX: Add nil check to prevent panic during shutdown
+					// This can happen when RLP decoding fails for stored blocks
+					if recent == nil {
+						log.Warn("Unable to retrieve block for state commit", "blockNumber", number-offset)
+						continue
+					}
 
 					log.Info("Writing cached state to disk", "block", recent.Number(), "hash", recent.Hash(), "root", recent.Root())
 					if err := triedb.Commit(recent.Root(), true); err != nil {
@@ -1357,8 +1364,34 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 	// Calculate the total difficulty of the block
 	ptd := bc.GetTd(block.ParentHash(), block.NumberU64()-1)
 	if ptd == nil {
-		return consensus.ErrUnknownAncestor
+		// Special case: if parent total difficulty is not found, check if this is block 1 building on genesis
+		if block.NumberU64() == 1 {
+			// For block 1, the parent should be genesis (block 0)
+			genesisBlock := bc.GetBlockByNumber(0)
+			if genesisBlock != nil && genesisBlock.Hash() == block.ParentHash() {
+				// This is block 1 building on genesis - use genesis difficulty as parent TD
+				ptd = genesisBlock.Difficulty()
+				log.Info("🔗 Using genesis difficulty as parent TD for block 1", 
+					"block", block.NumberU64(),
+					"parentHash", block.ParentHash().Hex(),
+					"genesisHash", genesisBlock.Hash().Hex(),
+					"parentTD", ptd)
+				
+				// Also ensure genesis TD is properly stored in database
+				rawdb.WriteTd(bc.db, genesisBlock.Hash(), genesisBlock.NumberU64(), genesisBlock.Difficulty())
+			}
+		}
+		
+		// If still nil after genesis check, return unknown ancestor error
+		if ptd == nil {
+			log.Error("❌ Parent total difficulty not found", 
+				"block", block.NumberU64(),
+				"parentHash", block.ParentHash().Hex(),
+				"parentNumber", block.NumberU64()-1)
+			return consensus.ErrUnknownAncestor
+		}
 	}
+	
 	// Make sure no inconsistent state is leaked during insertion
 	externTd := new(big.Int).Add(block.Difficulty(), ptd)
 
