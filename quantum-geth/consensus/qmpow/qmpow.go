@@ -158,6 +158,9 @@ type QMPoW struct {
 	// Remote mining support
 	remote *remoteSealer
 
+	// Centralized quantum RLP management to prevent encoding inconsistencies
+	rlpManager *QuantumRLPManager
+
 	// Testing support
 	fakeFailure uint64 // Block number to fail at (for testing)
 
@@ -188,9 +191,10 @@ func New(config Config) *QMPoW {
 	}
 
 	qmpow := &QMPoW{
-		config:  config,
-		threads: 1,
-		update:  make(chan struct{}),
+		config:     config,
+		threads:    1,
+		update:     make(chan struct{}),
+		rlpManager: NewQuantumRLPManager(),
 	}
 
 	// Initialize remote mining support
@@ -483,6 +487,14 @@ func (q *QMPoW) Prepare(chain consensus.ChainHeaderReader, header *types.Header)
 	// Initialize optional fields to prevent RLP encoding issues
 	q.initializeOptionalFields(header)
 
+	// CENTRALIZED: Use RLP manager to ensure consistent preparation
+	// This validates the header structure before external miners receive it
+	if err := q.rlpManager.ValidateHeaderRLPConsistency(header); err != nil {
+		log.Warn("❌ Header failed RLP consistency check during preparation", 
+			"blockNumber", header.Number.Uint64(), "error", err)
+		return fmt.Errorf("header RLP validation failed: %v", err)
+	}
+
 	// Marshal quantum fields into QBlob for proper RLP encoding
 	header.MarshalQuantumBlob()
 
@@ -563,6 +575,13 @@ func (q *QMPoW) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *t
 
 // Seal generates a new sealing request for the given input block
 func (q *QMPoW) Seal(chain consensus.ChainHeaderReader, block *types.Block, results chan<- *types.Block, stop <-chan struct{}) error {
+	// CENTRALIZED: Validate RLP consistency before sealing
+	if err := q.rlpManager.ValidateRLPConsistency(block); err != nil {
+		log.Warn("❌ Block rejected before sealing - RLP consistency failed", 
+			"blockNumber", block.Number().Uint64(), "error", err)
+		return fmt.Errorf("pre-seal RLP validation failed: %v", err)
+	}
+
 	// If remote mining is enabled, set up the work for external miners
 	if q.remote != nil {
 		q.remote.submitWork(block, results)
@@ -901,6 +920,11 @@ func (q *QMPoW) Hashrate() float64 {
 	q.lock.RLock()
 	defer q.lock.RUnlock()
 	return float64(q.hashrate)
+}
+
+// GetRLPManager returns the centralized quantum RLP manager
+func (q *QMPoW) GetRLPManager() *QuantumRLPManager {
+	return q.rlpManager
 }
 
 // SetThreads sets the number of mining threads
@@ -1438,33 +1462,20 @@ func (s *remoteSealer) submitQuantumWork(qnonce uint64, blockHash common.Hash, q
 	// We must re-marshal to ensure QBlob matches the updated quantum fields.
 	header.MarshalQuantumBlob()
 
-	// CRITICAL: Comprehensive RLP validation before accepting external miner blocks
-	// This prevents malformed blocks from jamming the blockchain
-	log.Debug("🔍 Validating external miner block RLP encoding", "qnonce", qnonce, "hash", blockHash.Hex())
+	// CENTRALIZED: Use quantum RLP manager for comprehensive validation
+	log.Debug("🔍 Validating external miner block using centralized RLP manager", "qnonce", qnonce, "hash", blockHash.Hex())
 
-	// Step 1: Validate header RLP encoding/decoding roundtrip
-	if err := s.validateHeaderRLPIntegrity(header); err != nil {
-		log.Warn("❌ External miner block rejected - Header RLP validation failed",
-			"qnonce", qnonce, "hash", blockHash.Hex(), "error", err)
-		return false
-	}
-
-	// Step 2: Create sealed block and validate full block RLP
+	// Create sealed block for validation
 	sealedBlock := block.WithSeal(header)
-	if err := s.validateBlockRLPIntegrity(sealedBlock); err != nil {
-		log.Warn("❌ External miner block rejected - Block RLP validation failed",
+
+	// Use centralized RLP manager for validation
+	if err := s.qmpow.rlpManager.ValidateExternalMinerSubmission(sealedBlock); err != nil {
+		log.Warn("❌ External miner block rejected - Centralized RLP validation failed",
 			"qnonce", qnonce, "hash", blockHash.Hex(), "error", err)
 		return false
 	}
 
-	// Step 3: Validate quantum field consistency
-	if err := s.validateQuantumFieldsIntegrity(header); err != nil {
-		log.Warn("❌ External miner block rejected - Quantum fields validation failed",
-			"qnonce", qnonce, "hash", blockHash.Hex(), "error", err)
-		return false
-	}
-
-	log.Debug("✅ External miner block passed comprehensive RLP validation", "qnonce", qnonce, "hash", blockHash.Hex())
+	log.Debug("✅ External miner block passed centralized RLP validation", "qnonce", qnonce, "hash", blockHash.Hex())
 
 	// Verify quantum proof meets target
 	if !s.qmpow.checkQuantumTarget(header) {

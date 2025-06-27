@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/consensus/qmpow"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/metrics"
@@ -81,6 +82,10 @@ type Backend interface {
 	// the remote peer. Only packets not consumed by the protocol handler will
 	// be forwarded to the backend.
 	Handle(peer *Peer, packet Packet) error
+
+	// QuantumRLP retrieves the centralized quantum RLP manager for consistent
+	// encoding/decoding of quantum fields across all network operations.
+	QuantumRLP() *qmpow.QuantumRLPManager
 }
 
 // TxPool defines the methods needed by the protocol handler to serve transactions.

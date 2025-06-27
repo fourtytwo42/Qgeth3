@@ -27,6 +27,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/lru"
 	"github.com/ethereum/go-ethereum/consensus"
+	"github.com/ethereum/go-ethereum/consensus/qmpow"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -526,12 +527,19 @@ func (hc *HeaderChain) GetHeadersFrom(number, count uint64) []rlp.RawValue {
 			break
 		}
 		
-		// CRITICAL FIX: Marshal quantum fields into QBlob before RLP encoding
-		// This ensures quantum fields are properly transmitted to peers
-		header.MarshalQuantumBlob()
-		
-		rlpData, _ := rlp.EncodeToBytes(header)
-		headers = append(headers, rlpData)
+		// CENTRALIZED FIX: Use quantum RLP manager for consistent encoding
+		if engine, ok := hc.engine.(*qmpow.QMPoW); ok {
+			if rlpData, err := engine.GetRLPManager().EncodeHeaderForTransmission(header); err != nil {
+				log.Error("Unable to encode quantum header in header chain", "err", err)
+				break
+			} else {
+				headers = append(headers, rlpData)
+			}
+		} else {
+			// Fallback for non-quantum consensus engines
+			rlpData, _ := rlp.EncodeToBytes(header)
+			headers = append(headers, rlpData)
+		}
 		hash = header.ParentHash
 		count--
 		number--
