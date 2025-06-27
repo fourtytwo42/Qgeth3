@@ -1243,11 +1243,22 @@ func (s *remoteSealer) loop() {
 				}
 			}
 
-			// Clean up old work submissions (keep only current work)
+			// CRITICAL FIX: Aggressive cleanup of outdated work templates
+			// This prevents external miners from submitting solutions for blocks
+			// that have already been mined and written to the blockchain
 			s.mu.Lock()
 			currentWorkHash := common.Hash{}
 			if s.currentBlock != nil {
 				currentWorkHash = s.qmpow.SealHash(s.currentBlock.Header())
+			}
+
+			// Remove ALL old work templates except current work
+			// This forces external miners to fetch new work after each block
+			for workHash := range s.works {
+				if workHash != currentWorkHash {
+					delete(s.works, workHash)
+					log.Debug("🔧 Cleaned up outdated work template", "workHash", workHash.Hex()[:10]+"...")
+				}
 			}
 
 			// Remove all submitted work except for current work
@@ -1831,9 +1842,42 @@ func (s *remoteSealer) tryPrepareWork() {
 		"parentHash", header.ParentHash.Hex()[:10]+"...")
 }
 
+// invalidateOldWork immediately clears all work templates to force external miners
+// to fetch new work after a block has been successfully mined and written
+func (s *remoteSealer) invalidateOldWork(blockNumber uint64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	log.Info("🔧 CRITICAL FIX: Invalidating all old work templates after block write",
+		"blockNumber", blockNumber,
+		"oldWorkCount", len(s.works),
+		"oldSubmissionCount", len(s.submittedWork))
+
+	// Clear ALL work templates - external miners must fetch new work
+	s.works = make(map[common.Hash]*types.Block)
+	s.submittedWork = make(map[common.Hash]map[uint64]bool)
+	
+	// Clear current work to force regeneration
+	s.currentBlock = nil
+	s.currentWork = [5]string{}
+	s.results = nil
+
+	log.Info("✅ All work templates invalidated - external miners will get new work",
+		"blockNumber", blockNumber)
+}
+
 // SetChain sets the blockchain reference for remote mining work preparation
 func (q *QMPoW) SetChain(chain consensus.ChainHeaderReader) {
 	if q.remote != nil {
 		q.remote.setChain(chain)
+	}
+}
+
+// InvalidateOldWork immediately invalidates all work templates for external miners
+// This is called when a block is successfully written to prevent external miners
+// from continuing to work on outdated templates that would cause state conflicts
+func (q *QMPoW) InvalidateOldWork(blockNumber uint64) {
+	if q.remote != nil {
+		q.remote.invalidateOldWork(blockNumber)
 	}
 }

@@ -30,6 +30,7 @@ import (
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip1559"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
+	"github.com/ethereum/go-ethereum/consensus/qmpow"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/txpool"
@@ -798,6 +799,12 @@ func (w *worker) resultLoop() {
 					log.Info("✅ Quantum block successfully written to blockchain", "number", block.Number())
 					log.Info("Successfully sealed new block", "number", block.Number(), "sealhash", sealhash, "hash", hash)
 
+					// CRITICAL FIX: Immediately invalidate old work templates for external miners
+					// This prevents external miners from submitting solutions for blocks that have already been mined
+					if qmpowEngine, ok := w.engine.(*qmpow.QMPoW); ok {
+						qmpowEngine.InvalidateOldWork(block.NumberU64())
+					}
+
 					// Broadcast the block and announce chain insertion event
 					w.mux.Post(core.NewMinedBlockEvent{Block: block})
 
@@ -842,6 +849,12 @@ func (w *worker) resultLoop() {
 			log.Info("✅ Quantum block successfully written to blockchain", "number", block.Number())
 			log.Info("Successfully sealed new block", "number", block.Number(), "sealhash", sealhash, "hash", hash,
 				"elapsed", common.PrettyDuration(time.Since(task.createdAt)))
+
+			// CRITICAL FIX: Immediately invalidate old work templates for external miners
+			// This prevents external miners from submitting solutions for blocks that have already been mined
+			if qmpowEngine, ok := w.engine.(*qmpow.QMPoW); ok {
+				qmpowEngine.InvalidateOldWork(block.NumberU64())
+			}
 
 			// Broadcast the block and announce chain insertion event
 			w.mux.Post(core.NewMinedBlockEvent{Block: block})
