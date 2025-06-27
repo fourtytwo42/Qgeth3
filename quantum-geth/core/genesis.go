@@ -528,6 +528,12 @@ func GenesisToBlock(g *genesisT.Genesis, db ethdb.Database) *types.Block {
 	if types.IsQuantumActive(head.Number) {
 		log.Info("🌱 Initializing quantum fields for genesis block")
 
+		// CRITICAL FIX: Quantum consensus doesn't use post-merge fields - always nil
+		// This ensures consistency with all other quantum block creation paths
+		// and prevents "Header broke chain ancestry" errors during sync
+		head.WithdrawalsHash = nil
+		head.ParentBeaconRoot = nil
+
 		// Initialize quantum fields for genesis block (block 0)
 		epoch := uint32(0)     // Genesis is always epoch 0
 		qbits := uint16(16)    // Starting qubits per new spec
