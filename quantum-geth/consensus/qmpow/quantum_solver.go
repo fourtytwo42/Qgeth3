@@ -67,14 +67,11 @@ func (q *QMPoW) initializeQuantumFields(header *types.Header) {
 	header.AttestMode = &attestMode
 
 	// Initialize hash fields (will be filled by quantum computation)
-	// CRITICAL: Always create new hash instances to avoid RLP encoding issues
-	// Each field must have its own memory address for proper RLP handling
-	outcomeHash := common.Hash{}
-	gateHash := common.Hash{}
-	proofHash := common.Hash{}
-	header.OutcomeRoot = &outcomeHash
-	header.GateHash = &gateHash
-	header.ProofRoot = &proofHash
+	// CRITICAL FIX: Use nil pointers for deterministic RLP encoding
+	// Empty hash fields must be consistently nil across all nodes to ensure identical hashes
+	header.OutcomeRoot = nil
+	header.GateHash = nil  
+	header.ProofRoot = nil
 
 	// Ensure ExtraNonce32 and BranchNibbles are properly sized
 	if len(header.ExtraNonce32) != ExtraNonce32Size {

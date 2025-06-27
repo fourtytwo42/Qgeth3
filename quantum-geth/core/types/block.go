@@ -689,12 +689,14 @@ func (h *Header) MarshalQuantumBlob() {
 
 	var buf bytes.Buffer
 
-	// Helper function to ensure 32-byte padding for hashes
+	// Helper function to ensure 32-byte padding for hashes  
+	// CRITICAL FIX: Deterministic nil pointer handling for consistent RLP encoding
 	pad32 := func(hash *common.Hash) {
 		if hash != nil {
 			buf.Write(hash[:])
 		} else {
-			buf.Write(make([]byte, 32)) // zero hash
+			// Use consistent zero bytes for nil pointers across all nodes
+			buf.Write(make([]byte, 32))
 		}
 	}
 
@@ -804,12 +806,13 @@ func (h *Header) UnmarshalQuantumBlob() error {
 	buf := bytes.NewReader(h.QBlob)
 
 	// Helper function to read 32-byte hashes
+	// CRITICAL FIX: Deterministic zero hash handling for consistent RLP encoding
 	readHash := func() (*common.Hash, error) {
 		hashBytes := make([]byte, 32)
 		if _, err := buf.Read(hashBytes); err != nil {
 			return nil, err
 		}
-		// Convert zero hash to nil pointer
+		// Convert zero hash to nil pointer for deterministic encoding across nodes
 		hash := common.BytesToHash(hashBytes)
 		if hash == (common.Hash{}) {
 			return nil, nil

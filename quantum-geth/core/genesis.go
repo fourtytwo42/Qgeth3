@@ -547,11 +547,11 @@ func GenesisToBlock(g *genesisT.Genesis, db ethdb.Database) *types.Block {
 		head.ExtraNonce32 = make([]byte, 32)
 		head.BranchNibbles = make([]byte, 128)
 
-		// Initialize hash fields as zero hashes (genesis has no quantum computation)
-		zeroHash := common.Hash{}
-		head.OutcomeRoot = &zeroHash
-		head.GateHash = &zeroHash
-		head.ProofRoot = &zeroHash
+		// Initialize hash fields as nil (genesis has no quantum computation)
+		// CRITICAL: Use nil pointers for deterministic RLP encoding across all nodes
+		head.OutcomeRoot = nil
+		head.GateHash = nil
+		head.ProofRoot = nil
 
 		// Marshal quantum fields into QBlob for proper RLP encoding
 		log.Info("🌱 Marshaling quantum blob for genesis")
