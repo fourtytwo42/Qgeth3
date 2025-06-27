@@ -340,6 +340,165 @@ type NewBlockPacket struct {
 	TD    *big.Int
 }
 
+// QUANTUM-GETH FIX: Custom RLP decoding for quantum consensus compatibility
+// This ensures blocks with quantum headers can be properly decoded from the network
+func (p *NewBlockPacket) DecodeRLP(s *rlp.Stream) error {
+	// Decode the outer structure manually
+	if _, err := s.List(); err != nil {
+		return err
+	}
+	
+	// First decode the block as raw value to handle quantum compatibility
+	var rawBlock rlp.RawValue
+	if err := s.Decode(&rawBlock); err != nil {
+		return fmt.Errorf("failed to decode raw block: %v", err)
+	}
+	
+	// Try standard block decoding first
+	block := new(types.Block)
+	if err := rlp.DecodeBytes(rawBlock, block); err != nil {
+		// If standard decoding fails, try quantum-compatible approach
+		if strings.Contains(err.Error(), "WithdrawalsHash") || 
+		   strings.Contains(err.Error(), "input string too short") {
+			
+			// Use quantum-compatible block decoding
+			block, err = decodeQuantumCompatibleBlockFromRaw(rawBlock)
+			if err != nil {
+				return fmt.Errorf("quantum block processing failed: %v", err)
+			}
+		} else {
+			return fmt.Errorf("block decode failed: %v", err)
+		}
+	}
+	
+	// Decode TD
+	if err := s.Decode(&p.TD); err != nil {
+		return fmt.Errorf("failed to decode TD: %v", err)
+	}
+	
+	// Finish decoding the outer list
+	if err := s.ListEnd(); err != nil {
+		return err
+	}
+	
+	p.Block = block
+	return nil
+}
+
+// Quantum-compatible header structure for block decoding
+type compatHeaderForBlock struct {
+	ParentHash  common.Hash    `json:"parentHash"       gencodec:"required"`
+	UncleHash   common.Hash    `json:"sha3Uncles"       gencodec:"required"`
+	Coinbase    common.Address `json:"miner"`
+	Root        common.Hash    `json:"stateRoot"        gencodec:"required"`
+	TxHash      common.Hash    `json:"transactionsRoot" gencodec:"required"`
+	ReceiptHash common.Hash    `json:"receiptsRoot"     gencodec:"required"`
+	Bloom       types.Bloom    `json:"logsBloom"        gencodec:"required"`
+	Difficulty  *big.Int       `json:"difficulty"       gencodec:"required"`
+	Number      *big.Int       `json:"number"           gencodec:"required"`
+	GasLimit    uint64         `json:"gasLimit"         gencodec:"required"`
+	GasUsed     uint64         `json:"gasUsed"          gencodec:"required"`
+	Time        uint64         `json:"timestamp"        gencodec:"required"`
+	Extra       []byte         `json:"extraData"        gencodec:"required"`
+	MixDigest   common.Hash    `json:"mixHash"`
+	Nonce       types.BlockNonce `json:"nonce"`
+	
+	// ALL optional fields that may be present - must match exact order in Header struct
+	BaseFee          *big.Int     `json:"baseFeePerGas"         rlp:"optional"`
+	WithdrawalsHash  *common.Hash `json:"withdrawalsRoot"       rlp:"optional"`
+	BlobGasUsed      *uint64      `json:"blobGasUsed"           rlp:"optional"`
+	ExcessBlobGas    *uint64      `json:"excessBlobGas"         rlp:"optional"`
+	ParentBeaconRoot *common.Hash `json:"parentBeaconBlockRoot" rlp:"optional"`
+	QBlob            []byte       `json:"qBlob"                 rlp:"optional"`
+}
+
+// Quantum-compatible extblock structure for block decoding
+type compatExtblock struct {
+	Header      *compatHeaderForBlock
+	Txs         []*types.Transaction
+	Uncles      []*compatHeaderForBlock
+	Withdrawals []*types.Withdrawal `rlp:"optional"`
+}
+
+// decodeQuantumCompatibleBlockFromRaw decodes a block from raw RLP with quantum compatibility
+func decodeQuantumCompatibleBlockFromRaw(data rlp.RawValue) (*types.Block, error) {
+	
+	var compatBlock compatExtblock
+	if err := rlp.DecodeBytes(data, &compatBlock); err != nil {
+		return nil, fmt.Errorf("quantum-compatible block decode failed: %v", err)
+	}
+	
+	// Convert compatible header to standard header
+	header := &types.Header{
+		ParentHash:       compatBlock.Header.ParentHash,
+		UncleHash:        compatBlock.Header.UncleHash,
+		Coinbase:         compatBlock.Header.Coinbase,
+		Root:             compatBlock.Header.Root,
+		TxHash:           compatBlock.Header.TxHash,
+		ReceiptHash:      compatBlock.Header.ReceiptHash,
+		Bloom:            compatBlock.Header.Bloom,
+		Difficulty:       compatBlock.Header.Difficulty,
+		Number:           compatBlock.Header.Number,
+		GasLimit:         compatBlock.Header.GasLimit,
+		GasUsed:          compatBlock.Header.GasUsed,
+		Time:             compatBlock.Header.Time,
+		Extra:            compatBlock.Header.Extra,
+		MixDigest:        compatBlock.Header.MixDigest,
+		Nonce:            compatBlock.Header.Nonce,
+		BaseFee:          compatBlock.Header.BaseFee,
+		BlobGasUsed:      compatBlock.Header.BlobGasUsed,
+		ExcessBlobGas:    compatBlock.Header.ExcessBlobGas,
+		ParentBeaconRoot: compatBlock.Header.ParentBeaconRoot,
+		QBlob:            compatBlock.Header.QBlob,
+		// CRITICAL: Quantum consensus doesn't use withdrawals - always set to nil
+		WithdrawalsHash: nil,
+	}
+	
+	// Convert compatible uncles to standard headers
+	var uncles []*types.Header
+	for _, compatUncle := range compatBlock.Uncles {
+		uncle := &types.Header{
+			ParentHash:       compatUncle.ParentHash,
+			UncleHash:        compatUncle.UncleHash,
+			Coinbase:         compatUncle.Coinbase,
+			Root:             compatUncle.Root,
+			TxHash:           compatUncle.TxHash,
+			ReceiptHash:      compatUncle.ReceiptHash,
+			Bloom:            compatUncle.Bloom,
+			Difficulty:       compatUncle.Difficulty,
+			Number:           compatUncle.Number,
+			GasLimit:         compatUncle.GasLimit,
+			GasUsed:          compatUncle.GasUsed,
+			Time:             compatUncle.Time,
+			Extra:            compatUncle.Extra,
+			MixDigest:        compatUncle.MixDigest,
+			Nonce:            compatUncle.Nonce,
+			BaseFee:          compatUncle.BaseFee,
+			BlobGasUsed:      compatUncle.BlobGasUsed,
+			ExcessBlobGas:    compatUncle.ExcessBlobGas,
+			ParentBeaconRoot: compatUncle.ParentBeaconRoot,
+			QBlob:            compatUncle.QBlob,
+			// CRITICAL: Quantum consensus doesn't use withdrawals - always set to nil
+			WithdrawalsHash: nil,
+		}
+		// Unmarshal quantum fields for uncle headers
+		if err := uncle.UnmarshalQuantumBlob(); err != nil {
+			log.Debug("Uncle header quantum blob unmarshal failed during network decode", "err", err)
+		}
+		uncles = append(uncles, uncle)
+	}
+	
+	// Create the block with quantum-compatible components
+	block := types.NewBlockWithHeader(header).WithBody(compatBlock.Txs, uncles).WithWithdrawals(compatBlock.Withdrawals)
+	
+	// Always unmarshal quantum fields for the main header
+	if err := block.Header().UnmarshalQuantumBlob(); err != nil {
+		log.Debug("Block header quantum blob unmarshal failed during network decode", "err", err)
+	}
+	
+	return block, nil
+}
+
 // sanityCheck verifies that the values are reasonable, as a DoS protection
 func (request *NewBlockPacket) sanityCheck() error {
 	if err := request.Block.SanityCheck(); err != nil {
