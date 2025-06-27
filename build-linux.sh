@@ -12,41 +12,47 @@ TARGET=${1:-both}
 CLEAN=${2:-false}
 VERSION="1.0.0"
 
-echo "ðŸ”¨ Building Q Coin Linux Binaries (Memory-Optimized)..."
+echo "🚀 Building Q Coin Linux Binaries (Memory-Optimized)..."
 echo "Target: $TARGET"
 echo "Version: $VERSION"
 echo ""
 
 # Memory check function
 check_memory() {
-    local required_mb=3072  # 3GB minimum
-    local available_mb=0
+    local required_mb=4096  # 4GB minimum total (RAM + swap)
+    local total_mb=0
+    local swap_mb=0
+    local combined_mb=0
     
     if [ -f /proc/meminfo ]; then
-        # Get available memory in MB
+        # Get RAM and swap in MB
         local mem_total=$(grep MemTotal /proc/meminfo | awk '{print $2}')
-        local mem_available=$(grep MemAvailable /proc/meminfo | awk '{print $2}')
+        total_mb=$((mem_total / 1024))
         
-        if [ -n "$mem_available" ]; then
-            available_mb=$((mem_available / 1024))
-        elif [ -n "$mem_total" ]; then
-            # Fallback to total memory if MemAvailable not available
-            available_mb=$((mem_total / 1024))
+        # Check swap
+        if [ -f /proc/swaps ]; then
+            local swap_total=$(awk 'NR>1 {sum+=$3} END {print sum+0}' /proc/swaps)
+            swap_mb=$((swap_total / 1024))
         fi
         
-        echo "ðŸ’¾ Memory Check:"
-        echo "  Available RAM: ${available_mb}MB"
-        echo "  Required RAM: ${required_mb}MB"
+        combined_mb=$((total_mb + swap_mb))
         
-        if [ $available_mb -lt $required_mb ]; then
-            echo "âš ï¸  WARNING: Low memory detected!"
-            echo "   Available: ${available_mb}MB"
-            echo "   Required: ${required_mb}MB"
+        echo "💾 Memory Check:"
+        echo "  RAM: ${total_mb}MB"
+        echo "  Swap: ${swap_mb}MB"
+        echo "  Total Available: ${combined_mb}MB"
+        echo "  Required Total: ${required_mb}MB (4GB)"
+        
+        if [ $combined_mb -lt $required_mb ]; then
+            echo "⚠️  WARNING: Insufficient total memory!"
+            echo "   Current total: ${combined_mb}MB"
+            echo "   Required total: ${required_mb}MB"
+            echo "   Deficit: $((required_mb - combined_mb))MB"
             echo ""
-            echo "ðŸ”§ Recommendations:"
-            echo "  1. Close unnecessary programs"
-            echo "  2. Add swap space: sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile"
-            echo "  3. Use a VPS with at least 4GB RAM"
+            echo "🔧 Recommendations:"
+            echo "  1. Run ./prepare-vps.sh to set up swap automatically"
+            echo "  2. Close unnecessary programs"
+            echo "  3. Use a VPS with more RAM"
             echo ""
             echo -n "Continue anyway? (y/N): "
             read -r RESPONSE
@@ -55,19 +61,26 @@ check_memory() {
                 exit 1
             fi
         else
-            echo "âœ… Memory check passed"
+            echo "✅ Memory check passed (${combined_mb}MB total)"
         fi
     else
-        echo "âš ï¸  Cannot check memory - /proc/meminfo not found"
+        echo "⚠️  Cannot check memory - /proc/meminfo not found"
     fi
     echo ""
 }
 
 # Setup temporary build directory
 setup_temp_build() {
-    # Create temporary build directory
-    BUILD_TEMP_DIR="/tmp/qgeth-build-$$"
-    mkdir -p "$BUILD_TEMP_DIR"
+    # Use temp directory from prepare-vps.sh if available
+    if [ -n "$QGETH_BUILD_TEMP" ] && [ -d "$QGETH_BUILD_TEMP" ]; then
+        BUILD_TEMP_DIR="$QGETH_BUILD_TEMP"
+        echo "📁 Using VPS-prepared temp directory: $BUILD_TEMP_DIR"
+    else
+        # Create temporary build directory
+        BUILD_TEMP_DIR="/tmp/qgeth-build-$$"
+        mkdir -p "$BUILD_TEMP_DIR"
+        echo "📁 Created temporary build directory: $BUILD_TEMP_DIR"
+    fi
     
     # Set Go build cache and temp directories
     export GOCACHE="$BUILD_TEMP_DIR/gocache"
@@ -77,18 +90,22 @@ setup_temp_build() {
     # Create directories
     mkdir -p "$GOCACHE" "$GOTMPDIR" "$TMPDIR"
     
-    echo "ðŸ—‚ï¸  Temporary Build Setup:"
+    echo "🗂️  Temporary Build Setup:"
     echo "  Build Temp Dir: $BUILD_TEMP_DIR"
     echo "  Go Cache: $GOCACHE"
     echo "  Go Temp: $GOTMPDIR"
     echo "  System Temp: $TMPDIR"
     echo ""
     
-    # Cleanup function
+    # Cleanup function (only if we created the temp dir)
     cleanup_temp() {
-        echo "ðŸ§¹ Cleaning up temporary build directory..."
-        rm -rf "$BUILD_TEMP_DIR" 2>/dev/null || true
-        echo "âœ… Temporary files cleaned up"
+        if [ -z "$QGETH_BUILD_TEMP" ]; then
+            echo "🧹 Cleaning up temporary build directory..."
+            rm -rf "$BUILD_TEMP_DIR" 2>/dev/null || true
+            echo "✅ Temporary files cleaned up"
+        else
+            echo "🧹 Preserving VPS-prepared temp directory: $BUILD_TEMP_DIR"
+        fi
     }
     
     # Set trap for cleanup on exit
@@ -108,7 +125,7 @@ get_build_flags() {
     BUILD_FLAGS="$BUILD_FLAGS -trimpath"          # Remove absolute paths
     BUILD_FLAGS="$BUILD_FLAGS -buildvcs=false"    # Disable VCS info
     
-    echo "ðŸ”§ Memory-Optimized Build Flags:"
+    echo "💾 Memory-Optimized Build Flags:"
     echo "  Linker: $ldflags"
     echo "  Trimpath: enabled"
     echo "  VCS info: disabled"
@@ -124,7 +141,7 @@ setup_temp_build
 
 # Clean previous builds if requested
 if [ "$CLEAN" = "--clean" ] || [ "$2" = "--clean" ]; then
-    echo "ðŸ§¹ Cleaning previous builds..."
+    echo "🧹 Cleaning previous builds..."
     rm -f geth geth.bin quantum-miner quantum_solver.py
     echo "  Previous binaries removed"
     
@@ -135,13 +152,13 @@ fi
 
 # Check directories exist
 if [ ! -d "quantum-geth" ]; then
-    echo "âŒ Error: quantum-geth directory not found!"
+    echo "🚨 Error: quantum-geth directory not found!"
     echo "Please run this script from the root of the Qgeth3 project."
     exit 1
 fi
 
 if [ ! -d "quantum-miner" ]; then
-    echo "âŒ Error: quantum-miner directory not found!"
+    echo "🚨 Error: quantum-miner directory not found!"
     echo "Please run this script from the root of the Qgeth3 project."
     exit 1
 fi
@@ -170,7 +187,7 @@ CURRENT_DIR=$(pwd)
 # Get memory-efficient build flags
 get_build_flags
 
-echo "ðŸ—ï¸  Build Environment:"
+echo "🚀 Build Environment:"
 echo "  Target OS: linux/amd64"
 echo "  Build Time: $BUILD_TIME"
 echo "  Git Commit: $GIT_COMMIT"
@@ -180,11 +197,11 @@ echo ""
 
 # Function to build quantum-geth with memory optimization
 build_geth() {
-    echo "ðŸ”— Building Quantum-Geth (Memory-Optimized)..."
+    echo "🚀 Building Quantum-Geth (Memory-Optimized)..."
     
     # Check if go.mod exists
     if [ ! -f "quantum-geth/go.mod" ]; then
-        echo "âŒ Error: go.mod not found in quantum-geth directory!"
+        echo "🚨 Error: go.mod not found in quantum-geth directory!"
         exit 1
     fi
     
@@ -194,17 +211,17 @@ build_geth() {
     ORIGINAL_CGO=$CGO_ENABLED
     export CGO_ENABLED=0
     
-    echo "ðŸ›¡ï¸  Enforcing CGO_ENABLED=0 for geth build (quantum field compatibility)"
+    echo "🚀 Enforcing CGO_ENABLED=0 for geth build (quantum field compatibility)"
     echo "    This ensures identical quantum field handling as Windows builds"
-    echo "ðŸ’¾ Using temporary directory: $BUILD_TEMP_DIR"
+    echo "💾 Using temporary directory: $BUILD_TEMP_DIR"
     
     cd quantum-geth/cmd/geth
     
     # Memory-efficient build command
-    echo "ðŸ”¨ Building with memory optimization..."
+    echo "🚀 Building with memory optimization..."
     if CGO_ENABLED=0 go build $BUILD_FLAGS -o ../../../geth.bin .; then
         cd ../../..
-        echo "âœ… Quantum-Geth built successfully: ./geth.bin (CGO_ENABLED=0)"
+        echo "✅ Quantum-Geth built successfully: ./geth.bin (CGO_ENABLED=0)"
         
         # Create Q Coin geth wrapper that prevents Ethereum connections
         create_geth_wrapper
@@ -217,7 +234,7 @@ build_geth() {
         fi
     else
         cd ../../..
-        echo "âŒ Error: Failed to build quantum-geth"
+        echo "🚨 Error: Failed to build quantum-geth"
         exit 1
     fi
     
@@ -227,11 +244,11 @@ build_geth() {
 
 # Function to build quantum-miner with memory optimization
 build_miner() {
-    echo "âš¡ Building Quantum-Miner (Memory-Optimized)..."
+    echo "🚀 Building Quantum-Miner (Memory-Optimized)..."
     
     # Check if go.mod exists
     if [ ! -f "quantum-miner/go.mod" ]; then
-        echo "âŒ Error: go.mod not found in quantum-miner directory!"
+        echo "🚨 Error: go.mod not found in quantum-miner directory!"
         exit 1
     fi
     
@@ -241,38 +258,38 @@ build_miner() {
     
     # Check for NVIDIA GPU and CUDA
     if command -v nvidia-smi >/dev/null 2>&1; then
-        echo "ðŸ” NVIDIA GPU detected, checking CUDA availability..."
+        echo "🚀 NVIDIA GPU detected, checking CUDA availability..."
         
         # Check for CUDA development libraries
         if command -v pkg-config >/dev/null 2>&1 && (pkg-config --exists cuda-12.0 2>/dev/null || pkg-config --exists cuda-11.0 2>/dev/null) || [ -d "/usr/local/cuda" ]; then
-            echo "âœ… CUDA development environment found"
+            echo "✅ CUDA development environment found"
             BUILD_TAGS="cuda"
             GPU_TYPE="CUDA"
             export CGO_ENABLED=1
         else
-            echo "âš ï¸  CUDA development libraries not found, checking for Qiskit-Aer GPU..."
+            echo "🚨 CUDA development libraries not found, checking for Qiskit-Aer GPU..."
             
             # Check for Qiskit-Aer GPU support
             if command -v python3 >/dev/null 2>&1 && python3 -c "import qiskit_aer; from qiskit_aer import AerSimulator; AerSimulator(device='GPU')" >/dev/null 2>&1; then
-                echo "âœ… Qiskit-Aer GPU support detected"
+                echo "✅ Qiskit-Aer GPU support detected"
                 BUILD_TAGS="cuda"
                 GPU_TYPE="Qiskit-GPU"
                 export CGO_ENABLED=0
             else
-                echo "â„¹ï¸  No GPU acceleration available, building CPU-only version"
+                echo "🚨 No GPU acceleration available, building CPU-only version"
                 export CGO_ENABLED=0
             fi
         fi
     else
-        echo "â„¹ï¸  No NVIDIA GPU detected, building CPU-only version"
+        echo "🚨 No NVIDIA GPU detected, building CPU-only version"
         export CGO_ENABLED=0
     fi
     
-    echo "ðŸ—ï¸  Build Configuration:"
+    echo "🚀 Build Configuration:"
     echo "  GPU Type: $GPU_TYPE"
     echo "  Build Tags: ${BUILD_TAGS:-none}"
     echo "  CGO Enabled: $CGO_ENABLED"
-    echo "ðŸ’¾ Using temporary directory: $BUILD_TEMP_DIR"
+    echo "💾 Using temporary directory: $BUILD_TEMP_DIR"
     echo ""
     
     cd quantum-miner
@@ -284,10 +301,10 @@ build_miner() {
     fi
     BUILD_CMD="$BUILD_CMD -o ../quantum-miner ."
     
-    echo "ðŸ”¨ Executing: $BUILD_CMD"
+    echo "🚀 Executing: $BUILD_CMD"
     if eval $BUILD_CMD; then
         cd ..
-        echo "âœ… Quantum-Miner built successfully: ./quantum-miner ($GPU_TYPE)"
+        echo "✅ Quantum-Miner built successfully: ./quantum-miner ($GPU_TYPE)"
         
         # Show file info if ls is available
         if command -v ls >/dev/null 2>&1; then
@@ -298,23 +315,23 @@ build_miner() {
         
         # Test GPU support
         if [ "$GPU_TYPE" != "CPU" ]; then
-            echo "ðŸ§ª Testing GPU support..."
+            echo "🚀 Testing GPU support..."
             if ./quantum-miner --help 2>/dev/null | grep -q "GPU" 2>/dev/null; then
-                echo "âœ… GPU support confirmed in binary"
+                echo "✅ GPU support confirmed in binary"
             else
-                echo "âš ï¸  GPU support may not be active (check dependencies)"
+                echo "🚨 GPU support may not be active (check dependencies)"
             fi
         fi
     else
         cd ..
-        echo "âŒ Error: Failed to build quantum-miner"
+        echo "🚨 Error: Failed to build quantum-miner"
         exit 1
     fi
 }
 
 # Function to create Q Coin geth wrapper - robust version for minimal Linux
 create_geth_wrapper() {
-    echo "ðŸ›¡ï¸  Creating Q Coin geth wrapper (prevents Ethereum connections)..."
+    echo "🚀 Creating Q Coin geth wrapper (prevents Ethereum connections)..."
     
     # Create wrapper using shell built-ins (no external cat/chmod needed)
     {
@@ -330,7 +347,7 @@ create_geth_wrapper() {
         echo '# Check if actual geth binary exists'
         echo 'REAL_GETH="./geth.bin"'
         echo 'if [ ! -f "./geth.bin" ]; then'
-        echo '    echo "âŒ ERROR: Q Coin geth binary not found!"'
+        echo '    echo "🚨 ERROR: Q Coin geth binary not found!"'
         echo '    echo "   Build it first: ./build-linux.sh"'
         echo '    exit 1'
         echo 'fi'
@@ -373,7 +390,7 @@ create_geth_wrapper() {
         echo '# Check if this is a bare geth call (likely trying to connect to Ethereum)'
         echo '# Allow init commands and commands with --datadir or --networkid through'
         echo 'if [ ${#FILTERED_ARGS[@]} -eq 0 ] || ([[ ! " ${FILTERED_ARGS[*]} " =~ " --networkid " ]] && [[ ! " ${FILTERED_ARGS[*]} " =~ " --datadir " ]] && [[ ! " ${FILTERED_ARGS[*]} " =~ " init " ]]); then'
-        echo '    echo "ðŸš« Q Coin Geth: Prevented connection to Ethereum mainnet!"'
+        echo '    echo "🚨 Q Coin Geth: Prevented connection to Ethereum mainnet!"'
         echo '    echo ""'
         echo '    echo "This geth is configured for Q Coin networks only."'
         echo '    echo ""'
@@ -415,12 +432,12 @@ create_geth_wrapper() {
         [ -f geth ] && exec 9<>geth && exec 9<&-
     fi
     
-    echo "âœ… Q Coin geth wrapper created: ./geth"
+    echo "✅ Q Coin geth wrapper created: ./geth"
 }
 
 # Function to create quantum solver Python script
 create_solver() {
-    echo "ðŸ”¬ Creating quantum solver helper script..."
+    echo "🚀 Creating quantum solver helper script..."
     
     # Create using shell built-ins for robustness
     {
@@ -535,12 +552,12 @@ create_solver() {
         chmod +x quantum_solver.py
     fi
     
-    echo "âœ… Quantum solver script created: ./quantum_solver.py"
+    echo "✅ Quantum solver script created: ./quantum_solver.py"
 }
 
 # Function to create Linux miner startup script
 create_linux_miner_script() {
-    echo "ðŸš€ Creating Linux miner startup script..."
+    echo "🚀 Creating Linux miner startup script..."
     
     {
         echo '#!/bin/bash'
@@ -551,14 +568,14 @@ create_linux_miner_script() {
         echo 'MINING_ADDRESS=${2:-"0x742d35C6C4e6d8de6f10E7FF75DD98dd25b02C3A"}'
         echo 'RPC_URL="http://127.0.0.1:8545"'
         echo ''
-        echo 'echo "ðŸš€ Starting Q Coin Linux Miner..."'
+        echo 'echo "🚀 Starting Q Coin Linux Miner..."'
         echo 'echo "Threads: $THREADS"'
         echo 'echo "Mining Address: $MINING_ADDRESS"'
         echo 'echo "RPC URL: $RPC_URL"'
         echo 'echo ""'
         echo ''
         echo 'if [ ! -f "./quantum-miner" ]; then'
-        echo '    echo "âŒ ERROR: quantum-miner not found!"'
+        echo '    echo "🚨 ERROR: quantum-miner not found!"'
         echo '    echo "Build it first: ./build-linux.sh"'
         echo '    exit 1'
         echo 'fi'
@@ -570,7 +587,7 @@ create_linux_miner_script() {
         chmod +x start-linux-miner.sh
     fi
     
-    echo "âœ… Linux miner script created: ./start-linux-miner.sh"
+    echo "✅ Linux miner script created: ./start-linux-miner.sh"
 }
 
 # Main build logic
@@ -591,16 +608,16 @@ case $TARGET in
         create_linux_miner_script
         ;;
     *)
-        echo "âŒ Error: Invalid target '$TARGET'"
+        echo "🚨 Error: Invalid target '$TARGET'"
         echo "Usage: ./build-linux.sh [geth|miner|both] [--clean]"
         exit 1
         ;;
 esac
 
 echo ""
-echo "ðŸš€ Build Complete!"
+echo "✅ Build Complete!"
 echo ""
-echo "ðŸ“¦ Binaries created in root directory:"
+echo "🚀 Binaries created in root directory:"
 if [ "$TARGET" = "geth" ] || [ "$TARGET" = "both" ]; then
     echo "  ./geth                 - Q Coin Geth wrapper (prevents Ethereum connections)"
     echo "  ./geth.bin             - Quantum-Geth binary"
@@ -611,7 +628,7 @@ if [ "$TARGET" = "miner" ] || [ "$TARGET" = "both" ]; then
 fi
 echo "  ./quantum_solver.py    - Python quantum solver helper"
 echo ""
-echo "ðŸŽ¯ Quick Start (Easy Method):"
+echo "🚀 Quick Start (Easy Method):"
 if [ "$TARGET" = "geth" ] || [ "$TARGET" = "both" ]; then
     echo "  # Start node:"
     echo "  ./start-geth.sh"
@@ -621,7 +638,7 @@ if [ "$TARGET" = "miner" ] || [ "$TARGET" = "both" ]; then
     echo "  ./start-linux-miner.sh"
 fi
 echo ""
-echo "ðŸ”§ Manual Method:"
+echo "💾 Manual Method:"
 if [ "$TARGET" = "geth" ] || [ "$TARGET" = "both" ]; then
     echo "  # Initialize blockchain:"
     echo "  ./geth --datadir \$HOME/.qcoin init genesis_quantum_testnet.json"
@@ -638,4 +655,4 @@ if [ "$TARGET" = "miner" ] || [ "$TARGET" = "both" ]; then
     echo "                  -address 0x742d35C6C4e6d8de6f10E7FF75DD98dd25b02C3A"
 fi
 echo ""
-echo "âœ… All builds use CGO_ENABLED=0 for geth - quantum field compatibility guaranteed!" 
+echo "✅ All builds use CGO_ENABLED=0 for geth - quantum field compatibility guaranteed!" 
