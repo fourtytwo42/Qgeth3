@@ -466,13 +466,10 @@ func (q *QMPoW) Prepare(chain consensus.ChainHeaderReader, header *types.Header)
 			calculatedDifficulty := q.CalcDifficulty(chain, header.Time, parent)
 			header.Difficulty = calculatedDifficulty
 
-			log.Info("🎯 ASERT-Q difficulty set in Prepare",
-				"blockNumber", header.Number.Uint64(),
-				"parentDifficulty", parent.Difficulty,
-				"newDifficulty", header.Difficulty,
-				"fixedPuzzles", params.LNet,
-				"security", "quantum-resistant",
-				"style", "ASERT-Q-exponential")
+			log.Info("🎯 Block difficulty adjusted", 
+				"block", header.Number.Uint64(),
+				"difficulty", FormatDifficulty(header.Difficulty),
+				"puzzles", params.LNet)
 		} else {
 			// Fallback if parent not found
 			header.Difficulty = big.NewInt(int64(params.LNet))
@@ -526,13 +523,12 @@ func (q *QMPoW) Finalize(chain consensus.ChainHeaderReader, header *types.Header
 	state.AddBalance(header.Coinbase, uint256.MustFromBig(totalReward))
 
 	log.Info("💰 Block reward applied",
-		"blockNumber", blockNumber,
+		"block", blockNumber,
 		"epoch", epoch,
-		"subsidyQGC", subsidyQGC,
-		"subsidyWei", subsidyBig,
-		"transactionFees", totalFees,
-		"totalReward", totalReward,
-		"coinbase", header.Coinbase.Hex())
+		"subsidy", fmt.Sprintf("%.3f QGC", subsidyQGC),
+		"fees", fmt.Sprintf("%.6f QGC", float64(totalFees.Uint64())/1e18),
+		"total", fmt.Sprintf("%.3f QGC", float64(totalReward.Uint64())/1e18),
+		"miner", header.Coinbase.Hex()[:10]+"...")
 	
 	// NOTE: Do NOT set header.Root here - this will be done in FinalizeAndAssemble()
 	// following the standard consensus engine pattern used by Clique, Lyra2, Beacon, etc.
@@ -604,12 +600,11 @@ func (q *QMPoW) seal(chain consensus.ChainHeaderReader, block *types.Block, resu
 	// Initialize quantum fields
 	q.initializeQuantumFields(header)
 
-	log.Info("🔬 Starting quantum mining",
-		"number", header.Number.Uint64(),
-		"epoch", *header.Epoch,
+	log.Info("⛏️  Starting quantum mining",
+		"block", header.Number.Uint64(),
+		"difficulty", FormatDifficulty(header.Difficulty),
 		"qbits", *header.QBits,
-		"puzzles", *header.LNet,
-		"difficulty", header.Difficulty)
+		"puzzles", *header.LNet)
 
 	start := time.Now()
 
@@ -639,15 +634,12 @@ func (q *QMPoW) seal(chain consensus.ChainHeaderReader, block *types.Block, resu
 			miningTime := time.Since(start)
 			hashrate := float64(qnonce+1) / miningTime.Seconds()
 
-			log.Info("🎉 Quantum block mined!",
-				"number", header.Number.Uint64(),
-				"epoch", *header.Epoch,
+			log.Info("🎉 Quantum block found!",
+				"block", header.Number.Uint64(),
 				"qnonce", qnonce,
 				"attempts", qnonce+1,
-				"miningTime", miningTime,
-				"hashrate", fmt.Sprintf("%.2f attempts/sec", hashrate),
-				"qbits", *header.QBits,
-				"puzzles", *header.LNet)
+				"time", miningTime,
+				"rate", fmt.Sprintf("%.1f/sec", hashrate))
 
 			// Update hashrate
 			q.lock.Lock()
@@ -665,14 +657,14 @@ func (q *QMPoW) seal(chain consensus.ChainHeaderReader, block *types.Block, resu
 			return
 		}
 
-		// Log progress every 1000 attempts
-		if qnonce%1000 == 0 && qnonce > 0 {
+		// Log progress every 10000 attempts
+		if qnonce%10000 == 0 && qnonce > 0 {
 			elapsed := time.Since(start)
 			rate := float64(qnonce) / elapsed.Seconds()
-			log.Info("⛏️  Quantum mining progress",
-				"attempts", qnonce,
-				"rate", fmt.Sprintf("%.2f attempts/sec", rate),
-				"elapsed", elapsed)
+			log.Info("⛏️  Mining progress",
+				"attempts", fmt.Sprintf("%.0fk", float64(qnonce)/1000),
+				"rate", fmt.Sprintf("%.1f/sec", rate),
+				"time", elapsed)
 		}
 	}
 
@@ -1390,8 +1382,8 @@ func (s *remoteSealer) makeQuantumWorkUnsafe(block *types.Block) {
 	blockWithInitializedHeader := block.WithSeal(header)
 	s.works[workHash] = blockWithInitializedHeader
 
-	log.Info("🔗 Quantum work prepared for external miners",
-		"number", header.Number.Uint64(),
+	log.Info("🔗 Work prepared for quantum miners",
+		"block", header.Number.Uint64(),
 		"difficulty", FormatDifficulty(header.Difficulty),
 		"qbits", *header.QBits,
 		"puzzles", *header.LNet)
@@ -1503,10 +1495,9 @@ func (s *remoteSealer) submitQuantumWork(qnonce uint64, blockHash common.Hash, q
 
 		select {
 		case s.results <- sealedBlock:
-			log.Info("✅ Quantum block submitted by external miner",
-				"number", header.Number.Uint64(),
-				"qnonce", qnonce,
-				"miner", "external")
+			log.Info("✅ External miner found valid block",
+				"block", header.Number.Uint64(),
+				"qnonce", qnonce)
 			return true
 		default:
 			log.Warn("Could not submit quantum block - channel full")
@@ -1934,11 +1925,9 @@ func (s *remoteSealer) tryPrepareWork() {
 	s.results = nil // No result channel for template work
 	s.makeQuantumWorkUnsafe(block)
 
-	log.Info("🔗 Quantum work automatically prepared for external miners",
-		"number", header.Number.Uint64(),
-		"difficulty", FormatDifficulty(header.Difficulty),
-		"parentHash", header.ParentHash.Hex()[:10]+"...",
-		"stateRoot", header.Root.Hex()[:10]+"...")
+	log.Info("🔗 Work automatically prepared for miners",
+		"block", header.Number.Uint64(),
+		"difficulty", FormatDifficulty(header.Difficulty))
 }
 
 // invalidateOldWork immediately clears all work templates to force external miners
@@ -1947,10 +1936,9 @@ func (s *remoteSealer) invalidateOldWork(blockNumber uint64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	log.Info("🔧 CRITICAL FIX: Invalidating all old work templates after block write",
-		"blockNumber", blockNumber,
-		"oldWorkCount", len(s.works),
-		"oldSubmissionCount", len(s.submittedWork))
+	log.Info("🔧 Invalidating old mining work",
+		"block", blockNumber,
+		"templates", len(s.works))
 
 	// Clear ALL work templates - external miners must fetch new work
 	s.works = make(map[common.Hash]*types.Block)
@@ -1961,8 +1949,7 @@ func (s *remoteSealer) invalidateOldWork(blockNumber uint64) {
 	s.currentWork = [5]string{}
 	s.results = nil
 
-	log.Info("✅ All work templates invalidated - external miners will get new work",
-		"blockNumber", blockNumber)
+	log.Info("✅ Mining work updated for new block", "block", blockNumber)
 }
 
 // SetChain sets the blockchain reference for remote mining work preparation

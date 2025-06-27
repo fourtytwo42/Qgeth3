@@ -756,11 +756,11 @@ func (w *worker) taskLoop() {
 // and flush relative data to the database.
 func (w *worker) resultLoop() {
 	defer w.wg.Done()
-	log.Info("🔄 ResultLoop started - ready to receive sealed blocks")
+	log.Info("🔄 Block processor started - ready to receive mined blocks")
 	for {
 		select {
 		case block := <-w.resultCh:
-			log.Info("📥 ResultLoop received sealed block", "number", block.Number(), "hash", block.Hash().Hex()[:10])
+			log.Info("📥 Received new mined block", "block", block.Number(), "hash", block.Hash().Hex()[:10]+"...")
 			// Short circuit when receiving empty result.
 			if block == nil {
 				continue
@@ -796,8 +796,7 @@ func (w *worker) resultLoop() {
 				if err != nil {
 					log.Error("❌ Failed writing quantum block to chain", "err", err, "number", block.Number())
 				} else {
-					log.Info("✅ Quantum block successfully written to blockchain", "number", block.Number())
-					log.Info("Successfully sealed new block", "number", block.Number(), "sealhash", sealhash, "hash", hash)
+									log.Info("✅ New block added to blockchain", "block", block.Number(), "hash", hash.Hex()[:10]+"...")
 
 					// CRITICAL FIX: Immediately invalidate old work templates for external miners
 					// This prevents external miners from submitting solutions for blocks that have already been mined
@@ -846,9 +845,10 @@ func (w *worker) resultLoop() {
 				log.Error("❌ Failed writing quantum block to chain", "err", err, "number", block.Number())
 				continue
 			}
-			log.Info("✅ Quantum block successfully written to blockchain", "number", block.Number())
-			log.Info("Successfully sealed new block", "number", block.Number(), "sealhash", sealhash, "hash", hash,
-				"elapsed", common.PrettyDuration(time.Since(task.createdAt)))
+			log.Info("✅ New block added to blockchain", 
+				"block", block.Number(), 
+				"hash", hash.Hex()[:10]+"...",
+				"time", common.PrettyDuration(time.Since(task.createdAt)))
 
 			// CRITICAL FIX: Immediately invalidate old work templates for external miners
 			// This prevents external miners from submitting solutions for blocks that have already been mined
@@ -1441,15 +1441,19 @@ func (w *worker) commit(env *environment, interval func(), update bool, start ti
 			case w.taskCh <- &task{receipts: env.receipts, state: env.state, block: block, createdAt: time.Now()}:
 				w.unconfirmed.Shift(block.NumberU64() - 1)
 
+				// User-friendly logging improvements
 				fees := totalFees(block, env.receipts)
 				feesInEther := new(big.Float).Quo(new(big.Float).SetInt(fees), big.NewFloat(vars.Ether))
-				log.Info("Commit new sealing work", "number", block.Number(), "sealhash", w.engine.SealHash(block.Header()),
-					"uncles", len(env.uncles), "txs", env.tcount,
-					"gas", block.GasUsed(), "fees", feesInEther,
-					"elapsed", common.PrettyDuration(time.Since(start)))
+				
+				log.Info("⛏️  New mining work prepared", 
+					"block", block.Number(), 
+					"transactions", env.tcount,
+					"gas", fmt.Sprintf("%.1fM", float64(block.GasUsed())/1000000),
+					"fees", fmt.Sprintf("%.6f QGC", feesInEther),
+					"time", common.PrettyDuration(time.Since(start)))
 
 			case <-w.exitCh:
-				log.Info("Worker has exited")
+				log.Info("🛑 Mining stopped")
 			}
 		}
 	}
