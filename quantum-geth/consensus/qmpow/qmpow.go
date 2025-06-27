@@ -490,10 +490,19 @@ func (q *QMPoW) Finalize(chain consensus.ChainHeaderReader, header *types.Header
 		"totalReward", totalReward,
 		"coinbase", header.Coinbase.Hex())
 	
-	// CRITICAL FIX: Set state root after applying all state changes
-	// This was missing and causing "invalid merkle root" validation errors
-	// The state root represents the final state after all transactions and rewards
-	header.Root = state.IntermediateRoot(chain.Config().IsEnabled(chain.Config().GetEIP161dTransition, header.Number))
+	// CRITICAL FIX: Commit the state and set the actual committed root
+	// This ensures the header state root matches what's actually in the database
+	// Previously we used IntermediateRoot() which could differ from the committed root
+	committedRoot, err := state.Commit(blockNumber, chain.Config().IsEnabled(chain.Config().GetEIP161dTransition, header.Number))
+	if err != nil {
+		log.Crit("Failed to commit state in Finalize", "err", err, "blockNumber", blockNumber)
+	}
+	header.Root = committedRoot
+	
+	log.Debug("🔗 State committed in Finalize", 
+		"blockNumber", blockNumber,
+		"committedRoot", committedRoot.Hex(),
+		"headerRoot", header.Root.Hex())
 }
 
 // FinalizeAndAssemble runs any post-transaction state modifications and assembles the final block

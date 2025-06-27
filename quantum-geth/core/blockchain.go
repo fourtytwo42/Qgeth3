@@ -53,6 +53,7 @@ import (
 	"github.com/ethereum/go-ethereum/triedb/hashdb"
 	"github.com/ethereum/go-ethereum/triedb/pathdb"
 	"golang.org/x/exp/slices"
+	"github.com/ethereum/go-ethereum/trie"
 )
 
 var (
@@ -1374,11 +1375,41 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 	if err := blockBatch.Write(); err != nil {
 		log.Crit("Failed to write block into disk", "err", err)
 	}
-	// Commit all cached state changes into underlying memory database.
-	root, err := state.Commit(block.NumberU64(), bc.chainConfig.IsEnabled(bc.chainConfig.GetEIP161dTransition, block.Number()))
-	if err != nil {
-		return err
+	
+	// CRITICAL FIX: Check if state has already been committed by consensus engine
+	// The quantum consensus engine now commits state in Finalize() to ensure consistency
+	// If the header root matches the current state root, skip double-commit
+	var root common.Hash
+	var err error
+	
+	// Check if state has already been committed (state is no longer usable after commit)
+	if state.Error() != nil && errors.Is(state.Error(), trie.ErrCommitted) {
+		// State already committed, use the root from the header
+		root = block.Root()
+		log.Debug("🔗 State already committed by consensus engine",
+			"blockNumber", block.NumberU64(),
+			"headerRoot", root.Hex())
+	} else {
+		// State not yet committed, commit it now
+		root, err = state.Commit(block.NumberU64(), bc.chainConfig.IsEnabled(bc.chainConfig.GetEIP161dTransition, block.Number()))
+		if err != nil {
+			return err
+		}
+		log.Debug("🔗 State committed in blockchain",
+			"blockNumber", block.NumberU64(),
+			"committedRoot", root.Hex(),
+			"headerRoot", block.Root().Hex())
+			
+		// Verify the committed root matches the header root
+		if root != block.Root() {
+			log.Error("🚨 State root mismatch after commit",
+				"blockNumber", block.NumberU64(),
+				"headerRoot", block.Root().Hex(),
+				"committedRoot", root.Hex())
+			return fmt.Errorf("state root mismatch: header=%s committed=%s", block.Root().Hex(), root.Hex())
+		}
 	}
+	
 	// If node is running in path mode, skip explicit gc operation
 	// which is unnecessary in this mode.
 	if bc.triedb.Scheme() == rawdb.PathScheme {
