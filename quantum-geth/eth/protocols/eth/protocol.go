@@ -254,7 +254,7 @@ func decodeQuantumCompatibleHeaderFromRaw(data rlp.RawValue) (*types.Header, err
 		if strings.Contains(err.Error(), "WithdrawalsHash") || 
 		   strings.Contains(err.Error(), "input string too short") {
 			
-			// Use quantum-compatible header structure that matches the actual Header struct
+			// Use quantum-compatible header structure with maximum compatibility
 			type compatHeader struct {
 				ParentHash  common.Hash    `json:"parentHash"       gencodec:"required"`
 				UncleHash   common.Hash    `json:"sha3Uncles"       gencodec:"required"`
@@ -272,10 +272,12 @@ func decodeQuantumCompatibleHeaderFromRaw(data rlp.RawValue) (*types.Header, err
 				MixDigest   common.Hash    `json:"mixHash"`
 				Nonce       types.BlockNonce `json:"nonce"`
 				
-				// Optional fields for quantum consensus (WithdrawalsHash and ParentBeaconRoot excluded)
+				// ALL optional fields in exact order - quantum will ignore incompatible ones
 				BaseFee          *big.Int     `json:"baseFeePerGas"         rlp:"optional"`
+				WithdrawalsHash  *common.Hash `json:"withdrawalsRoot"       rlp:"optional"`
 				BlobGasUsed      *uint64      `json:"blobGasUsed"           rlp:"optional"`
 				ExcessBlobGas    *uint64      `json:"excessBlobGas"         rlp:"optional"`
+				ParentBeaconRoot *common.Hash `json:"parentBeaconBlockRoot" rlp:"optional"`
 				QBlob            []byte       `json:"qBlob"                 rlp:"optional"`
 			}
 			
@@ -305,9 +307,9 @@ func decodeQuantumCompatibleHeaderFromRaw(data rlp.RawValue) (*types.Header, err
 				BlobGasUsed:      compat.BlobGasUsed,
 				ExcessBlobGas:    compat.ExcessBlobGas,
 				QBlob:            compat.QBlob,
-				// CRITICAL: Quantum consensus doesn't use post-merge fields
-				WithdrawalsHash:  nil,
-				ParentBeaconRoot: nil,
+				// CRITICAL: Quantum consensus doesn't use post-merge fields - set to nil
+				WithdrawalsHash:  nil,  // Always nil for quantum consensus
+				ParentBeaconRoot: nil,  // Always nil for quantum consensus
 			}
 		} else {
 			return nil, err
@@ -401,10 +403,12 @@ type compatHeaderForBlock struct {
 	MixDigest   common.Hash    `json:"mixHash"`
 	Nonce       types.BlockNonce `json:"nonce"`
 	
-	// Optional fields for quantum consensus (WithdrawalsHash and ParentBeaconRoot excluded)
+	// ALL optional fields in exact order - quantum will ignore incompatible ones
 	BaseFee          *big.Int     `json:"baseFeePerGas"         rlp:"optional"`
+	WithdrawalsHash  *common.Hash `json:"withdrawalsRoot"       rlp:"optional"`
 	BlobGasUsed      *uint64      `json:"blobGasUsed"           rlp:"optional"`
 	ExcessBlobGas    *uint64      `json:"excessBlobGas"         rlp:"optional"`
+	ParentBeaconRoot *common.Hash `json:"parentBeaconBlockRoot" rlp:"optional"`
 	QBlob            []byte       `json:"qBlob"                 rlp:"optional"`
 }
 
@@ -445,9 +449,9 @@ func decodeQuantumCompatibleBlockFromRaw(data rlp.RawValue) (*types.Block, error
 		BlobGasUsed:      compatBlock.Header.BlobGasUsed,
 		ExcessBlobGas:    compatBlock.Header.ExcessBlobGas,
 		QBlob:            compatBlock.Header.QBlob,
-		// CRITICAL: Quantum consensus doesn't use post-merge fields
-		WithdrawalsHash:  nil,
-		ParentBeaconRoot: nil,
+		// CRITICAL: Quantum consensus doesn't use post-merge fields - set to nil
+		WithdrawalsHash:  nil,  // Always nil for quantum consensus
+		ParentBeaconRoot: nil,  // Always nil for quantum consensus
 	}
 	
 	// Convert compatible uncles to standard headers
@@ -473,9 +477,9 @@ func decodeQuantumCompatibleBlockFromRaw(data rlp.RawValue) (*types.Block, error
 			BlobGasUsed:      compatUncle.BlobGasUsed,
 			ExcessBlobGas:    compatUncle.ExcessBlobGas,
 			QBlob:            compatUncle.QBlob,
-			// CRITICAL: Quantum consensus doesn't use post-merge fields
-			WithdrawalsHash:  nil,
-			ParentBeaconRoot: nil,
+			// CRITICAL: Quantum consensus doesn't use post-merge fields - set to nil
+			WithdrawalsHash:  nil,  // Always nil for quantum consensus
+			ParentBeaconRoot: nil,  // Always nil for quantum consensus
 		}
 		// Unmarshal quantum fields for uncle headers
 		if err := uncle.UnmarshalQuantumBlob(); err != nil {
