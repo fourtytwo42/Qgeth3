@@ -258,8 +258,66 @@ fi
 
 cd "$QGETH_DIR"
 
-# Build the new version
-log "🔨 Building new version..."
+# Memory check for build
+log "💾 Checking system memory for build..."
+REQUIRED_MB=3072  # 3GB minimum
+AVAILABLE_MB=0
+
+if [ -f /proc/meminfo ]; then
+    MEM_TOTAL=\$(grep MemTotal /proc/meminfo | awk '{print \$2}')
+    MEM_AVAILABLE=\$(grep MemAvailable /proc/meminfo | awk '{print \$2}')
+    
+    if [ -n "\$MEM_AVAILABLE" ]; then
+        AVAILABLE_MB=\$((MEM_AVAILABLE / 1024))
+    elif [ -n "\$MEM_TOTAL" ]; then
+        AVAILABLE_MB=\$((MEM_TOTAL / 1024))
+    fi
+    
+    log "Available RAM: \${AVAILABLE_MB}MB (Required: \${REQUIRED_MB}MB)"
+    
+    if [ \$AVAILABLE_MB -lt \$REQUIRED_MB ]; then
+        log "⚠️  Low memory detected for building!"
+        log "   Available: \${AVAILABLE_MB}MB, Required: \${REQUIRED_MB}MB"
+        
+        # Create swap file if it doesn't exist
+        if [ ! -f /swapfile ]; then
+            log "🔧 Adding 2GB swap space to help with build..."
+            sudo fallocate -l 2G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1024 count=2097152
+            sudo chmod 600 /swapfile
+            sudo mkswap /swapfile
+            sudo swapon /swapfile
+            
+            # Add to fstab for persistence
+            if ! grep -q "/swapfile" /etc/fstab; then
+                echo "/swapfile none swap sw 0 0" | sudo tee -a /etc/fstab >/dev/null
+            fi
+            
+            log "✅ Swap space added successfully"
+        else
+            log "🔧 Ensuring swap file is active..."
+            sudo swapon /swapfile 2>/dev/null || true
+        fi
+    else
+        log "✅ Memory check passed"
+    fi
+else
+    log "⚠️  Cannot check memory - /proc/meminfo not found"
+fi
+
+# Build the new version with memory optimization
+log "🔨 Building new version with memory optimization..."
+
+# Set memory-optimized environment
+export TMPDIR="/tmp/qgeth-update-\$\$"
+mkdir -p "\$TMPDIR"
+
+# Cleanup function for temp directory
+cleanup_build_temp() {
+    rm -rf "\$TMPDIR" 2>/dev/null || true
+}
+trap cleanup_build_temp EXIT
+
+log "Using temporary build directory: \$TMPDIR"
 chmod +x build-linux.sh
 ./build-linux.sh geth
 
@@ -420,10 +478,70 @@ print_step "📦 Installing current project..."
 cp -r "$PROJECT_DIR" /opt/qgeth/Qgeth3
 chown -R $ACTUAL_USER:$ACTUAL_USER /opt/qgeth/Qgeth3
 
-# Build the project
-print_step "🔨 Building Qgeth..."
+# Memory check for build
+print_step "💾 Checking system memory for build..."
+REQUIRED_MB=3072  # 3GB minimum
+AVAILABLE_MB=0
+
+if [ -f /proc/meminfo ]; then
+    MEM_TOTAL=$(grep MemTotal /proc/meminfo | awk '{print $2}')
+    MEM_AVAILABLE=$(grep MemAvailable /proc/meminfo | awk '{print $2}')
+    
+    if [ -n "$MEM_AVAILABLE" ]; then
+        AVAILABLE_MB=$((MEM_AVAILABLE / 1024))
+    elif [ -n "$MEM_TOTAL" ]; then
+        AVAILABLE_MB=$((MEM_TOTAL / 1024))
+    fi
+    
+    print_step "Available RAM: ${AVAILABLE_MB}MB (Required: ${REQUIRED_MB}MB)"
+    
+    if [ $AVAILABLE_MB -lt $REQUIRED_MB ]; then
+        print_warning "Low memory detected for building!"
+        echo "  Available: ${AVAILABLE_MB}MB"
+        echo "  Required: ${REQUIRED_MB}MB"
+        echo ""
+        echo "🔧 Adding 2GB swap space to help with build..."
+        
+        # Create swap file if it doesn't exist
+        if [ ! -f /swapfile ]; then
+            fallocate -l 2G /swapfile || dd if=/dev/zero of=/swapfile bs=1024 count=2097152
+            chmod 600 /swapfile
+            mkswap /swapfile
+            swapon /swapfile
+            
+            # Add to fstab for persistence
+            if ! grep -q "/swapfile" /etc/fstab; then
+                echo "/swapfile none swap sw 0 0" >> /etc/fstab
+            fi
+            
+            print_success "Swap space added successfully"
+        else
+            print_step "Swap file already exists, ensuring it's active..."
+            swapon /swapfile 2>/dev/null || true
+        fi
+    else
+        print_success "Memory check passed"
+    fi
+else
+    print_warning "Cannot check memory - /proc/meminfo not found"
+fi
+
+# Build the project with memory optimization
+print_step "🔨 Building Qgeth with memory optimization..."
 cd /opt/qgeth/Qgeth3
 chmod +x build-linux.sh
+
+# Set memory-optimized environment
+export TMPDIR="/tmp/qgeth-setup-$$"
+mkdir -p "$TMPDIR"
+
+# Cleanup function for temp directory
+cleanup_build_temp() {
+    rm -rf "$TMPDIR" 2>/dev/null || true
+}
+trap cleanup_build_temp EXIT
+
+print_step "Using temporary build directory: $TMPDIR"
 sudo -u $ACTUAL_USER ./build-linux.sh geth
 
 # Reload systemd and enable services
