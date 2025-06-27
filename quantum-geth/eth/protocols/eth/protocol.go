@@ -254,7 +254,7 @@ func decodeQuantumCompatibleHeaderFromRaw(data rlp.RawValue) (*types.Header, err
 		if strings.Contains(err.Error(), "WithdrawalsHash") || 
 		   strings.Contains(err.Error(), "input string too short") {
 			
-			// Use quantum-compatible header structure
+			// Use quantum-compatible header structure that matches the actual Header struct
 			type compatHeader struct {
 				ParentHash  common.Hash    `json:"parentHash"       gencodec:"required"`
 				UncleHash   common.Hash    `json:"sha3Uncles"       gencodec:"required"`
@@ -272,13 +272,13 @@ func decodeQuantumCompatibleHeaderFromRaw(data rlp.RawValue) (*types.Header, err
 				MixDigest   common.Hash    `json:"mixHash"`
 				Nonce       types.BlockNonce `json:"nonce"`
 				
-				// Optional fields that may or may not be present
-				BaseFee       *big.Int `json:"baseFeePerGas" rlp:"optional"`
-				BlobGasUsed   *uint64  `json:"blobGasUsed"   rlp:"optional"`
-				ExcessBlobGas *uint64  `json:"excessBlobGas" rlp:"optional"`
-				
-				// Quantum fields
-				QBlob []byte `json:"qblob" rlp:"optional"`
+				// ALL optional fields that may be present - must match exact order in Header struct
+				BaseFee          *big.Int     `json:"baseFeePerGas"         rlp:"optional"`
+				WithdrawalsHash  *common.Hash `json:"withdrawalsRoot"       rlp:"optional"`
+				BlobGasUsed      *uint64      `json:"blobGasUsed"           rlp:"optional"`
+				ExcessBlobGas    *uint64      `json:"excessBlobGas"         rlp:"optional"`
+				ParentBeaconRoot *common.Hash `json:"parentBeaconBlockRoot" rlp:"optional"`
+				QBlob            []byte       `json:"qBlob"                 rlp:"optional"`
 			}
 			
 			var compat compatHeader
@@ -288,26 +288,27 @@ func decodeQuantumCompatibleHeaderFromRaw(data rlp.RawValue) (*types.Header, err
 			
 			// Convert to standard header
 			header = &types.Header{
-				ParentHash:    compat.ParentHash,
-				UncleHash:     compat.UncleHash,
-				Coinbase:      compat.Coinbase,
-				Root:          compat.Root,
-				TxHash:        compat.TxHash,
-				ReceiptHash:   compat.ReceiptHash,
-				Bloom:         compat.Bloom,
-				Difficulty:    compat.Difficulty,
-				Number:        compat.Number,
-				GasLimit:      compat.GasLimit,
-				GasUsed:       compat.GasUsed,
-				Time:          compat.Time,
-				Extra:         compat.Extra,
-				MixDigest:     compat.MixDigest,
-				Nonce:         compat.Nonce,
-				BaseFee:       compat.BaseFee,
-				BlobGasUsed:   compat.BlobGasUsed,
-				ExcessBlobGas: compat.ExcessBlobGas,
-				QBlob:         compat.QBlob,
-				// Quantum consensus: no withdrawals
+				ParentHash:       compat.ParentHash,
+				UncleHash:        compat.UncleHash,
+				Coinbase:         compat.Coinbase,
+				Root:             compat.Root,
+				TxHash:           compat.TxHash,
+				ReceiptHash:      compat.ReceiptHash,
+				Bloom:            compat.Bloom,
+				Difficulty:       compat.Difficulty,
+				Number:           compat.Number,
+				GasLimit:         compat.GasLimit,
+				GasUsed:          compat.GasUsed,
+				Time:             compat.Time,
+				Extra:            compat.Extra,
+				MixDigest:        compat.MixDigest,
+				Nonce:            compat.Nonce,
+				BaseFee:          compat.BaseFee,
+				BlobGasUsed:      compat.BlobGasUsed,
+				ExcessBlobGas:    compat.ExcessBlobGas,
+				ParentBeaconRoot: compat.ParentBeaconRoot,
+				QBlob:            compat.QBlob,
+				// CRITICAL: Quantum consensus doesn't use withdrawals - always set to nil
 				WithdrawalsHash: nil,
 			}
 		} else {
