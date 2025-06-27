@@ -220,6 +220,13 @@ func (cs *chainSyncer) nextSyncOp() *chainSyncOp {
 	}
 	mode, ourTD := cs.modeAndLocalHead()
 	op := peerToSyncOp(mode, peer)
+	
+	// QUANTUM FIX: Handle nil total difficulty to prevent segmentation fault
+	if ourTD == nil || op.td == nil {
+		log.Debug("🔧 Sync: nil total difficulty detected, skipping sync comparison", "ourTD", ourTD, "peerTD", op.td)
+		return nil
+	}
+	
 	if op.td.Cmp(ourTD) <= 0 {
 		// We seem to be in sync according to the legacy rules. In the merge
 		// world, it can also mean we're stuck on the merge block, waiting for
@@ -246,6 +253,11 @@ func (cs *chainSyncer) nextSyncOp() *chainSyncOp {
 
 func peerToSyncOp(mode downloader.SyncMode, p *eth.Peer) *chainSyncOp {
 	peerHead, peerTD, _ := p.Head()
+	// QUANTUM FIX: Handle nil peer total difficulty
+	if peerTD == nil {
+		log.Debug("🔧 Sync: peer total difficulty is nil, using zero", "peer", p.ID())
+		peerTD = big.NewInt(0)
+	}
 	return &chainSyncOp{mode: mode, peer: p, td: peerTD, head: peerHead}
 }
 
@@ -254,6 +266,10 @@ func (cs *chainSyncer) modeAndLocalHead() (downloader.SyncMode, *big.Int) {
 	if cs.handler.snapSync.Load() {
 		block := cs.handler.chain.CurrentSnapBlock()
 		td := cs.handler.chain.GetTd(block.Hash(), block.Number.Uint64())
+		if td == nil {
+			log.Debug("🔧 Sync: snap block total difficulty not found, using zero", "block", block.Number.Uint64())
+			td = big.NewInt(0)
+		}
 		return downloader.SnapSync, td
 	}
 	// We are probably in full sync, but we might have rewound to before the
@@ -263,6 +279,10 @@ func (cs *chainSyncer) modeAndLocalHead() (downloader.SyncMode, *big.Int) {
 		if head.Number.Uint64() < *pivot {
 			block := cs.handler.chain.CurrentSnapBlock()
 			td := cs.handler.chain.GetTd(block.Hash(), block.Number.Uint64())
+			if td == nil {
+				log.Debug("🔧 Sync: pivot snap block total difficulty not found, using zero", "block", block.Number.Uint64())
+				td = big.NewInt(0)
+			}
 			return downloader.SnapSync, td
 		}
 	}
@@ -272,11 +292,19 @@ func (cs *chainSyncer) modeAndLocalHead() (downloader.SyncMode, *big.Int) {
 	if !cs.handler.chain.HasState(head.Root) {
 		block := cs.handler.chain.CurrentSnapBlock()
 		td := cs.handler.chain.GetTd(block.Hash(), block.Number.Uint64())
+		if td == nil {
+			log.Debug("🔧 Sync: stateless snap block total difficulty not found, using zero", "block", block.Number.Uint64())
+			td = big.NewInt(0)
+		}
 		log.Info("Reenabled snap sync as chain is stateless")
 		return downloader.SnapSync, td
 	}
 	// Nope, we're really full syncing
 	td := cs.handler.chain.GetTd(head.Hash(), head.Number.Uint64())
+	if td == nil {
+		log.Debug("🔧 Sync: head block total difficulty not found, using zero", "block", head.Number.Uint64())
+		td = big.NewInt(0)
+	}
 	return downloader.FullSync, td
 }
 
