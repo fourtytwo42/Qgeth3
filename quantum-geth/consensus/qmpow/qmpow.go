@@ -411,18 +411,11 @@ func (q *QMPoW) VerifyHeaders(chain consensus.ChainHeaderReader, headers []*type
 
 // VerifyUncles verifies that the given block's uncles conform to the consensus rules
 func (q *QMPoW) VerifyUncles(chain consensus.ChainReader, block *types.Block) error {
-	// Quantum PoW uses the same uncle verification as Ethash
-	if len(block.Uncles()) > 2 {
-		return errors.New("too many uncles")
+	// Quantum PoW does not support uncles - they add unnecessary complexity
+	// and are not needed for quantum-resistant consensus
+	if len(block.Uncles()) > 0 {
+		return errors.New("uncles not allowed in quantum consensus")
 	}
-
-	// Verify each uncle
-	for _, uncle := range block.Uncles() {
-		if err := q.VerifyHeader(chain, uncle, true); err != nil {
-			return err
-		}
-	}
-
 	return nil
 }
 

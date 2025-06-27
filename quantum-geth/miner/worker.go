@@ -1363,10 +1363,19 @@ func (w *worker) commitWork(interrupt *atomic.Int32, noempty bool, timestamp int
 		log.Debug("🚨 COMMITWORK: Worker not running!")
 	}
 
-	log.Debug("🔥 COMMITWORK: About to call prepareWork", "coinbase", coinbase.Hex())
+	// Check if we're using QMPoW consensus engine and disable uncles
+	isQMPoW := fmt.Sprintf("%T", w.engine) == "*qmpow.QMPoW"
+	noUncle := isQMPoW // Disable uncles for quantum consensus
+
+	if isQMPoW {
+		log.Debug("🔬 COMMITWORK: QMPoW detected - uncles disabled for quantum consensus")
+	}
+
+	log.Debug("🔥 COMMITWORK: About to call prepareWork", "coinbase", coinbase.Hex(), "noUncle", noUncle)
 	work, err := w.prepareWork(&generateParams{
 		timestamp: uint64(timestamp),
 		coinbase:  coinbase,
+		noUncle:   noUncle,
 	})
 	if err != nil {
 		log.Error("🚨 COMMITWORK: prepareWork failed", "err", err)

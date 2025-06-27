@@ -19,6 +19,7 @@ package miner
 import (
 	"crypto/sha256"
 	"encoding/binary"
+	"fmt"
 	"math/big"
 	"sync"
 	"time"
@@ -178,6 +179,14 @@ func (payload *Payload) ResolveFull() *engine.ExecutionPayloadEnvelope {
 
 // buildPayload builds the payload according to the provided parameters.
 func (w *worker) buildPayload(args *BuildPayloadArgs) (*Payload, error) {
+	// Check if we're using QMPoW consensus engine and disable uncles
+	isQMPoW := fmt.Sprintf("%T", w.engine) == "*qmpow.QMPoW"
+	noUncle := isQMPoW // Disable uncles for quantum consensus
+
+	if isQMPoW {
+		log.Debug("🔬 BUILDPAYLOAD: QMPoW detected - uncles disabled for quantum consensus")
+	}
+
 	// Build the initial version with no transaction included. It should be fast
 	// enough to run. The empty payload can at least make sure there is something
 	// to deliver for not missing slot.
@@ -190,6 +199,7 @@ func (w *worker) buildPayload(args *BuildPayloadArgs) (*Payload, error) {
 		withdrawals: args.Withdrawals,
 		beaconRoot:  args.BeaconRoot,
 		noTxs:       true,
+		noUncle:     noUncle,
 	}
 	empty := w.getSealingBlock(emptyParams)
 	if empty.err != nil {
@@ -221,6 +231,7 @@ func (w *worker) buildPayload(args *BuildPayloadArgs) (*Payload, error) {
 			withdrawals: args.Withdrawals,
 			beaconRoot:  args.BeaconRoot,
 			noTxs:       false,
+			noUncle:     noUncle,
 		}
 
 		for {
