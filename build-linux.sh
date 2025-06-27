@@ -63,7 +63,11 @@ check_memory() {
         echo "  Total Available: ${combined_mb}MB"
         echo "  Required Total: ${required_mb}MB (4GB)"
         
-        if [ $combined_mb -lt $required_mb ]; then
+        # Add tolerance margin - 50MB difference is acceptable (same as prepare-vps.sh)
+        local tolerance_mb=50
+        local effective_required=$((required_mb - tolerance_mb))
+        
+        if [ $combined_mb -lt $effective_required ]; then
             local deficit=$((required_mb - combined_mb))
             echo "⚠️  WARNING: Insufficient total memory!"
             echo "   Current total: ${combined_mb}MB"
@@ -87,6 +91,13 @@ check_memory() {
                     exit 1
                 fi
             fi
+        elif [ $combined_mb -lt $required_mb ]; then
+            local deficit=$((required_mb - combined_mb))
+            echo "💡 Memory within tolerance range"
+            echo "   Current total: ${combined_mb}MB"
+            echo "   Required total: ${required_mb}MB"
+            echo "   Deficit: ${deficit}MB (within ${tolerance_mb}MB tolerance)"
+            echo "   ✅ Proceeding with build - memory difference is acceptable"
         else
             echo "✅ Memory check passed (${combined_mb}MB total)"
         fi

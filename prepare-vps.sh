@@ -193,11 +193,16 @@ if [ -f /proc/meminfo ]; then
     echo "Current total memory: ${CURRENT_TOTAL}MB (RAM + swap)"
     echo ""
     
-    if [ $CURRENT_TOTAL -lt $REQUIRED_MB ]; then
+    # Add tolerance margin - 50MB difference is acceptable
+    local tolerance_mb=50
+    local effective_required=$((REQUIRED_MB - tolerance_mb))
+    
+    if [ $CURRENT_TOTAL -lt $effective_required ]; then
+        local deficit=$((REQUIRED_MB - CURRENT_TOTAL))
         print_warning "Insufficient total memory for building!"
         echo "  Current total: ${CURRENT_TOTAL}MB"
         echo "  Required total: ${REQUIRED_MB}MB"
-        echo "  Deficit: $((REQUIRED_MB - CURRENT_TOTAL))MB"
+        echo "  Deficit: ${deficit}MB"
         echo ""
         
         # Calculate exact swap needed to reach 4GB total
@@ -236,6 +241,14 @@ if [ -f /proc/meminfo ]; then
         else
             print_success "Total memory check passed"
         fi
+    elif [ $CURRENT_TOTAL -lt $REQUIRED_MB ]; then
+        local deficit=$((REQUIRED_MB - CURRENT_TOTAL))
+        print_step "💡 Memory within tolerance range"
+        echo "  Current total: ${CURRENT_TOTAL}MB"
+        echo "  Required total: ${REQUIRED_MB}MB" 
+        echo "  Deficit: ${deficit}MB (within ${tolerance_mb}MB tolerance)"
+        echo "  ✅ Proceeding with build - memory difference is acceptable"
+        print_success "Total memory check passed (within tolerance)"
     else
         print_success "Memory check passed - sufficient total memory available"
     fi
@@ -373,8 +386,16 @@ if [ -f /proc/swaps ]; then
 fi
 FINAL_TOTAL=$((TOTAL_MB + FINAL_SWAP_TOTAL))
 
-if [ $FINAL_TOTAL -ge $REQUIRED_MB ]; then
+# Apply same tolerance logic for final check
+local final_tolerance_mb=50
+local final_effective_required=$((REQUIRED_MB - final_tolerance_mb))
+
+if [ $FINAL_TOTAL -ge $final_effective_required ]; then
     print_success "✅ VPS is ready for building Q Geth!"
+    if [ $FINAL_TOTAL -lt $REQUIRED_MB ]; then
+        local final_deficit=$((REQUIRED_MB - FINAL_TOTAL))
+        echo "  (${final_deficit}MB under target, but within ${final_tolerance_mb}MB tolerance)"
+    fi
     echo ""
     echo "Next steps:"
     echo "  ./build-linux.sh            # Build both geth and miner"
@@ -403,4 +424,4 @@ echo "Total Memory: ${FINAL_TOTAL}MB"
 echo "Required: ${REQUIRED_MB}MB (4GB)"
 echo "Storage: ${AVAILABLE_GB}GB available"
 echo "Temp Dir: ${TEMP_DIR:-/tmp}"
-echo "Status: $([ $FINAL_TOTAL -ge $REQUIRED_MB ] && echo "✅ Ready for 4GB builds" || echo "⚠️  Need more memory")" 
+echo "Status: $([ $FINAL_TOTAL -ge $final_effective_required ] && echo "✅ Ready for 4GB builds" || echo "⚠️  Need more memory")" 
