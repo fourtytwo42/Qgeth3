@@ -53,7 +53,6 @@ import (
 	"github.com/ethereum/go-ethereum/triedb/hashdb"
 	"github.com/ethereum/go-ethereum/triedb/pathdb"
 	"golang.org/x/exp/slices"
-	"github.com/ethereum/go-ethereum/trie"
 )
 
 var (
@@ -1376,96 +1375,82 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 		log.Crit("Failed to write block into disk", "err", err)
 	}
 	
-	// CRITICAL FIX: Check if state has already been committed by consensus engine
-	// The quantum consensus engine now commits state in Finalize() to ensure consistency
-	// If the header root matches the current state root, skip double-commit
-	var root common.Hash
-	var err error
+	// Commit all cached state changes into underlying memory database.
+	root, err := state.Commit(block.NumberU64(), bc.chainConfig.IsEnabled(bc.chainConfig.GetEIP161dTransition, block.Number()))
+	if err != nil {
+		return err
+	}
 	
-	// Check if state has already been committed (state is no longer usable after commit)
-	if state.Error() != nil && errors.Is(state.Error(), trie.ErrCommitted) {
-		// State already committed, use the root from the header
-		root = block.Root()
-		log.Debug("🔗 State already committed by consensus engine",
-			"blockNumber", block.NumberU64(),
-			"headerRoot", root.Hex())
-	} else {
-		// State not yet committed, commit it now
-		root, err = state.Commit(block.NumberU64(), bc.chainConfig.IsEnabled(bc.chainConfig.GetEIP161dTransition, block.Number()))
-		if err != nil {
-			return err
-		}
-		log.Debug("🔗 State committed in blockchain",
+	// Validate that the committed state root matches the header
+	if root != block.Root() {
+		log.Debug("🔗 State committed in blockchain", 
 			"blockNumber", block.NumberU64(),
 			"committedRoot", root.Hex(),
 			"headerRoot", block.Root().Hex())
-			
-		// Verify the committed root matches the header root
-		if root != block.Root() {
-			log.Error("🚨 State root mismatch after commit",
-				"blockNumber", block.NumberU64(),
-				"headerRoot", block.Root().Hex(),
-				"committedRoot", root.Hex())
-			return fmt.Errorf("state root mismatch: header=%s committed=%s", block.Root().Hex(), root.Hex())
-		}
+		return fmt.Errorf("state root mismatch: header=%s committed=%s", block.Root().Hex(), root.Hex())
 	}
-	
+
 	// If node is running in path mode, skip explicit gc operation
 	// which is unnecessary in this mode.
 	if bc.triedb.Scheme() == rawdb.PathScheme {
 		return nil
 	}
-	// If we're running an archive node, always flush
+	// If we're running with --gcmode=archive, always flush
 	if bc.cacheConfig.TrieDirtyDisabled {
 		return bc.triedb.Commit(root, false)
-	}
-	// Full but not archive node, do proper garbage collection
-	bc.triedb.Reference(root, common.Hash{}) // metadata reference to keep trie alive
-	bc.triegc.Push(root, -int64(block.NumberU64()))
+	} else {
+		// Full but not archive node, do proper garbage collection
+		bc.triedb.Reference(root, common.Hash{}) // metadata reference to keep trie alive
+		bc.triegc.Push(root, -int64(block.NumberU64()))
 
-	// Flush limits are not considered for the first TriesInMemory blocks.
-	current := block.NumberU64()
-	if current <= TriesInMemory {
-		return nil
-	}
-	// If we exceeded our memory allowance, flush matured singleton nodes to disk
-	var (
-		_, nodes, imgs = bc.triedb.Size() // all memory is contained within the nodes return for hashdb
-		limit          = common.StorageSize(bc.cacheConfig.TrieDirtyLimit) * 1024 * 1024
-	)
-	if nodes > limit || imgs > 4*1024*1024 {
-		bc.triedb.Cap(limit - ethdb.IdealBatchSize)
-	}
-	// Find the next state trie we need to commit
-	chosen := current - TriesInMemory
-	flushInterval := time.Duration(bc.flushInterval.Load())
-	// If we exceeded time allowance, flush an entire trie to disk
-	if bc.gcproc > flushInterval {
-		// If the header is missing (canonical chain behind), we're reorging a low
-		// diff sidechain. Suspend committing until this operation is completed.
-		header := bc.GetHeaderByNumber(chosen)
-		if header == nil {
-			log.Warn("Reorg in progress, trie commit postponed", "number", chosen)
-		} else {
-			// If we're exceeding limits but haven't reached a large enough memory gap,
-			// warn the user that the system is becoming unstable.
-			if chosen < bc.lastWrite+TriesInMemory && bc.gcproc >= 2*flushInterval {
-				log.Info("State in memory for too long, committing", "time", bc.gcproc, "allowance", flushInterval, "optimum", float64(chosen-bc.lastWrite)/TriesInMemory)
+		// Flush limits are not considered for the first TriesInMemory blocks.
+		current := block.NumberU64()
+		if current <= TriesInMemory {
+			return nil
+		}
+		// If we exceeded our memory allowance, flush matured singleton nodes to disk
+		_, nodes, _ := bc.triedb.Size() // all memory is contained within the nodes return for hashdb
+		limit := common.StorageSize(bc.cacheConfig.TrieDirtyLimit) * 1024 * 1024
+		if nodes > limit {
+			go func() {
+				if err := bc.triedb.Cap(limit - common.StorageSize(ethdb.IdealBatchSize)); err != nil {
+					log.Error("Failed to cap trie database", "err", err)
+				}
+			}()
+		}
+		// Find the next state trie we need to commit
+		chosen := current - TriesInMemory
+		flushInterval := time.Duration(bc.flushInterval.Load())
+		// If we exceeded time allowance, flush an entire trie to disk
+		if bc.gcproc > flushInterval {
+			// If the header is missing (canonical chain behind), we're reorging a low
+			// diff sidechain. Suspend committing until this operation is completed.
+			header := bc.GetHeaderByNumber(chosen)
+			if header == nil {
+				log.Warn("Reorg in progress, trie commit postponed", "number", chosen)
+			} else {
+				// If we're exceeding limits but haven't reached a large enough memory gap,
+				// warn the user that the system is becoming unstable.
+				if chosen < bc.lastWrite+TriesInMemory && bc.gcproc >= 2*flushInterval {
+					log.Info("State in memory for too long, committing", "time", bc.gcproc, "allowance", flushInterval, "optimum", float64(chosen-bc.lastWrite)/TriesInMemory)
+				}
+				// Flush an entire trie and restart the counters
+				if err := bc.triedb.Commit(header.Root, true); err != nil {
+					log.Error("Failed to commit trie", "err", err)
+				}
+				bc.lastWrite = chosen
+				bc.gcproc = 0
 			}
-			// Flush an entire trie and restart the counters
-			bc.triedb.Commit(header.Root, true)
-			bc.lastWrite = chosen
-			bc.gcproc = 0
 		}
-	}
-	// Garbage collect anything below our required write retention
-	for !bc.triegc.Empty() {
-		root, number := bc.triegc.Pop()
-		if uint64(-number) > chosen {
-			bc.triegc.Push(root, number)
-			break
+		// Garbage collect anything below our required write retention
+		for !bc.triegc.Empty() {
+			root, number := bc.triegc.Pop()
+			if uint64(-number) > chosen {
+				bc.triegc.Push(root, number)
+				break
+			}
+			bc.triedb.Dereference(root)
 		}
-		bc.triedb.Dereference(root)
 	}
 	return nil
 }
