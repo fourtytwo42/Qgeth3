@@ -142,7 +142,7 @@ echo ""
 
 # Memory check
 print_step "💾 Memory Analysis"
-REQUIRED_MB=3072  # 3GB minimum
+REQUIRED_MB=4096  # 4GB minimum total (RAM + swap)
 AVAILABLE_MB=0
 TOTAL_MB=0
 
@@ -160,46 +160,103 @@ if [ -f /proc/meminfo ]; then
     
     echo "Total RAM: ${TOTAL_MB}MB"
     echo "Available RAM: ${AVAILABLE_MB}MB"
-    echo "Required RAM: ${REQUIRED_MB}MB"
+    echo "Required Total Memory: ${REQUIRED_MB}MB (4GB)"
     echo ""
     
-    if [ $AVAILABLE_MB -lt $REQUIRED_MB ]; then
-        print_warning "Insufficient memory for building!"
-        echo "  Available: ${AVAILABLE_MB}MB"
-        echo "  Required: ${REQUIRED_MB}MB"
-        echo "  Deficit: $((REQUIRED_MB - AVAILABLE_MB))MB"
+    # Check existing swap
+    SWAP_TOTAL=0
+    if [ -f /proc/swaps ]; then
+        SWAP_KB=$(awk 'NR>1 {sum+=$3} END {print sum+0}' /proc/swaps)
+        SWAP_TOTAL=$((SWAP_KB / 1024))
+    fi
+    
+    CURRENT_TOTAL=$((TOTAL_MB + SWAP_TOTAL))
+    echo "Current swap space: ${SWAP_TOTAL}MB"
+    echo "Current total memory: ${CURRENT_TOTAL}MB (RAM + swap)"
+    echo ""
+    
+    if [ $CURRENT_TOTAL -lt $REQUIRED_MB ]; then
+        print_warning "Insufficient total memory for building!"
+        echo "  Current total: ${CURRENT_TOTAL}MB"
+        echo "  Required total: ${REQUIRED_MB}MB"
+        echo "  Deficit: $((REQUIRED_MB - CURRENT_TOTAL))MB"
         echo ""
         
-        # Check existing swap
-        SWAP_TOTAL=0
-        if [ -f /proc/swaps ]; then
-            SWAP_KB=$(awk 'NR>1 {sum+=$3} END {print sum+0}' /proc/swaps)
-            SWAP_TOTAL=$((SWAP_KB / 1024))
+        # Calculate exact swap needed to reach 4GB total
+        NEEDED_SWAP=$((REQUIRED_MB - TOTAL_MB))
+        if [ $NEEDED_SWAP -lt 0 ]; then
+            NEEDED_SWAP=0
         fi
         
-        echo "Current swap space: ${SWAP_TOTAL}MB"
-        
-        # Calculate needed swap
-        NEEDED_SWAP=$((REQUIRED_MB - AVAILABLE_MB - SWAP_TOTAL))
-        if [ $NEEDED_SWAP -lt 1024 ]; then
-            NEEDED_SWAP=2048  # Minimum 2GB swap
+        # If we already have some swap, subtract it
+        if [ $SWAP_TOTAL -gt 0 ]; then
+            NEEDED_SWAP=$((NEEDED_SWAP - SWAP_TOTAL))
         fi
         
-        echo "Recommended swap: ${NEEDED_SWAP}MB"
-        echo ""
+        # Ensure we don't create negative swap
+        if [ $NEEDED_SWAP -lt 0 ]; then
+            NEEDED_SWAP=0
+        fi
         
-        echo -n "Create swap file to enable building? (y/N): "
-        read -r RESPONSE
-        if [[ "$RESPONSE" =~ ^([yY][eE][sS]|[yY])$ ]]; then
-            create_swap $NEEDED_SWAP
+        if [ $NEEDED_SWAP -gt 0 ]; then
+            echo "Need to create: ${NEEDED_SWAP}MB additional swap"
+            echo "This will give total: $((TOTAL_MB + SWAP_TOTAL + NEEDED_SWAP))MB"
+            echo ""
+            
+            echo -n "Create swap file to reach 4GB total memory? (y/N): "
+            read -r RESPONSE
+            if [[ "$RESPONSE" =~ ^([yY][eE][sS]|[yY])$ ]]; then
+                create_swap $NEEDED_SWAP
+            else
+                print_warning "Swap file not created. Build may fail due to insufficient memory."
+            fi
         else
-            print_warning "Swap file not created. Build may fail due to insufficient memory."
+            print_success "Total memory check passed"
         fi
     else
-        print_success "Memory check passed - sufficient RAM available"
+        print_success "Memory check passed - sufficient total memory available"
     fi
 else
     print_error "Cannot check memory - /proc/meminfo not found"
+fi
+
+echo ""
+
+# Temporary directory setup
+print_step "📁 Temporary Directory Setup"
+TEMP_DIR="/tmp/qgeth-build"
+TEMP_AVAILABLE_GB=0
+
+# Check /tmp space
+if command -v df >/dev/null 2>&1; then
+    TEMP_AVAILABLE_KB=$(df /tmp | awk 'NR==2 {print $4}')
+    TEMP_AVAILABLE_GB=$((TEMP_AVAILABLE_KB / 1024 / 1024))
+    echo "Available /tmp space: ${TEMP_AVAILABLE_GB}GB"
+    
+    if [ $TEMP_AVAILABLE_GB -lt 2 ]; then
+        print_warning "Low /tmp space detected!"
+        echo "  Available: ${TEMP_AVAILABLE_GB}GB"
+        echo "  Recommended: 2GB+ for build temp files"
+        echo ""
+        
+        # Try to create temp build directory in current location
+        BUILD_TEMP_DIR="./build-temp"
+        echo "Will use local build temp directory: $BUILD_TEMP_DIR"
+        mkdir -p "$BUILD_TEMP_DIR"
+        TEMP_DIR="$BUILD_TEMP_DIR"
+    else
+        echo "Creating build temp directory: $TEMP_DIR"
+        mkdir -p "$TEMP_DIR"
+        # Set proper permissions
+        chmod 755 "$TEMP_DIR"
+        print_success "Temporary directory setup complete"
+    fi
+    
+    echo "Build temp directory: $TEMP_DIR"
+    echo ""
+else
+    print_warning "Cannot check /tmp space"
+    mkdir -p "$TEMP_DIR"
 fi
 
 echo ""
@@ -272,25 +329,50 @@ echo "  3. Use 'ionice -c3' for lower I/O priority if needed"
 echo "  4. Consider building during off-peak hours"
 echo ""
 
-if [ $AVAILABLE_MB -ge $REQUIRED_MB ]; then
+# Export temp directory for build scripts
+if [ -n "$TEMP_DIR" ]; then
+    export QGETH_BUILD_TEMP="$TEMP_DIR"
+    echo "export QGETH_BUILD_TEMP=\"$TEMP_DIR\"" >> ~/.bashrc
+    echo "Exported QGETH_BUILD_TEMP environment variable"
+    echo ""
+fi
+
+# Recalculate final totals
+FINAL_SWAP_TOTAL=0
+if [ -f /proc/swaps ]; then
+    SWAP_KB=$(awk 'NR>1 {sum+=$3} END {print sum+0}' /proc/swaps)
+    FINAL_SWAP_TOTAL=$((SWAP_KB / 1024))
+fi
+FINAL_TOTAL=$((TOTAL_MB + FINAL_SWAP_TOTAL))
+
+if [ $FINAL_TOTAL -ge $REQUIRED_MB ]; then
     print_success "✅ VPS is ready for building Q Geth!"
     echo ""
     echo "Next steps:"
     echo "  ./build-linux.sh            # Build both geth and miner"
     echo "  ./build-linux.sh geth       # Build geth only"
     echo "  ./build-linux.sh miner      # Build miner only"
+    echo ""
+    echo "Build will use:"
+    echo "  - Total Memory: ${FINAL_TOTAL}MB (${TOTAL_MB}MB RAM + ${FINAL_SWAP_TOTAL}MB swap)"
+    echo "  - Temp Directory: ${TEMP_DIR:-/tmp}"
 else
     print_warning "⚠️  VPS may have issues building due to low memory"
     echo ""
+    echo "Current total: ${FINAL_TOTAL}MB (need ${REQUIRED_MB}MB)"
+    echo ""
     echo "Consider:"
-    echo "  - Upgrading to a VPS with at least 4GB RAM"
-    echo "  - Running this script again to add swap space"
+    echo "  - Running this script again to add more swap space"
+    echo "  - Upgrading to a VPS with more RAM"
     echo "  - Building only one component at a time"
 fi
 
 echo ""
 print_step "📋 System Summary"
-echo "RAM: ${AVAILABLE_MB}MB available / ${TOTAL_MB}MB total"
-echo "Swap: ${SWAP_TOTAL}MB"
+echo "RAM: ${TOTAL_MB}MB total"
+echo "Swap: ${FINAL_SWAP_TOTAL}MB"
+echo "Total Memory: ${FINAL_TOTAL}MB"
+echo "Required: ${REQUIRED_MB}MB (4GB)"
 echo "Storage: ${AVAILABLE_GB}GB available"
-echo "Status: $([ $AVAILABLE_MB -ge $REQUIRED_MB ] && echo "✅ Ready" || echo "⚠️  May need optimization")" 
+echo "Temp Dir: ${TEMP_DIR:-/tmp}"
+echo "Status: $([ $FINAL_TOTAL -ge $REQUIRED_MB ] && echo "✅ Ready for 4GB builds" || echo "⚠️  Need more memory")" 
