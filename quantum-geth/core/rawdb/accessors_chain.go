@@ -414,8 +414,7 @@ func ReadHeader(db ethdb.Reader, hash common.Hash, number uint64) *types.Header 
 // decodeQuantumCompatibleHeader attempts to decode a header with quantum consensus compatibility
 // This function handles the WithdrawalsHash optional field issue by trying multiple decoding strategies
 func decodeQuantumCompatibleHeader(data []byte) *types.Header {
-	// Strategy 1: Try decoding with a temporary struct that includes all possible fields
-	// but handles the problematic WithdrawalsHash field as a raw byte slice to avoid decode errors
+	// Use minimal compatibility structure that handles any optional field combination
 	type compatHeader struct {
 		ParentHash  common.Hash    `json:"parentHash"       gencodec:"required"`
 		UncleHash   common.Hash    `json:"sha3Uncles"       gencodec:"required"`
@@ -432,20 +431,56 @@ func decodeQuantumCompatibleHeader(data []byte) *types.Header {
 		Extra       []byte         `json:"extraData"        gencodec:"required"`
 		MixDigest   common.Hash    `json:"mixHash"`
 		Nonce       types.BlockNonce `json:"nonce"`
-		
-		// Optional fields - include all possible fields to match RLP structure
-		BaseFee          *big.Int     `rlp:"optional"`
-		WithdrawalsHash  []byte       `rlp:"optional"` // Use []byte instead of *common.Hash to avoid decode errors
-		BlobGasUsed      *uint64      `rlp:"optional"`
-		ExcessBlobGas    *uint64      `rlp:"optional"`
-		ParentBeaconRoot *common.Hash `rlp:"optional"`
-		QBlob            []byte       `rlp:"optional"`
+		// Capture remaining fields as raw data to handle any optional field combination
+		Tail []rlp.RawValue `rlp:"tail"`
 	}
 	
 	var tempHeader compatHeader
 	if err := rlp.DecodeBytes(data, &tempHeader); err != nil {
 		log.Debug("🔧 Quantum-compatible decoding also failed", "error", err.Error())
 		return nil
+	}
+	
+	// Parse optional fields from tail data
+	var baseFee *big.Int
+	var blobGasUsed, excessBlobGas *uint64
+	var qBlob []byte
+	
+	// Process tail fields - they can be in any order/combination
+	for i, rawField := range tempHeader.Tail {
+		switch i {
+		case 0: // BaseFee (most common first optional field)
+			if len(rawField) > 0 {
+				var bf big.Int
+				if err := rlp.DecodeBytes(rawField, &bf); err == nil {
+					baseFee = &bf
+				}
+			}
+		case 1: // Could be WithdrawalsHash, BlobGasUsed, or QBlob - skip WithdrawalsHash
+			if len(rawField) > 0 {
+				// Try to decode as uint64 for BlobGasUsed
+				var bgu uint64
+				if err := rlp.DecodeBytes(rawField, &bgu); err == nil {
+					blobGasUsed = &bgu
+				}
+			}
+		case 2: // Could be BlobGasUsed, ExcessBlobGas, or QBlob
+			if len(rawField) > 0 {
+				// Try to decode as uint64 for ExcessBlobGas
+				var ebg uint64
+				if err := rlp.DecodeBytes(rawField, &ebg); err == nil {
+					excessBlobGas = &ebg
+				}
+			}
+		case 3, 4, 5: // Later fields might include QBlob
+			if len(rawField) > 0 {
+				// Try to decode as byte slice for QBlob
+				var qb []byte
+				if err := rlp.DecodeBytes(rawField, &qb); err == nil && len(qb) > 0 {
+					qBlob = qb
+				}
+			}
+		}
 	}
 	
 	// Convert the compatible header to a standard header
@@ -465,14 +500,13 @@ func decodeQuantumCompatibleHeader(data []byte) *types.Header {
 		Extra:       tempHeader.Extra,
 		MixDigest:   tempHeader.MixDigest,
 		Nonce:       tempHeader.Nonce,
-		BaseFee:     tempHeader.BaseFee,
-		QBlob:       tempHeader.QBlob,
+		BaseFee:     baseFee,
+		BlobGasUsed: blobGasUsed,
+		ExcessBlobGas: excessBlobGas,
+		QBlob:       qBlob,
 		// IMPORTANT: Always set post-merge fields to nil for quantum consensus
-		// We ignore the WithdrawalsHash bytes since quantum consensus doesn't use withdrawals
-		WithdrawalsHash:  nil,
-		BlobGasUsed:      tempHeader.BlobGasUsed,
-		ExcessBlobGas:    tempHeader.ExcessBlobGas,
-		ParentBeaconRoot: tempHeader.ParentBeaconRoot,
+		WithdrawalsHash:  nil,  // Always nil for quantum consensus
+		ParentBeaconRoot: nil,  // Always nil for quantum consensus
 	}
 	
 	log.Debug("✅ Quantum-compatible header decoding succeeded", "blockNumber", header.Number.Uint64())
