@@ -194,8 +194,8 @@ if [ -f /proc/meminfo ]; then
     echo ""
     
     # Add tolerance margin - 50MB difference is acceptable
-    local tolerance_mb=50
-    local effective_required=$((REQUIRED_MB - tolerance_mb))
+    tolerance_mb=50
+    effective_required=$((REQUIRED_MB - tolerance_mb))
     
     if [ $CURRENT_TOTAL -lt $effective_required ]; then
         local deficit=$((REQUIRED_MB - CURRENT_TOTAL))
@@ -387,13 +387,13 @@ fi
 FINAL_TOTAL=$((TOTAL_MB + FINAL_SWAP_TOTAL))
 
 # Apply same tolerance logic for final check
-local final_tolerance_mb=50
-local final_effective_required=$((REQUIRED_MB - final_tolerance_mb))
+final_tolerance_mb=50
+final_effective_required=$((REQUIRED_MB - final_tolerance_mb))
 
 if [ $FINAL_TOTAL -ge $final_effective_required ]; then
     print_success "✅ VPS is ready for building Q Geth!"
     if [ $FINAL_TOTAL -lt $REQUIRED_MB ]; then
-        local final_deficit=$((REQUIRED_MB - FINAL_TOTAL))
+        final_deficit=$((REQUIRED_MB - FINAL_TOTAL))
         echo "  (${final_deficit}MB under target, but within ${final_tolerance_mb}MB tolerance)"
     fi
     echo ""

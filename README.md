@@ -34,12 +34,14 @@ wget -qO- https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qg
 # This single command:
 # ✅ Installs all dependencies (git, curl, golang, build tools)
 # ✅ Downloads the Q Geth repository automatically
-# ✅ Prepares VPS (memory checks, swap creation, firewall)
+# ✅ Prepares VPS (memory checks, swap creation with 50MB tolerance, firewall)
 # ✅ Builds and configures Q Geth with auto-updating service
 # ✅ Sets up crash recovery and GitHub monitoring
+# ✅ Handles 4095MB vs 4096MB memory requirements automatically
 # No manual git clone, chmod, or dependency installation needed!
 
-# Use -y flag for completely unattended installation - perfect for automated deployments!
+# 🚀 RECOMMENDED: Use -y flag for completely unattended installation!
+# Perfect for automated deployments and resolves memory confirmation prompts.
 ```
 
 **Option 2: Full Auto-Service (Manual Clone)**
@@ -568,6 +570,171 @@ nvidia-smi -l 1  # For GPU VPS
 curl -X POST -H "Content-Type: application/json" \
   --data '{"jsonrpc":"2.0","method":"eth_syncing","params":[],"id":1}' \
   http://localhost:8545
+```
+
+## 🛠️ Troubleshooting
+
+### Memory Issues on VPS
+
+**Common Issue: "Insufficient total memory" with 4095MB vs 4096MB Required**
+
+The build system has a **50MB tolerance** built-in to handle small memory deficits:
+
+```bash
+# This scenario is automatically handled:
+💾 Memory Check:
+  RAM: 961MB
+  Swap: 3134MB  
+  Total Available: 4095MB
+  Required Total: 4096MB (4GB)
+  Deficit: 1MB
+
+💡 Memory within tolerance range
+   Current total: 4095MB
+   Required total: 4096MB
+   Deficit: 1MB (within 50MB tolerance)
+   ✅ Proceeding with build - memory difference is acceptable
+```
+
+**If you see this error anyway:**
+- The scripts have been fixed to handle minor deficits automatically
+- Run with `-y` flag for non-interactive mode: `./bootstrap-qgeth.sh -y` or `./auto-geth-service.sh -y`
+- Update your scripts: `git pull origin main`
+
+### Bash Syntax Errors
+
+**Error: "local: can only be used in a function"**
+
+This has been fixed in the latest version. Update your scripts:
+```bash
+cd Qgeth3
+git pull origin main
+chmod +x *.sh
+```
+
+### Bootstrap/Auto-Service Issues
+
+**Bootstrap hangs on memory prompts:**
+```bash
+# Use non-interactive mode (auto-confirms all prompts)
+curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qgeth.sh | sudo bash -s -- -y
+
+# This automatically:
+# ✅ Skips all manual confirmations
+# ✅ Creates swap if needed (within tolerance)
+# ✅ Installs dependencies automatically
+# ✅ Sets up the complete auto-service
+```
+
+**Service not starting after auto-setup:**
+```bash
+# Check service status
+qgeth-service status
+
+# Manual start if needed
+qgeth-service start
+
+# Check logs for issues
+qgeth-service logs geth
+qgeth-service logs github
+```
+
+### Low-Memory VPS Issues
+
+**Build fails with "killed" or "out of memory":**
+```bash
+# Automatic fix - run prepare-vps.sh first
+sudo ./prepare-vps.sh -y
+
+# Manual fix - add swap space
+sudo fallocate -l 3G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+
+# Verify swap is active
+free -h
+```
+
+**Build system tolerance features:**
+- **Memory Tolerance:** 50MB under requirement is acceptable (e.g., 4095MB vs 4096MB required)
+- **Automatic Swap Creation:** Creates exact amount needed to reach 4GB total
+- **Smart Fallback:** Uses local temp directories if `/tmp` is full
+- **Build Verification:** Tests binaries before declaring success
+
+### Network/Sync Issues
+
+**Peers not connecting or sync failures:**
+```bash
+# Check if geth is running
+qgeth-service status
+
+# Check if ports are open (for VPS)
+sudo ufw status
+# Should show: 8545/tcp, 30303/tcp, 8546/tcp ALLOW
+
+# Test network connectivity
+curl -X POST -H "Content-Type: application/json" \
+  --data '{"jsonrpc":"2.0","method":"net_peerCount","params":[],"id":1}' \
+  http://localhost:8545
+```
+
+**Auto-update not working:**
+```bash
+# Check GitHub monitor
+qgeth-service logs github
+
+# Manual update trigger
+qgeth-service update
+
+# Reset crash counter if needed
+qgeth-service reset-crashes
+```
+
+### GPU Mining Issues
+
+**GPU not detected on Linux:**
+```bash
+# Install CUDA development tools
+sudo apt install nvidia-cuda-toolkit nvidia-cuda-dev
+
+# Install Qiskit-Aer GPU support
+pip3 install qiskit-aer
+
+# Verify GPU is available
+nvidia-smi
+python3 -c "from qiskit_aer import AerSimulator; print(AerSimulator(device='GPU'))"
+
+# Force rebuild with GPU support
+./build-linux.sh miner --clean
+```
+
+### Service Management Issues
+
+**Commands not found after auto-setup:**
+```bash
+# Reload shell environment
+source ~/.bashrc
+
+# Or use full path
+/usr/local/bin/qgeth-service status
+
+# Or directly use systemctl
+sudo systemctl status qgeth-node.service
+```
+
+**Service fails to restart after updates:**
+```bash
+# Check logs for specific errors
+qgeth-service logs geth
+
+# Manual recovery
+sudo systemctl daemon-reload
+qgeth-service restart
+
+# If build failed, restore from backup
+ls -la /opt/qgeth/backup/
 ```
 
 ## 📁 Script Organization
