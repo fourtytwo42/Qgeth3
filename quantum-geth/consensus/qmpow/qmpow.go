@@ -468,17 +468,30 @@ func (q *QMPoW) Prepare(chain consensus.ChainHeaderReader, header *types.Header)
 				"difficulty", FormatDifficulty(header.Difficulty),
 				"puzzles", params.LNet)
 		} else {
-			// Fallback if parent not found - use genesis difficulty (200)
-			header.Difficulty = big.NewInt(200)
-			log.Info("🔗 Parent not found in Prepare, using genesis difficulty",
-				"blockNumber", header.Number.Uint64(),
-				"difficulty", header.Difficulty,
-				"fixedPuzzles", params.LNet)
+			// Fallback if parent not found - use genesis difficulty from blockchain
+			genesis := chain.GetHeaderByNumber(0)
+			if genesis != nil && genesis.Difficulty != nil {
+				header.Difficulty = new(big.Int).Set(genesis.Difficulty)
+				log.Info("🔗 Parent not found in Prepare, using genesis difficulty from blockchain",
+					"blockNumber", header.Number.Uint64(),
+					"difficulty", header.Difficulty,
+					"fixedPuzzles", params.LNet)
+			} else {
+				// Ultimate fallback if genesis is not accessible
+				header.Difficulty = big.NewInt(200)
+				log.Warn("🔗 Genesis not accessible, using default difficulty",
+					"blockNumber", header.Number.Uint64(),
+					"difficulty", header.Difficulty,
+					"fixedPuzzles", params.LNet)
+			}
 		}
 	} else {
-		// Genesis block - start with reasonable difficulty for competitive ASERT-Q mining
-		header.Difficulty = big.NewInt(1000) // Match genesis.json difficulty
-		log.Info("🌱 Genesis block difficulty set (ASERT-Q)",
+		// Genesis block - this should already be set by genesis initialization
+		// but ensure we have a reasonable difficulty if not set
+		if header.Difficulty == nil || header.Difficulty.Cmp(big.NewInt(0)) == 0 {
+			header.Difficulty = big.NewInt(200) // Default genesis difficulty
+		}
+		log.Info("🌱 Genesis block difficulty confirmed (ASERT-Q)",
 			"difficulty", header.Difficulty,
 			"fixedPuzzles", params.LNet,
 			"security", "quantum-resistant")
