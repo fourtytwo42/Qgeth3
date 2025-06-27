@@ -550,16 +550,12 @@ func (q *QMPoW) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *t
 	// First: Finalize the header (apply rewards, etc.)
 	q.Finalize(chain, header, state, txs, uncles, withdrawals)
 
-	// CRITICAL FIX: Ensure withdrawals slice matches WithdrawalsHash expectations
-	// If WithdrawalsHash is set (non-nil), we MUST provide a withdrawals slice
-	// The block validator requires this consistency
-	if header.WithdrawalsHash != nil {
-		// If WithdrawalsHash is set but withdrawals is nil, create empty slice
-		if withdrawals == nil {
-			withdrawals = make([]*types.Withdrawal, 0)
-			log.Debug("🔧 Created empty withdrawals slice to match non-nil WithdrawalsHash")
-		}
-	}
+	// CRITICAL FIX: Disable withdrawals for quantum consensus
+	// Quantum blockchains don't use post-merge Ethereum features like withdrawals
+	// Always set withdrawals to nil and ensure WithdrawalsHash is also nil
+	withdrawals = nil
+	header.WithdrawalsHash = nil
+	log.Debug("🔧 Withdrawals disabled for quantum consensus")
 
 	// CRITICAL FIX: Set the final state root AFTER Finalize() completes
 	// This follows the standard pattern used by all other consensus engines
@@ -712,11 +708,10 @@ func (q *QMPoW) initializeOptionalFields(header *types.Header) {
 		header.BaseFee = big.NewInt(0)
 	}
 	
-	// Initialize WithdrawalsHash to proper empty withdrawals hash for RLP consistency
-	// This must match what NewBlockWithWithdrawals expects for empty withdrawals
-	if header.WithdrawalsHash == nil {
-		header.WithdrawalsHash = &types.EmptyWithdrawalsHash
-	}
+	// CRITICAL FIX: Disable withdrawals for quantum consensus
+	// Withdrawals are a post-merge Ethereum feature that doesn't apply to quantum blockchains
+	// Setting WithdrawalsHash to nil ensures the block validator doesn't expect withdrawals
+	header.WithdrawalsHash = nil
 	
 	if header.BlobGasUsed == nil {
 		var zero uint64 = 0
