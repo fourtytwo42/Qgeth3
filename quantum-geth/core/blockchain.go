@@ -326,6 +326,36 @@ func NewBlockChain(db ethdb.Database, cacheConfig *CacheConfig, genesis *genesis
 		return nil, ErrNoGenesis
 	}
 
+	// CRITICAL FIX: Ensure genesis total difficulty is always accessible for sync operations
+	// This prevents "head block total difficulty not found, using zero" sync failures
+	genesisTd := bc.GetTd(bc.genesisBlock.Hash(), bc.genesisBlock.NumberU64())
+	if genesisTd == nil {
+		log.Warn("❌ Genesis total difficulty not found, storing it now",
+			"genesisHash", bc.genesisBlock.Hash().Hex(),
+			"genesisNumber", bc.genesisBlock.NumberU64(),
+			"genesisDifficulty", bc.genesisBlock.Difficulty())
+		
+		// Write genesis total difficulty to database
+		rawdb.WriteTd(bc.db, bc.genesisBlock.Hash(), bc.genesisBlock.NumberU64(), bc.genesisBlock.Difficulty())
+		
+		// Verify it was written correctly
+		verifyTd := bc.GetTd(bc.genesisBlock.Hash(), bc.genesisBlock.NumberU64())
+		if verifyTd == nil || verifyTd.Cmp(bc.genesisBlock.Difficulty()) != 0 {
+			log.Error("❌ Failed to store genesis total difficulty",
+				"expected", bc.genesisBlock.Difficulty(),
+				"stored", verifyTd)
+			return nil, fmt.Errorf("genesis total difficulty storage failed")
+		} else {
+			log.Info("✅ Genesis total difficulty stored successfully",
+				"hash", bc.genesisBlock.Hash().Hex(),
+				"td", verifyTd)
+		}
+	} else {
+		log.Debug("✅ Genesis total difficulty found",
+			"hash", bc.genesisBlock.Hash().Hex(),
+			"td", genesisTd)
+	}
+
 	bc.currentBlock.Store(nil)
 	bc.currentSnapBlock.Store(nil)
 	bc.currentFinalBlock.Store(nil)
