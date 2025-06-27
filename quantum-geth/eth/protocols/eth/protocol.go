@@ -21,11 +21,13 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"strings"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/forkid"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/ethereum/go-ethereum/log"
 )
 
 // Constants to match up protocol versions and messages
@@ -174,6 +176,149 @@ type BlockHeadersRequest []*types.Header
 type BlockHeadersPacket struct {
 	RequestId uint64
 	BlockHeadersRequest
+}
+
+// QUANTUM-GETH FIX: Custom RLP decoding for quantum consensus compatibility
+// This ensures headers with quantum fields can be properly decoded from the network
+func (p *BlockHeadersPacket) DecodeRLP(s *rlp.Stream) error {
+	// Decode the outer structure manually
+	if _, err := s.List(); err != nil {
+		return err
+	}
+	
+	// Decode RequestId
+	if err := s.Decode(&p.RequestId); err != nil {
+		return err
+	}
+	
+	// Decode headers list with quantum compatibility
+	if _, err := s.List(); err != nil {
+		return err
+	}
+	
+	var headers []*types.Header
+	for {
+		// Check if we've reached the end of the list
+		if err := s.ListEnd(); err == nil {
+			break
+		}
+		
+		// Decode each header with quantum compatibility
+		header := new(types.Header)
+		if err := s.Decode(header); err != nil {
+			// If standard decoding fails, try quantum-compatible approach
+			if strings.Contains(err.Error(), "WithdrawalsHash") || 
+			   strings.Contains(err.Error(), "input string too short") {
+				// Reset stream position and try raw decode
+				var rawHeader rlp.RawValue
+				if err := s.Decode(&rawHeader); err != nil {
+					return fmt.Errorf("quantum header decode failed: %v", err)
+				}
+				
+				// Use quantum-compatible decoding
+				header, err = decodeQuantumCompatibleHeaderFromRaw(rawHeader)
+				if err != nil {
+					return fmt.Errorf("quantum header processing failed: %v", err)
+				}
+			} else {
+				return err
+			}
+		} else {
+			// Standard decoding succeeded, ensure quantum fields are unmarshaled
+			if err := header.UnmarshalQuantumBlob(); err != nil {
+				// Don't fail on unmarshal errors for network compatibility
+				log.Debug("Header quantum blob unmarshal failed", "err", err)
+			}
+		}
+		
+		headers = append(headers, header)
+	}
+	
+	// Finish decoding the outer list
+	if err := s.ListEnd(); err != nil {
+		return err
+	}
+	
+	p.BlockHeadersRequest = headers
+	return nil
+}
+
+// decodeQuantumCompatibleHeaderFromRaw decodes a header from raw RLP with quantum compatibility
+func decodeQuantumCompatibleHeaderFromRaw(data rlp.RawValue) (*types.Header, error) {
+	// Try standard decoding first
+	header := new(types.Header)
+	if err := rlp.DecodeBytes(data, header); err != nil {
+		// If it fails with WithdrawalsHash issue, use compatible decoder
+		if strings.Contains(err.Error(), "WithdrawalsHash") || 
+		   strings.Contains(err.Error(), "input string too short") {
+			
+			// Use quantum-compatible header structure
+			type compatHeader struct {
+				ParentHash  common.Hash    `json:"parentHash"       gencodec:"required"`
+				UncleHash   common.Hash    `json:"sha3Uncles"       gencodec:"required"`
+				Coinbase    common.Address `json:"miner"`
+				Root        common.Hash    `json:"stateRoot"        gencodec:"required"`
+				TxHash      common.Hash    `json:"transactionsRoot" gencodec:"required"`
+				ReceiptHash common.Hash    `json:"receiptsRoot"     gencodec:"required"`
+				Bloom       types.Bloom    `json:"logsBloom"        gencodec:"required"`
+				Difficulty  *big.Int       `json:"difficulty"       gencodec:"required"`
+				Number      *big.Int       `json:"number"           gencodec:"required"`
+				GasLimit    uint64         `json:"gasLimit"         gencodec:"required"`
+				GasUsed     uint64         `json:"gasUsed"          gencodec:"required"`
+				Time        uint64         `json:"timestamp"        gencodec:"required"`
+				Extra       []byte         `json:"extraData"        gencodec:"required"`
+				MixDigest   common.Hash    `json:"mixHash"`
+				Nonce       types.BlockNonce `json:"nonce"`
+				
+				// Optional fields that may or may not be present
+				BaseFee       *big.Int `json:"baseFeePerGas" rlp:"optional"`
+				BlobGasUsed   *uint64  `json:"blobGasUsed"   rlp:"optional"`
+				ExcessBlobGas *uint64  `json:"excessBlobGas" rlp:"optional"`
+				
+				// Quantum fields
+				QBlob []byte `json:"qblob" rlp:"optional"`
+			}
+			
+			var compat compatHeader
+			if err := rlp.DecodeBytes(data, &compat); err != nil {
+				return nil, fmt.Errorf("quantum-compatible decode failed: %v", err)
+			}
+			
+			// Convert to standard header
+			header = &types.Header{
+				ParentHash:    compat.ParentHash,
+				UncleHash:     compat.UncleHash,
+				Coinbase:      compat.Coinbase,
+				Root:          compat.Root,
+				TxHash:        compat.TxHash,
+				ReceiptHash:   compat.ReceiptHash,
+				Bloom:         compat.Bloom,
+				Difficulty:    compat.Difficulty,
+				Number:        compat.Number,
+				GasLimit:      compat.GasLimit,
+				GasUsed:       compat.GasUsed,
+				Time:          compat.Time,
+				Extra:         compat.Extra,
+				MixDigest:     compat.MixDigest,
+				Nonce:         compat.Nonce,
+				BaseFee:       compat.BaseFee,
+				BlobGasUsed:   compat.BlobGasUsed,
+				ExcessBlobGas: compat.ExcessBlobGas,
+				QBlob:         compat.QBlob,
+				// Quantum consensus: no withdrawals
+				WithdrawalsHash: nil,
+			}
+		} else {
+			return nil, err
+		}
+	}
+	
+	// Always unmarshal quantum fields
+	if err := header.UnmarshalQuantumBlob(); err != nil {
+		log.Debug("Header quantum blob unmarshal failed during network decode", "err", err)
+	}
+	
+	return header, nil
 }
 
 // BlockHeadersRLPResponse represents a block header response, to use when we already
