@@ -272,9 +272,8 @@ func decodeQuantumCompatibleHeaderFromRaw(data rlp.RawValue) (*types.Header, err
 				MixDigest   common.Hash    `json:"mixHash"`
 				Nonce       types.BlockNonce `json:"nonce"`
 				
-				// ALL optional fields that may be present - must match exact order in Header struct
+				// Optional fields for quantum consensus (WithdrawalsHash excluded)
 				BaseFee          *big.Int     `json:"baseFeePerGas"         rlp:"optional"`
-				WithdrawalsHash  *common.Hash `json:"withdrawalsRoot"       rlp:"optional"`
 				BlobGasUsed      *uint64      `json:"blobGasUsed"           rlp:"optional"`
 				ExcessBlobGas    *uint64      `json:"excessBlobGas"         rlp:"optional"`
 				ParentBeaconRoot *common.Hash `json:"parentBeaconBlockRoot" rlp:"optional"`
@@ -403,9 +402,8 @@ type compatHeaderForBlock struct {
 	MixDigest   common.Hash    `json:"mixHash"`
 	Nonce       types.BlockNonce `json:"nonce"`
 	
-	// ALL optional fields that may be present - must match exact order in Header struct
+	// Optional fields for quantum consensus (WithdrawalsHash excluded)
 	BaseFee          *big.Int     `json:"baseFeePerGas"         rlp:"optional"`
-	WithdrawalsHash  *common.Hash `json:"withdrawalsRoot"       rlp:"optional"`
 	BlobGasUsed      *uint64      `json:"blobGasUsed"           rlp:"optional"`
 	ExcessBlobGas    *uint64      `json:"excessBlobGas"         rlp:"optional"`
 	ParentBeaconRoot *common.Hash `json:"parentBeaconBlockRoot" rlp:"optional"`
