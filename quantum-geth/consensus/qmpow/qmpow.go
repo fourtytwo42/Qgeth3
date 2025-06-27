@@ -442,67 +442,30 @@ func (q *QMPoW) Finalize(chain consensus.ChainHeaderReader, header *types.Header
 	epoch := uint32(blockNumber / HalvingEpochSize)
 	subsidyQGC := CalculateBlockSubsidy(epoch)
 	// Convert QGC to wei (1 QGC = 10^18 wei)
-	subsidyBig := new(big.Float).SetFloat64(subsidyQGC)
-	weiBig := new(big.Float).Mul(subsidyBig, big.NewFloat(1e18))
-	subsidyWei, _ := weiBig.Int(nil)
+	subsidyBig := new(big.Int).Mul(big.NewInt(int64(subsidyQGC)), big.NewInt(1e18))
 
-	// Calculate transaction fees (simplified without receipts)
+	// For now, assume zero transaction fees (in production, calculate from receipts)
 	totalFees := big.NewInt(0)
-	for _, tx := range txs {
-		gasPrice := tx.GasPrice()
-		if gasPrice != nil {
-			// Estimate fee = gasPrice * gasLimit (simplified)
-			txFee := new(big.Int).Mul(gasPrice, big.NewInt(int64(tx.Gas())))
-			totalFees.Add(totalFees, txFee)
-		}
-	}
 
 	// Total reward = subsidy + fees
-	totalReward := new(big.Int).Add(subsidyWei, totalFees)
+	totalReward := new(big.Int).Add(subsidyBig, totalFees)
 
-	// Award total reward to coinbase
+	// Add mining reward to coinbase
 	state.AddBalance(header.Coinbase, uint256.MustFromBig(totalReward))
-
-	// Handle uncle rewards (if any)
-	for _, uncle := range uncles {
-		// Uncle reward is 1/32 of block subsidy (following Ethereum tradition)
-		uncleReward := new(big.Int).Div(subsidyWei, big.NewInt(32))
-		state.AddBalance(uncle.Coinbase, uint256.MustFromBig(uncleReward))
-	}
-
-	// Log halving events
-	if blockNumber > 0 && blockNumber%HalvingEpochSize == 0 {
-		prevSubsidy := CalculateBlockSubsidy(epoch - 1)
-		log.Warn("🎉 HALVING EVENT!",
-			"blockNumber", blockNumber,
-			"epoch", epoch,
-			"previousSubsidy", prevSubsidy,
-			"newSubsidy", subsidyQGC,
-			"reductionFactor", "2x")
-	}
 
 	log.Info("💰 Block reward applied",
 		"blockNumber", blockNumber,
 		"epoch", epoch,
 		"subsidyQGC", subsidyQGC,
-		"subsidyWei", subsidyWei,
+		"subsidyWei", subsidyBig,
 		"transactionFees", totalFees,
 		"totalReward", totalReward,
 		"coinbase", header.Coinbase.Hex())
 	
-	// CRITICAL FIX: Commit the state and set the actual committed root
-	// This ensures the header state root matches what's actually in the database
-	// Previously we used IntermediateRoot() which could differ from the committed root
-	committedRoot, err := state.Commit(blockNumber, chain.Config().IsEnabled(chain.Config().GetEIP161dTransition, header.Number))
-	if err != nil {
-		log.Crit("Failed to commit state in Finalize", "err", err, "blockNumber", blockNumber)
-	}
-	header.Root = committedRoot
-	
-	log.Debug("🔗 State committed in Finalize", 
-		"blockNumber", blockNumber,
-		"committedRoot", committedRoot.Hex(),
-		"headerRoot", header.Root.Hex())
+	// NOTE: Do NOT set header.Root here - this will be done in FinalizeAndAssemble()
+	// following the standard consensus engine pattern used by Clique, Lyra2, Beacon, etc.
+	log.Debug("🔗 Finalize completed - state modifications applied", 
+		"blockNumber", blockNumber)
 }
 
 // FinalizeAndAssemble runs any post-transaction state modifications and assembles the final block
@@ -510,7 +473,7 @@ func (q *QMPoW) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *t
 	txs []*types.Transaction, uncles []*types.Header, receipts []*types.Receipt,
 	withdrawals []*types.Withdrawal) (*types.Block, error) {
 
-	// Finalize the header
+	// First: Finalize the header (apply rewards, etc.)
 	q.Finalize(chain, header, state, txs, uncles, withdrawals)
 
 	// CRITICAL FIX: Ensure withdrawals slice matches WithdrawalsHash expectations
@@ -523,6 +486,15 @@ func (q *QMPoW) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *t
 			log.Debug("🔧 Created empty withdrawals slice to match non-nil WithdrawalsHash")
 		}
 	}
+
+	// CRITICAL FIX: Set the final state root AFTER Finalize() completes
+	// This follows the standard pattern used by all other consensus engines
+	// and ensures the header state root matches the actual state
+	header.Root = state.IntermediateRoot(chain.Config().IsEnabled(chain.Config().GetEIP161dTransition, header.Number))
+	
+	log.Debug("🔗 State root set in FinalizeAndAssemble", 
+		"blockNumber", header.Number.Uint64(),
+		"stateRoot", header.Root.Hex())
 
 	// Assemble and return the final block
 	return types.NewBlockWithWithdrawals(header, txs, uncles, receipts, withdrawals, nil), nil
