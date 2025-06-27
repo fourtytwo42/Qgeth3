@@ -2,6 +2,7 @@
 # Build script for Q Coin Linux Binaries
 # Ensures complete compatibility between Windows and Linux builds
 # Handles minimal Linux environments with missing utilities
+# Optimized for low-memory VPS environments (requires minimum 3GB RAM)
 # Usage: ./build-linux.sh [geth|miner|both] [--clean]
 
 # Set robust PATH for minimal Linux environments
@@ -11,16 +12,125 @@ TARGET=${1:-both}
 CLEAN=${2:-false}
 VERSION="1.0.0"
 
-echo "🔨 Building Q Coin Linux Binaries..."
+echo "🔨 Building Q Coin Linux Binaries (Memory-Optimized)..."
 echo "Target: $TARGET"
 echo "Version: $VERSION"
 echo ""
+
+# Memory check function
+check_memory() {
+    local required_mb=3072  # 3GB minimum
+    local available_mb=0
+    
+    if [ -f /proc/meminfo ]; then
+        # Get available memory in MB
+        local mem_total=$(grep MemTotal /proc/meminfo | awk '{print $2}')
+        local mem_available=$(grep MemAvailable /proc/meminfo | awk '{print $2}')
+        
+        if [ -n "$mem_available" ]; then
+            available_mb=$((mem_available / 1024))
+        elif [ -n "$mem_total" ]; then
+            # Fallback to total memory if MemAvailable not available
+            available_mb=$((mem_total / 1024))
+        fi
+        
+        echo "💾 Memory Check:"
+        echo "  Available RAM: ${available_mb}MB"
+        echo "  Required RAM: ${required_mb}MB"
+        
+        if [ $available_mb -lt $required_mb ]; then
+            echo "⚠️  WARNING: Low memory detected!"
+            echo "   Available: ${available_mb}MB"
+            echo "   Required: ${required_mb}MB"
+            echo ""
+            echo "🔧 Recommendations:"
+            echo "  1. Close unnecessary programs"
+            echo "  2. Add swap space: sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile"
+            echo "  3. Use a VPS with at least 4GB RAM"
+            echo ""
+            echo -n "Continue anyway? (y/N): "
+            read -r RESPONSE
+            if [[ ! "$RESPONSE" =~ ^([yY][eE][sS]|[yY])$ ]]; then
+                echo "Build aborted."
+                exit 1
+            fi
+        else
+            echo "✅ Memory check passed"
+        fi
+    else
+        echo "⚠️  Cannot check memory - /proc/meminfo not found"
+    fi
+    echo ""
+}
+
+# Setup temporary build directory
+setup_temp_build() {
+    # Create temporary build directory
+    BUILD_TEMP_DIR="/tmp/qgeth-build-$$"
+    mkdir -p "$BUILD_TEMP_DIR"
+    
+    # Set Go build cache and temp directories
+    export GOCACHE="$BUILD_TEMP_DIR/gocache"
+    export GOTMPDIR="$BUILD_TEMP_DIR/gotmp"
+    export TMPDIR="$BUILD_TEMP_DIR/tmp"
+    
+    # Create directories
+    mkdir -p "$GOCACHE" "$GOTMPDIR" "$TMPDIR"
+    
+    echo "🗂️  Temporary Build Setup:"
+    echo "  Build Temp Dir: $BUILD_TEMP_DIR"
+    echo "  Go Cache: $GOCACHE"
+    echo "  Go Temp: $GOTMPDIR"
+    echo "  System Temp: $TMPDIR"
+    echo ""
+    
+    # Cleanup function
+    cleanup_temp() {
+        echo "🧹 Cleaning up temporary build directory..."
+        rm -rf "$BUILD_TEMP_DIR" 2>/dev/null || true
+        echo "✅ Temporary files cleaned up"
+    }
+    
+    # Set trap for cleanup on exit
+    trap cleanup_temp EXIT
+}
+
+# Memory-efficient build flags
+get_build_flags() {
+    # Memory-efficient linker flags
+    local ldflags="-s -w"
+    ldflags="$ldflags -X 'main.VERSION=$VERSION'"
+    ldflags="$ldflags -X 'main.BUILD_TIME=$BUILD_TIME'"
+    ldflags="$ldflags -X 'main.GIT_COMMIT=$GIT_COMMIT'"
+    
+    # Memory optimization flags
+    BUILD_FLAGS="-ldflags=\"$ldflags\""
+    BUILD_FLAGS="$BUILD_FLAGS -trimpath"          # Remove absolute paths
+    BUILD_FLAGS="$BUILD_FLAGS -buildvcs=false"    # Disable VCS info
+    
+    echo "🔧 Memory-Optimized Build Flags:"
+    echo "  Linker: $ldflags"
+    echo "  Trimpath: enabled"
+    echo "  VCS info: disabled"
+    echo "  Cache: $GOCACHE"
+    echo ""
+}
+
+# Run memory check
+check_memory
+
+# Setup temporary build environment
+setup_temp_build
 
 # Clean previous builds if requested
 if [ "$CLEAN" = "--clean" ] || [ "$2" = "--clean" ]; then
     echo "🧹 Cleaning previous builds..."
     rm -f geth geth.bin quantum-miner quantum_solver.py
     echo "  Previous binaries removed"
+    
+    # Clean Go cache
+    go clean -cache 2>/dev/null || true
+    echo "  Go cache cleaned"
 fi
 
 # Check directories exist
@@ -57,6 +167,9 @@ fi
 
 CURRENT_DIR=$(pwd)
 
+# Get memory-efficient build flags
+get_build_flags
+
 echo "🏗️  Build Environment:"
 echo "  Target OS: linux/amd64"
 echo "  Build Time: $BUILD_TIME"
@@ -65,9 +178,9 @@ echo "  Output Directory: $CURRENT_DIR"
 echo "  PATH: $PATH"
 echo ""
 
-# Function to build quantum-geth
+# Function to build quantum-geth with memory optimization
 build_geth() {
-    echo "🔗 Building Quantum-Geth..."
+    echo "🔗 Building Quantum-Geth (Memory-Optimized)..."
     
     # Check if go.mod exists
     if [ ! -f "quantum-geth/go.mod" ]; then
@@ -83,9 +196,13 @@ build_geth() {
     
     echo "🛡️  Enforcing CGO_ENABLED=0 for geth build (quantum field compatibility)"
     echo "    This ensures identical quantum field handling as Windows builds"
+    echo "💾 Using temporary directory: $BUILD_TEMP_DIR"
     
     cd quantum-geth/cmd/geth
-    if CGO_ENABLED=0 go build -ldflags "-s -w -X 'main.VERSION=$VERSION' -X 'main.BUILD_TIME=$BUILD_TIME' -X 'main.GIT_COMMIT=$GIT_COMMIT'" -o ../../../geth.bin .; then
+    
+    # Memory-efficient build command
+    echo "🔨 Building with memory optimization..."
+    if CGO_ENABLED=0 go build $BUILD_FLAGS -o ../../../geth.bin .; then
         cd ../../..
         echo "✅ Quantum-Geth built successfully: ./geth.bin (CGO_ENABLED=0)"
         
@@ -108,9 +225,9 @@ build_geth() {
     export CGO_ENABLED=$ORIGINAL_CGO
 }
 
-# Function to build quantum-miner
+# Function to build quantum-miner with memory optimization
 build_miner() {
-    echo "⚡ Building Quantum-Miner..."
+    echo "⚡ Building Quantum-Miner (Memory-Optimized)..."
     
     # Check if go.mod exists
     if [ ! -f "quantum-miner/go.mod" ]; then
@@ -155,12 +272,13 @@ build_miner() {
     echo "  GPU Type: $GPU_TYPE"
     echo "  Build Tags: ${BUILD_TAGS:-none}"
     echo "  CGO Enabled: $CGO_ENABLED"
+    echo "💾 Using temporary directory: $BUILD_TEMP_DIR"
     echo ""
     
     cd quantum-miner
     
-    # Build with appropriate tags
-    BUILD_CMD="go build -ldflags \"-s -w -X 'main.VERSION=$VERSION' -X 'main.BUILD_TIME=$BUILD_TIME' -X 'main.GIT_COMMIT=$GIT_COMMIT'\""
+    # Build with appropriate tags and memory optimization
+    BUILD_CMD="go build $BUILD_FLAGS"
     if [ -n "$BUILD_TAGS" ]; then
         BUILD_CMD="$BUILD_CMD -tags $BUILD_TAGS"
     fi
@@ -381,7 +499,7 @@ create_solver() {
         echo '        "gate_hash": gate_hash,'
         echo '        "quantum_blob": quantum_blob,'
         echo '        "total_gates": puzzle_count * 20,'
-echo '        "t_gates": puzzle_count * 20,'
+        echo '        "t_gates": puzzle_count * 20,'
         echo '        "circuit_depth": 16,'
         echo '        "measurements": all_outcomes,'
         echo '        "success": True'

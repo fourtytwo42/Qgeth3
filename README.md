@@ -19,6 +19,29 @@ A complete quantum blockchain platform featuring **Q Coin** testnet with **Quant
 ```
 
 ### Linux Quick Start
+
+**Option 1: Full Auto-Service (Recommended for VPS)**
+```bash
+# One-command setup: VPS prep + auto-updating service
+git clone https://github.com/fourtytwo42/Qgeth3.git
+cd Qgeth3
+sudo ./auto-geth-service.sh
+
+# This automatically:
+# ✅ Prepares VPS (memory checks, swap, dependencies)
+# ✅ Clones, builds, and runs Q Geth
+# ✅ Sets up GitHub monitoring (checks every 5 minutes)
+# ✅ Auto-updates on new commits to main branch
+# ✅ Crash recovery with 5-minute retry
+# ✅ Persistent systemd service
+
+# Management commands:
+qgeth-service start     # Start the service
+qgeth-service status    # Check status
+qgeth-service logs geth # View logs
+```
+
+**Option 2: Manual Setup**
 ```bash
 # Install dependencies (Ubuntu/Debian)
 sudo apt update && sudo apt install -y golang-go python3 python3-pip git
@@ -27,6 +50,11 @@ sudo apt update && sudo apt install -y golang-go python3 python3-pip git
 git clone https://github.com/fourtytwo42/Qgeth3.git
 cd Qgeth3
 chmod +x *.sh
+
+# For low-memory VPS (<3GB RAM), prepare system first
+sudo ./prepare-vps.sh  # Auto-checks memory and creates swap if needed
+
+# Build with memory optimization
 ./build-linux.sh both
 
 # Start testnet node
@@ -213,6 +241,116 @@ python3 -c "from qiskit_aer import AerSimulator; print(AerSimulator(device='GPU'
 - Replace `$HOME/.qcoin/geth.ipc` with your actual IPC file path if different.
 - For devnet: `$HOME/.qcoin/devnet/geth.ipc`
 - This opens the interactive geth console for direct blockchain commands.
+
+## 🤖 Auto-Updating Service (Recommended for VPS)
+
+### Complete Auto-Service Setup
+
+The `auto-geth-service.sh` script provides a complete "set it and forget it" solution for VPS deployments:
+
+```bash
+# One command sets up everything
+git clone https://github.com/fourtytwo42/Qgeth3.git
+cd Qgeth3
+sudo ./auto-geth-service.sh
+```
+
+**What it does:**
+1. **VPS Preparation** - Runs `prepare-vps.sh` or creates basic setup
+2. **UFW Firewall Setup** - Configures and enables firewall with required ports:
+   - Port 22 (SSH) - Remote access
+   - Port 8545 (HTTP RPC) - Geth API access
+   - Port 30303 (P2P TCP/UDP) - Blockchain networking
+   - Port 8546 (WebSocket) - WebSocket API access
+3. **Memory Optimization** - Checks RAM, creates swap if needed (<3GB RAM)
+4. **Dependency Installation** - Installs Go, Git, build tools, systemd
+5. **Project Setup** - Clones repo to `/opt/qgeth/Qgeth3`
+6. **Initial Build** - Builds geth with memory optimization
+7. **Service Creation** - Creates 3 systemd services:
+   - `qgeth-node.service` - Main geth service with crash recovery
+   - `qgeth-github-monitor.service` - Monitors GitHub for updates
+   - `qgeth-updater.service` - Handles updates when triggered
+8. **Auto-Start Setup** - Enables services to start on boot
+
+### Service Management Commands
+
+```bash
+# Service control
+qgeth-service start         # Start both geth and GitHub monitor
+qgeth-service stop          # Stop all services
+qgeth-service restart       # Restart all services
+qgeth-service status        # Show status of all services
+
+# Monitoring
+qgeth-service logs geth     # Follow geth logs
+qgeth-service logs github   # Follow GitHub monitor logs
+qgeth-service logs update   # Follow update logs
+qgeth-service logs all      # Follow all logs
+
+# Maintenance
+qgeth-service update        # Trigger manual update
+qgeth-service reset-crashes # Reset crash counter
+qgeth-service version       # Show geth version
+```
+
+### Auto-Service Features
+
+**✅ GitHub Auto-Updates:**
+- Monitors `fourtytwo42/Qgeth3` main branch every 5 minutes
+- Automatically detects new commits
+- Stops geth → pulls latest → builds → restarts
+- Keeps backups of last 5 versions
+- Restores from backup if build fails
+
+**✅ Crash Recovery:**
+- Automatically restarts geth if it crashes
+- 5-minute delay between restart attempts
+- Infinite retries (until manually stopped)
+- After 3+ crashes, triggers auto-update (fixes potential issues)
+- Tracks crash count in `/opt/qgeth/logs/crash_count.txt`
+
+**✅ Memory-Optimized Building:**
+- Uses temporary directories for build artifacts
+- Automatically creates 2GB swap on low-memory VPS
+- Memory-efficient compiler flags
+- Build verification before restarting service
+
+**✅ Persistent Operation:**
+- Services start automatically on VPS boot
+- Runs with specific user (not root)
+- Proper systemd integration
+- Log rotation and backup management
+
+### Configuration
+
+The service runs with these defaults:
+- **Network:** `testnet` (Q Coin Testnet)
+- **API:** `--http.corsdomain "*" --http.api "eth,net,web3,personal,txpool"`
+- **GitHub Check:** Every 5 minutes
+- **Crash Retry:** Every 5 minutes
+- **Logs:** `/opt/qgeth/logs/`
+- **Backups:** `/opt/qgeth/backup/` (keeps last 5)
+
+### File Locations
+
+```
+/opt/qgeth/
+├── Qgeth3/                    # Main project directory
+├── logs/
+│   ├── geth-runner.log        # Geth service logs
+│   ├── geth-output.log        # Geth stdout
+│   ├── geth-error.log         # Geth stderr
+│   ├── github-monitor.log     # GitHub monitoring
+│   ├── update.log             # Update process logs
+│   └── crash_count.txt        # Crash counter
+├── backup/
+│   ├── Qgeth3_20240101_120000/
+│   └── ...                    # Auto-backups
+└── scripts/
+    ├── github-monitor.sh      # GitHub monitoring script
+    ├── update-geth.sh         # Update handler
+    └── run-geth.sh            # Geth runner with crash recovery
+```
 
 ## 🌐 VPS Deployment Guide
 
@@ -423,7 +561,9 @@ curl -X POST -H "Content-Type: application/json" \
 
 **Build Scripts:**
 - `build-release.ps1` - Windows release builder
-- `build-linux.sh` - Linux build system with GPU auto-detection
+- `build-linux.sh` - Linux build system with GPU auto-detection and memory optimization
+- `prepare-vps.sh` - 🆕 VPS preparation script with automatic memory management
+- `auto-geth-service.sh` - 🆕 Complete auto-updating service setup (one-command VPS setup)
 
 ## 🏗️ Release Build System
 
@@ -489,7 +629,9 @@ Qgeth3/
 │   └── quantum-miner-*/  # Standalone miner distributions
 ├── scripts/               # Blockchain management scripts
 ├── build-release.ps1     # 🆕 Professional build system (Windows)
-├── build-linux.sh        # 🆕 Linux build system with GPU detection
+├── build-linux.sh        # 🆕 Linux build system with GPU detection & memory optimization
+├── prepare-vps.sh         # 🆕 VPS preparation script with automatic memory management
+├── auto-geth-service.sh   # 🆕 Complete auto-updating service setup (one-command VPS)
 ├── start-geth.sh         # 🐧 Linux geth launcher
 ├── start-linux-miner.sh  # 🐧 Linux smart miner launcher
 ├── geth                   # 🐧 Linux binary (created by build-linux.sh)
