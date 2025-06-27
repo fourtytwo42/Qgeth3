@@ -74,7 +74,7 @@ $configs = @{
     }
     "testnet" = @{
         chainid = 73235
-        datadir = "$env:APPDATA\Qcoin"
+        datadir = "$env:APPDATA\Qcoin\testnet"
         genesis = "genesis_quantum_testnet.json"
         port = 30303
         name = "Q Coin Testnet"

@@ -95,7 +95,7 @@ case $NETWORK in
         ;;
     testnet)
         CHAINID=73235
-        DATADIR="$HOME/.qcoin"
+        DATADIR="$HOME/.qcoin/testnet"
         GENESIS="genesis_quantum_testnet.json"
         PORT=30303
         NAME="Q Coin Testnet"
