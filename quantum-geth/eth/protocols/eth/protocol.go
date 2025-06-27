@@ -272,11 +272,10 @@ func decodeQuantumCompatibleHeaderFromRaw(data rlp.RawValue) (*types.Header, err
 				MixDigest   common.Hash    `json:"mixHash"`
 				Nonce       types.BlockNonce `json:"nonce"`
 				
-				// Optional fields for quantum consensus (WithdrawalsHash excluded)
+				// Optional fields for quantum consensus (WithdrawalsHash and ParentBeaconRoot excluded)
 				BaseFee          *big.Int     `json:"baseFeePerGas"         rlp:"optional"`
 				BlobGasUsed      *uint64      `json:"blobGasUsed"           rlp:"optional"`
 				ExcessBlobGas    *uint64      `json:"excessBlobGas"         rlp:"optional"`
-				ParentBeaconRoot *common.Hash `json:"parentBeaconBlockRoot" rlp:"optional"`
 				QBlob            []byte       `json:"qBlob"                 rlp:"optional"`
 			}
 			
@@ -305,10 +304,10 @@ func decodeQuantumCompatibleHeaderFromRaw(data rlp.RawValue) (*types.Header, err
 				BaseFee:          compat.BaseFee,
 				BlobGasUsed:      compat.BlobGasUsed,
 				ExcessBlobGas:    compat.ExcessBlobGas,
-				ParentBeaconRoot: compat.ParentBeaconRoot,
 				QBlob:            compat.QBlob,
-				// CRITICAL: Quantum consensus doesn't use withdrawals - always set to nil
-				WithdrawalsHash: nil,
+				// CRITICAL: Quantum consensus doesn't use post-merge fields
+				WithdrawalsHash:  nil,
+				ParentBeaconRoot: nil,
 			}
 		} else {
 			return nil, err
@@ -402,11 +401,10 @@ type compatHeaderForBlock struct {
 	MixDigest   common.Hash    `json:"mixHash"`
 	Nonce       types.BlockNonce `json:"nonce"`
 	
-	// Optional fields for quantum consensus (WithdrawalsHash excluded)
+	// Optional fields for quantum consensus (WithdrawalsHash and ParentBeaconRoot excluded)
 	BaseFee          *big.Int     `json:"baseFeePerGas"         rlp:"optional"`
 	BlobGasUsed      *uint64      `json:"blobGasUsed"           rlp:"optional"`
 	ExcessBlobGas    *uint64      `json:"excessBlobGas"         rlp:"optional"`
-	ParentBeaconRoot *common.Hash `json:"parentBeaconBlockRoot" rlp:"optional"`
 	QBlob            []byte       `json:"qBlob"                 rlp:"optional"`
 }
 
@@ -446,10 +444,10 @@ func decodeQuantumCompatibleBlockFromRaw(data rlp.RawValue) (*types.Block, error
 		BaseFee:          compatBlock.Header.BaseFee,
 		BlobGasUsed:      compatBlock.Header.BlobGasUsed,
 		ExcessBlobGas:    compatBlock.Header.ExcessBlobGas,
-		ParentBeaconRoot: compatBlock.Header.ParentBeaconRoot,
 		QBlob:            compatBlock.Header.QBlob,
-		// CRITICAL: Quantum consensus doesn't use withdrawals - always set to nil
-		WithdrawalsHash: nil,
+		// CRITICAL: Quantum consensus doesn't use post-merge fields
+		WithdrawalsHash:  nil,
+		ParentBeaconRoot: nil,
 	}
 	
 	// Convert compatible uncles to standard headers
@@ -474,10 +472,10 @@ func decodeQuantumCompatibleBlockFromRaw(data rlp.RawValue) (*types.Block, error
 			BaseFee:          compatUncle.BaseFee,
 			BlobGasUsed:      compatUncle.BlobGasUsed,
 			ExcessBlobGas:    compatUncle.ExcessBlobGas,
-			ParentBeaconRoot: compatUncle.ParentBeaconRoot,
 			QBlob:            compatUncle.QBlob,
-			// CRITICAL: Quantum consensus doesn't use withdrawals - always set to nil
-			WithdrawalsHash: nil,
+			// CRITICAL: Quantum consensus doesn't use post-merge fields
+			WithdrawalsHash:  nil,
+			ParentBeaconRoot: nil,
 		}
 		// Unmarshal quantum fields for uncle headers
 		if err := uncle.UnmarshalQuantumBlob(); err != nil {
