@@ -38,18 +38,18 @@ fi
 ACTUAL_USER=${SUDO_USER:-$USER}
 ACTUAL_HOME=$(eval echo ~$ACTUAL_USER)
 
-print_step "🚀 Setting up Q Geth Auto-Updating Node System"
+print_step "ðŸš€ Setting up Q Geth Auto-Updating Node System"
 echo "User: $ACTUAL_USER"
 echo "Project Directory: $(pwd)"
 echo ""
 
 # Install dependencies
-print_step "📦 Installing dependencies..."
+print_step "ðŸ“¦ Installing dependencies..."
 apt update -qq
 apt install -y git jq curl build-essential systemd
 
 # Create directory structure
-print_step "📁 Creating directory structure..."
+print_step "ðŸ“ Creating directory structure..."
 mkdir -p /opt/qgeth
 mkdir -p /opt/qgeth/logs
 mkdir -p /opt/qgeth/scripts
@@ -65,12 +65,12 @@ if [ -z "$GITHUB_REPO" ]; then
     read GITHUB_REPO
 fi
 
-print_step "📋 Configuration detected:"
+print_step "ðŸ“‹ Configuration detected:"
 echo "  GitHub Repository: $GITHUB_REPO"
 echo "  Project Directory: $PROJECT_DIR"
 
 # Create configuration file
-print_step "⚙️  Creating configuration..."
+print_step "âš™ï¸  Creating configuration..."
 cat > /opt/qgeth/config.env << EOF
 #!/bin/bash
 # Q Geth Node Configuration
@@ -102,7 +102,7 @@ GITHUB_LOG="\${LOG_DIR}/github-monitor.log"
 EOF
 
 # Create GitHub Monitor Script
-print_step "🔍 Creating GitHub monitor script..."
+print_step "ðŸ” Creating GitHub monitor script..."
 cat > /opt/qgeth/scripts/github-monitor.sh << 'EOF'
 #!/bin/bash
 # GitHub Monitor - Watches for changes to main branch
@@ -137,14 +137,14 @@ fi
 # Create lock file
 echo $$ > "$LOCK_FILE"
 
-log "🔍 GitHub monitor started - watching $GITHUB_REPO:$GITHUB_BRANCH"
+log "ðŸ” GitHub monitor started - watching $GITHUB_REPO:$GITHUB_BRANCH"
 
 while true; do
     # Fetch latest commit hash
     LATEST_COMMIT=$(curl -s "$GITHUB_API_URL" | jq -r '.sha' 2>/dev/null)
     
     if [ "$LATEST_COMMIT" = "null" ] || [ -z "$LATEST_COMMIT" ]; then
-        log "⚠️  Failed to fetch latest commit from GitHub"
+        log "âš ï¸  Failed to fetch latest commit from GitHub"
         sleep "$CHECK_INTERVAL"
         continue
     fi
@@ -152,7 +152,7 @@ while true; do
     # Check if this is the first run
     if [ ! -f "$LAST_COMMIT_FILE" ]; then
         echo "$LATEST_COMMIT" > "$LAST_COMMIT_FILE"
-        log "📝 Initial commit recorded: $LATEST_COMMIT"
+        log "ðŸ“ Initial commit recorded: $LATEST_COMMIT"
         sleep "$CHECK_INTERVAL"
         continue
     fi
@@ -161,7 +161,7 @@ while true; do
     LAST_COMMIT=$(cat "$LAST_COMMIT_FILE" 2>/dev/null)
     
     if [ "$LATEST_COMMIT" != "$LAST_COMMIT" ]; then
-        log "🚨 NEW COMMIT DETECTED!"
+        log "ðŸš¨ NEW COMMIT DETECTED!"
         log "   Previous: $LAST_COMMIT"
         log "   Latest:   $LATEST_COMMIT"
         
@@ -169,13 +169,13 @@ while true; do
         echo "$LATEST_COMMIT" > "$LAST_COMMIT_FILE"
         
         # Trigger update
-        log "🔄 Triggering node update..."
+        log "ðŸ”„ Triggering node update..."
         ${SCRIPTS_DIR}/update-node.sh &
         
         # Wait a bit before next check to avoid rapid updates
         sleep 60
     else
-        log "✅ No changes detected ($LATEST_COMMIT)"
+        log "âœ… No changes detected ($LATEST_COMMIT)"
     fi
     
     sleep "$CHECK_INTERVAL"
@@ -183,7 +183,7 @@ done
 EOF
 
 # Create Update Script
-print_step "🔨 Creating update script..."
+print_step "ðŸ”¨ Creating update script..."
 cat > /opt/qgeth/scripts/update-node.sh << 'EOF'
 #!/bin/bash
 # Node Update Script - Handles pulling, building, and restarting
@@ -217,41 +217,41 @@ fi
 # Create lock file
 echo $$ > "$UPDATE_LOCK_FILE"
 
-log "🔄 Starting node update process..."
+log "ðŸ”„ Starting node update process..."
 
 # Stop the geth service
-log "🛑 Stopping geth service..."
+log "ðŸ›‘ Stopping geth service..."
 sudo systemctl stop qgeth-node
 
 # Wait for graceful shutdown
 sleep 10
 
 # Backup current version
-log "💾 Creating backup..."
+log "ðŸ’¾ Creating backup..."
 TIMESTAMP=$(date '+%Y%m%d_%H%M%S')
 if [ -d "$QGETH_DIR" ]; then
     cp -r "$QGETH_DIR" "${BACKUP_DIR}/Qgeth3_${TIMESTAMP}"
-    log "✅ Backup created: Qgeth3_${TIMESTAMP}"
+    log "âœ… Backup created: Qgeth3_${TIMESTAMP}"
 fi
 
 # Pull latest changes
-log "📥 Pulling latest changes from GitHub..."
+log "ðŸ“¥ Pulling latest changes from GitHub..."
 cd /opt/qgeth
 
 if [ ! -d "$QGETH_DIR" ]; then
-    log "📦 Cloning repository..."
+    log "ðŸ“¦ Cloning repository..."
     git clone https://github.com/${GITHUB_REPO}.git
     if [ $? -ne 0 ]; then
-        log "❌ Failed to clone repository"
+        log "âŒ Failed to clone repository"
         cleanup
     fi
 else
     cd "$QGETH_DIR"
-    log "🔄 Fetching updates..."
+    log "ðŸ”„ Fetching updates..."
     git fetch origin
     git reset --hard origin/$GITHUB_BRANCH
     if [ $? -ne 0 ]; then
-        log "❌ Failed to pull updates"
+        log "âŒ Failed to pull updates"
         cleanup
     fi
 fi
@@ -259,7 +259,7 @@ fi
 cd "$QGETH_DIR"
 
 # Memory check for build
-log "💾 Checking system memory for build..."
+log "ðŸ’¾ Checking system memory for build..."
 REQUIRED_MB=3072  # 3GB minimum
 AVAILABLE_MB=0
 
@@ -276,12 +276,12 @@ if [ -f /proc/meminfo ]; then
     log "Available RAM: \${AVAILABLE_MB}MB (Required: \${REQUIRED_MB}MB)"
     
     if [ \$AVAILABLE_MB -lt \$REQUIRED_MB ]; then
-        log "⚠️  Low memory detected for building!"
+        log "âš ï¸  Low memory detected for building!"
         log "   Available: \${AVAILABLE_MB}MB, Required: \${REQUIRED_MB}MB"
         
         # Create swap file if it doesn't exist
         if [ ! -f /swapfile ]; then
-            log "🔧 Adding 2GB swap space to help with build..."
+            log "ðŸ”§ Adding 2GB swap space to help with build..."
             sudo fallocate -l 2G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1024 count=2097152
             sudo chmod 600 /swapfile
             sudo mkswap /swapfile
@@ -292,20 +292,20 @@ if [ -f /proc/meminfo ]; then
                 echo "/swapfile none swap sw 0 0" | sudo tee -a /etc/fstab >/dev/null
             fi
             
-            log "✅ Swap space added successfully"
+            log "âœ… Swap space added successfully"
         else
-            log "🔧 Ensuring swap file is active..."
+            log "ðŸ”§ Ensuring swap file is active..."
             sudo swapon /swapfile 2>/dev/null || true
         fi
     else
-        log "✅ Memory check passed"
+        log "âœ… Memory check passed"
     fi
 else
-    log "⚠️  Cannot check memory - /proc/meminfo not found"
+    log "âš ï¸  Cannot check memory - /proc/meminfo not found"
 fi
 
 # Build the new version with memory optimization
-log "🔨 Building new version with memory optimization..."
+log "ðŸ”¨ Building new version with memory optimization..."
 
 # Set memory-optimized environment
 export TMPDIR="/tmp/qgeth-update-\$\$"
@@ -322,16 +322,16 @@ chmod +x build-linux.sh
 ./build-linux.sh geth
 
 if [ $? -ne 0 ]; then
-    log "❌ Build failed! Restoring backup..."
+    log "âŒ Build failed! Restoring backup..."
     
     # Restore from backup
     LATEST_BACKUP=$(ls -t ${BACKUP_DIR}/Qgeth3_* 2>/dev/null | head -1)
     if [ -n "$LATEST_BACKUP" ]; then
         rm -rf "$QGETH_DIR"
         cp -r "$LATEST_BACKUP" "$QGETH_DIR"
-        log "✅ Restored from backup: $(basename $LATEST_BACKUP)"
+        log "âœ… Restored from backup: $(basename $LATEST_BACKUP)"
     else
-        log "❌ No backup available!"
+        log "âŒ No backup available!"
     fi
     
     cleanup
@@ -339,35 +339,35 @@ fi
 
 # Test the build
 if [ ! -f "$QGETH_DIR/geth" ] || [ ! -x "$QGETH_DIR/geth" ]; then
-    log "❌ Build verification failed - geth binary not found or not executable"
+    log "âŒ Build verification failed - geth binary not found or not executable"
     cleanup
 fi
 
-log "✅ Build successful!"
+log "âœ… Build successful!"
 
 # Start the service
-log "🚀 Starting geth service..."
+log "ðŸš€ Starting geth service..."
 sudo systemctl start qgeth-node
 
 # Wait and verify it started
 sleep 15
 if sudo systemctl is-active --quiet qgeth-node; then
-    log "✅ Node update completed successfully!"
+    log "âœ… Node update completed successfully!"
 else
-    log "❌ Failed to start node after update"
+    log "âŒ Failed to start node after update"
 fi
 
 # Cleanup old backups (keep last 5)
-log "🧹 Cleaning up old backups..."
+log "ðŸ§¹ Cleaning up old backups..."
 cd "$BACKUP_DIR"
 ls -t Qgeth3_* 2>/dev/null | tail -n +6 | xargs rm -rf 2>/dev/null
-log "✅ Backup cleanup completed"
+log "âœ… Backup cleanup completed"
 
 cleanup
 EOF
 
 # Create Node Runner Script
-print_step "🏃 Creating node runner script..."
+print_step "ðŸƒ Creating node runner script..."
 cat > /opt/qgeth/scripts/run-node.sh << 'EOF'
 #!/bin/bash
 # Node Runner - Handles geth execution with retry logic
@@ -379,18 +379,18 @@ log() {
 }
 
 cd "$QGETH_DIR" || {
-    log "❌ Cannot change to Qgeth directory: $QGETH_DIR"
+    log "âŒ Cannot change to Qgeth directory: $QGETH_DIR"
     exit 1
 }
 
 RETRY_COUNT=0
 
 while true; do
-    log "🚀 Starting Q Geth Node (attempt $((RETRY_COUNT + 1)))"
+    log "ðŸš€ Starting Q Geth Node (attempt $((RETRY_COUNT + 1)))"
     
     # Check if geth binary exists
     if [ ! -f "./geth" ] || [ ! -x "./geth" ]; then
-        log "❌ Geth binary not found or not executable"
+        log "âŒ Geth binary not found or not executable"
         exit 1
     fi
     
@@ -398,11 +398,11 @@ while true; do
     ./start-geth.sh $GETH_NETWORK $GETH_EXTRA_ARGS
     EXIT_CODE=$?
     
-    log "⚠️  Geth exited with code: $EXIT_CODE"
+    log "âš ï¸  Geth exited with code: $EXIT_CODE"
     
     # If exit code is 0, it was intentional shutdown
     if [ $EXIT_CODE -eq 0 ]; then
-        log "✅ Geth shutdown gracefully"
+        log "âœ… Geth shutdown gracefully"
         break
     fi
     
@@ -410,17 +410,17 @@ while true; do
     RETRY_COUNT=$((RETRY_COUNT + 1))
     
     if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
-        log "❌ Max retries reached ($MAX_RETRIES). Giving up."
+        log "âŒ Max retries reached ($MAX_RETRIES). Giving up."
         exit 1
     fi
     
-    log "💤 Waiting ${RETRY_DELAY} seconds before retry..."
+    log "ðŸ’¤ Waiting ${RETRY_DELAY} seconds before retry..."
     sleep $RETRY_DELAY
 done
 EOF
 
 # Create systemd service for the node
-print_step "🎯 Creating systemd services..."
+print_step "ðŸŽ¯ Creating systemd services..."
 cat > /etc/systemd/system/qgeth-node.service << EOF
 [Unit]
 Description=Q Geth Quantum Blockchain Node
@@ -469,17 +469,17 @@ WantedBy=multi-user.target
 EOF
 
 # Make scripts executable
-print_step "🔧 Setting permissions..."
+print_step "ðŸ”§ Setting permissions..."
 chmod +x /opt/qgeth/scripts/*.sh
 chown -R $ACTUAL_USER:$ACTUAL_USER /opt/qgeth
 
 # Copy current project to /opt/qgeth/Qgeth3
-print_step "📦 Installing current project..."
+print_step "ðŸ“¦ Installing current project..."
 cp -r "$PROJECT_DIR" /opt/qgeth/Qgeth3
 chown -R $ACTUAL_USER:$ACTUAL_USER /opt/qgeth/Qgeth3
 
 # Memory check for build
-print_step "💾 Checking system memory for build..."
+print_step "ðŸ’¾ Checking system memory for build..."
 REQUIRED_MB=3072  # 3GB minimum
 AVAILABLE_MB=0
 
@@ -500,7 +500,7 @@ if [ -f /proc/meminfo ]; then
         echo "  Available: ${AVAILABLE_MB}MB"
         echo "  Required: ${REQUIRED_MB}MB"
         echo ""
-        echo "🔧 Adding 2GB swap space to help with build..."
+        echo "ðŸ”§ Adding 2GB swap space to help with build..."
         
         # Create swap file if it doesn't exist
         if [ ! -f /swapfile ]; then
@@ -527,7 +527,7 @@ else
 fi
 
 # Build the project with memory optimization
-print_step "🔨 Building Qgeth with memory optimization..."
+print_step "ðŸ”¨ Building Qgeth with memory optimization..."
 cd /opt/qgeth/Qgeth3
 chmod +x build-linux.sh
 
@@ -545,41 +545,41 @@ print_step "Using temporary build directory: $TMPDIR"
 sudo -u $ACTUAL_USER ./build-linux.sh geth
 
 # Reload systemd and enable services
-print_step "⚙️  Configuring systemd services..."
+print_step "âš™ï¸  Configuring systemd services..."
 systemctl daemon-reload
 systemctl enable qgeth-node
 systemctl enable qgeth-github-monitor
 
 # Create management script
-print_step "🛠️  Creating management script..."
+print_step "ðŸ› ï¸  Creating management script..."
 cat > /usr/local/bin/qgeth-manage << 'EOF'
 #!/bin/bash
 # Q Geth Node Management Script
 
 case "$1" in
     start)
-        echo "🚀 Starting Q Geth services..."
+        echo "ðŸš€ Starting Q Geth services..."
         sudo systemctl start qgeth-node
         sudo systemctl start qgeth-github-monitor
-        echo "✅ Services started"
+        echo "âœ… Services started"
         ;;
     stop)
-        echo "🛑 Stopping Q Geth services..."
+        echo "ðŸ›‘ Stopping Q Geth services..."
         sudo systemctl stop qgeth-node
         sudo systemctl stop qgeth-github-monitor
-        echo "✅ Services stopped"
+        echo "âœ… Services stopped"
         ;;
     restart)
-        echo "🔄 Restarting Q Geth services..."
+        echo "ðŸ”„ Restarting Q Geth services..."
         sudo systemctl restart qgeth-node
         sudo systemctl restart qgeth-github-monitor
-        echo "✅ Services restarted"
+        echo "âœ… Services restarted"
         ;;
     status)
-        echo "📊 Q Geth Node Status:"
+        echo "ðŸ“Š Q Geth Node Status:"
         sudo systemctl status qgeth-node --no-pager
         echo ""
-        echo "📊 GitHub Monitor Status:"
+        echo "ðŸ“Š GitHub Monitor Status:"
         sudo systemctl status qgeth-github-monitor --no-pager
         ;;
     logs)
@@ -600,7 +600,7 @@ case "$1" in
         esac
         ;;
     update)
-        echo "🔄 Triggering manual update..."
+        echo "ðŸ”„ Triggering manual update..."
         sudo /opt/qgeth/scripts/update-node.sh
         ;;
     *)
@@ -627,36 +627,36 @@ EOF
 chmod +x /usr/local/bin/qgeth-manage
 
 # Completion message
-print_success "🎉 Q Geth Auto-Updating Node System installed successfully!"
+print_success "ðŸŽ‰ Q Geth Auto-Updating Node System installed successfully!"
 echo ""
-echo "📋 Management commands:"
+echo "ðŸ“‹ Management commands:"
 echo "  qgeth-manage start    - Start services"
 echo "  qgeth-manage stop     - Stop services"
 echo "  qgeth-manage status   - Check status"
 echo "  qgeth-manage logs node - View node logs"
 echo ""
-echo "🚀 To start the services now:"
+echo "ðŸš€ To start the services now:"
 echo "  qgeth-manage start"
 echo ""
-echo "📂 Files created:"
+echo "ðŸ“‚ Files created:"
 echo "  - Configuration: /opt/qgeth/config.env"
 echo "  - Scripts: /opt/qgeth/scripts/"
 echo "  - Logs: /opt/qgeth/logs/"
 echo "  - Services: qgeth-node, qgeth-github-monitor"
 echo ""
-echo "🔍 The system will:"
-echo "  ✅ Auto-start on boot"
-echo "  ✅ Monitor GitHub for changes every 5 minutes"
-echo "  ✅ Auto-update and restart on new commits"
-echo "  ✅ Retry every 5 minutes if crashed"
-echo "  ✅ Keep backups of last 5 versions"
+echo "ðŸ” The system will:"
+echo "  âœ… Auto-start on boot"
+echo "  âœ… Monitor GitHub for changes every 5 minutes"
+echo "  âœ… Auto-update and restart on new commits"
+echo "  âœ… Retry every 5 minutes if crashed"
+echo "  âœ… Keep backups of last 5 versions"
 
 # Ask if user wants to start services now
 echo ""
 echo -n "Start the services now? (y/N): "
 read -r RESPONSE
 if [[ "$RESPONSE" =~ ^([yY][eE][sS]|[yY])$ ]]; then
-    print_step "🚀 Starting services..."
+    print_step "ðŸš€ Starting services..."
     systemctl start qgeth-node
     systemctl start qgeth-github-monitor
     print_success "Services started! Use 'qgeth-manage status' to check status."
