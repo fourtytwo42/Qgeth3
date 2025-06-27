@@ -201,10 +201,23 @@ chmod +x *.sh
 
 # Step 5: Initial build
 print_step "🔨 Step 5: Initial build"
+
+# Check if VPS temp directory was created and pass it to build script
+if [ -d "./build-temp" ]; then
+    print_step "Found local build temp directory from VPS preparation"
+    export QGETH_BUILD_TEMP="$(pwd)/build-temp"
+fi
+
+# Source bashrc to get any environment variables from prepare-vps.sh
+if [ -f ~/.bashrc ]; then
+    source ~/.bashrc 2>/dev/null || true
+fi
+
+# Run build with environment variables
 if [ "$AUTO_CONFIRM" = true ]; then
-    sudo -u $ACTUAL_USER ./build-linux.sh geth -y
+    sudo -u $ACTUAL_USER env QGETH_BUILD_TEMP="$QGETH_BUILD_TEMP" ./build-linux.sh geth -y
 else
-    sudo -u $ACTUAL_USER ./build-linux.sh geth
+    sudo -u $ACTUAL_USER env QGETH_BUILD_TEMP="$QGETH_BUILD_TEMP" ./build-linux.sh geth
 fi
 if [ $? -ne 0 ]; then
     print_error "Initial build failed"
@@ -369,7 +382,15 @@ fi
 
 # Build the new version with memory optimization
 log "🔨 Building new version..."
-if sudo -u "$ACTUAL_USER" ./build-linux.sh geth; then
+
+# Check for local build temp directory and set environment variable
+TEMP_ENV=""
+if [ -d "./build-temp" ]; then
+    log "Using local build temp directory from VPS preparation"
+    TEMP_ENV="QGETH_BUILD_TEMP=./build-temp"
+fi
+
+if sudo -u "$ACTUAL_USER" env $TEMP_ENV ./build-linux.sh geth; then
     log "✅ Build completed successfully"
 else
     log "❌ Build failed! Restoring backup..."
