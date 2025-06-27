@@ -203,17 +203,19 @@ func (p *BlockHeadersPacket) DecodeRLP(s *rlp.Stream) error {
 			break
 		}
 		
-		// Decode each header with quantum compatibility
+		// FIXED: First decode as raw value, then process
+		var rawHeader rlp.RawValue
+		if err := s.Decode(&rawHeader); err != nil {
+			return fmt.Errorf("failed to decode raw header: %v", err)
+		}
+		
+		// Try standard decoding first
 		header := new(types.Header)
-		if err := s.Decode(header); err != nil {
+		if err := rlp.DecodeBytes(rawHeader, header); err != nil {
 			// If standard decoding fails, try quantum-compatible approach
 			if strings.Contains(err.Error(), "WithdrawalsHash") || 
-			   strings.Contains(err.Error(), "input string too short") {
-				// Reset stream position and try raw decode
-				var rawHeader rlp.RawValue
-				if err := s.Decode(&rawHeader); err != nil {
-					return fmt.Errorf("quantum header decode failed: %v", err)
-				}
+			   strings.Contains(err.Error(), "input string too short") ||
+			   strings.Contains(err.Error(), "expected input list") {
 				
 				// Use quantum-compatible decoding
 				header, err = decodeQuantumCompatibleHeaderFromRaw(rawHeader)
@@ -221,7 +223,7 @@ func (p *BlockHeadersPacket) DecodeRLP(s *rlp.Stream) error {
 					return fmt.Errorf("quantum header processing failed: %v", err)
 				}
 			} else {
-				return err
+				return fmt.Errorf("header decode failed: %v", err)
 			}
 		} else {
 			// Standard decoding succeeded, ensure quantum fields are unmarshaled
