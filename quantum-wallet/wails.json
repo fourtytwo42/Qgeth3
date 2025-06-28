@@ -1,0 +1,43 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "quantum-wallet",
+  "outputfilename": "quantum-wallet",
+  "version": "v2",
+  "author": {
+    "name": "Quantum Wallet Team",
+    "email": "info@quantumwallet.io"
+  },
+  "info": {
+    "companyName": "Quantum Wallet",
+    "productName": "Quantum Wallet", 
+    "productVersion": "1.0.0",
+    "copyright": "© 2024 Quantum Wallet. All rights reserved.",
+    "comments": "The next-generation quantum blockchain wallet"
+  },
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "debounceMS": 20,
+  "devServer": "http://localhost:3000",
+  "appargs": "",
+  "assetdir": "frontend/dist",
+  "build": [
+    {
+      "platform": "windows/amd64",
+      "outputfilename": "quantum-wallet.exe"
+    },
+    {
+      "platform": "linux/amd64", 
+      "outputfilename": "quantum-wallet"
+    },
+    {
+      "platform": "darwin/amd64",
+      "outputfilename": "quantum-wallet"
+    },
+    {
+      "platform": "darwin/arm64",
+      "outputfilename": "quantum-wallet"
+    }
+  ]
+} 
