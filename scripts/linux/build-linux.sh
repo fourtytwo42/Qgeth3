@@ -460,11 +460,11 @@ build_geth() {
     mkdir -p "$GOCACHE" "$GOTMPDIR" "$TMPDIR"
     
     # Build command for retry mechanism
-    BUILD_CMD="CGO_ENABLED=0 go build -ldflags \"$LDFLAGS\" -trimpath -buildvcs=false -o ../../../../../geth.bin ."
+    BUILD_CMD="CGO_ENABLED=0 go build -ldflags \"$LDFLAGS\" -trimpath -buildvcs=false -o ../../../geth.bin ."
     
     # Use automated retry with error recovery
-    if build_with_retry "quantum-geth" "$BUILD_CMD" "../../../../../geth.bin"; then
-        cd ../../../../..
+    if build_with_retry "quantum-geth" "$BUILD_CMD" "../../../geth.bin"; then
+        cd ../../../..
         echo "✅ Quantum-Geth built successfully: ./geth.bin (CGO_ENABLED=0)"
         
         # Create Q Coin geth wrapper that prevents Ethereum connections
@@ -477,7 +477,7 @@ build_geth() {
             echo "Binaries created: geth.bin, geth"
         fi
     else
-        cd ../../../../..
+        cd ../../../..
         echo "🚨 Error: Failed to build quantum-geth after all retry attempts"
         echo "🔧 Manual troubleshooting steps:"
         echo "  1. Check Go version: go version"
