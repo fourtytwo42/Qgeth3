@@ -181,8 +181,11 @@ fi
 
 if [ -f "./scripts/linux/prepare-vps.sh" ]; then
     print_step "Running VPS preparation script..."
-    # Ensure the script is executable
-    chmod +x ./scripts/linux/prepare-vps.sh
+    # Ensure all scripts are executable
+    find . -name "*.sh" -type f -exec chmod +x {} \; 2>/dev/null || true
+    chmod +x ./scripts/linux/prepare-vps.sh 2>/dev/null || true
+    chmod +x ./scripts/linux/build-linux.sh 2>/dev/null || true
+    
     if [ "$AUTO_CONFIRM" = true ]; then
         ./scripts/linux/prepare-vps.sh -y
     else
@@ -348,7 +351,20 @@ else
 fi
 
 cd "$PROJECT_DIR"
-chmod +x *.sh
+
+# Make ALL shell scripts executable (including in subdirectories)
+print_step "🔧 Making all shell scripts executable..."
+find . -name "*.sh" -type f -exec chmod +x {} \; 2>/dev/null || true
+chmod +x *.sh 2>/dev/null || true
+
+# Specifically ensure the scripts we need are executable
+chmod +x scripts/linux/build-linux.sh 2>/dev/null || true
+chmod +x scripts/linux/prepare-vps.sh 2>/dev/null || true
+chmod +x scripts/linux/start-geth.sh 2>/dev/null || true
+chmod +x scripts/deployment/bootstrap-qgeth.sh 2>/dev/null || true
+chmod +x scripts/deployment/auto-geth-service.sh 2>/dev/null || true
+
+print_success "✅ All shell scripts are now executable"
 
 # Step 5: Initial build
 print_step "🔨 Step 5: Initial build"
@@ -363,6 +379,9 @@ fi
 if [ -f ~/.bashrc ]; then
     source ~/.bashrc 2>/dev/null || true
 fi
+
+# Ensure build script is executable before running
+chmod +x ./scripts/linux/build-linux.sh 2>/dev/null || true
 
 # Run build with environment variables
 if [ "$AUTO_CONFIRM" = true ]; then
