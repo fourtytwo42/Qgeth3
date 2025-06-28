@@ -656,7 +656,11 @@ done
 
 # Check if this is a bare geth call (likely trying to connect to Ethereum)
 # Allow init commands and commands with --datadir or --networkid through
-if [ ${#FILTERED_ARGS[@]} -eq 0 ] || ([[ ! " ${FILTERED_ARGS[*]} " =~ " --networkid " ]] && [[ ! " ${FILTERED_ARGS[*]} " =~ " --datadir " ]] && [[ ! " ${FILTERED_ARGS[*]} " =~ " init " ]]); then
+# CRITICAL: Always allow init commands through without interference
+if [[ " ${FILTERED_ARGS[*]} " =~ " init " ]]; then
+    # This is an init command - pass through directly without any modification
+    exec "$REAL_GETH" "${FILTERED_ARGS[@]}"
+elif [ ${#FILTERED_ARGS[@]} -eq 0 ] || ([[ ! " ${FILTERED_ARGS[*]} " =~ " --networkid " ]] && [[ ! " ${FILTERED_ARGS[*]} " =~ " --datadir " ]]); then
     echo "🚨 Q Coin Geth: Prevented connection to Ethereum mainnet!"
     echo ""
     echo "This geth is configured for Q Coin networks only."

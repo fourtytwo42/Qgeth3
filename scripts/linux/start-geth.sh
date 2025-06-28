@@ -143,13 +143,13 @@ if [ ! -f "$GENESIS" ]; then
 fi
 
 # Always initialize to trigger auto-reset when genesis changes
-../../geth --datadir "$DATADIR" init "$GENESIS"
+../../geth.bin --datadir "$DATADIR" init "$GENESIS"
 if [ $? -ne 0 ]; then
     echo -e "\033[1;31m[ERROR] Genesis initialization failed!\033[0m"
     echo -e "\033[1;33m[DEBUG] Debug info:\033[0m"
     echo "  Genesis file: $GENESIS"
     echo "  Data directory: $DATADIR"
-    echo "  Command: ../../geth --datadir \"$DATADIR\" init \"$GENESIS\""
+    echo "  Command: ../../geth.bin --datadir \"$DATADIR\" init \"$GENESIS\""
     exit 1
 fi
 echo -e "\033[1;32m[SUCCESS] Genesis initialization successful\033[0m"
