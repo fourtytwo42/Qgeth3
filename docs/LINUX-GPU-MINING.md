@@ -53,10 +53,10 @@ The build system automatically detects your GPU capabilities:
 
 ```bash
 # Auto-detect and build with best available GPU support
-./build-linux.sh miner
+./scripts/linux/build-linux.sh miner
 
 # Force CPU-only build
-GPU_MODE=disable ./build-linux.sh miner
+GPU_MODE=disable ./scripts/linux/build-linux.sh miner
 ```
 
 ### Build Output Examples
@@ -89,31 +89,31 @@ GPU_MODE=disable ./build-linux.sh miner
 ### Quick Start
 ```bash
 # Auto-detect everything and start mining
-./start-linux-miner.sh
+./scripts/linux/start-miner.sh
 
 # Mine with specific settings
-./start-linux-miner.sh --threads 8 --coinbase 0xYourAddress --verbose
+./scripts/linux/start-miner.sh --threads 8 --coinbase 0xYourAddress --verbose
 
 # Force GPU mining (fail if not available)
-./start-linux-miner.sh --gpu
+./scripts/linux/start-miner.sh --gpu
 
 # Force CPU mining
-./start-linux-miner.sh --cpu
+./scripts/linux/start-miner.sh --cpu
 ```
 
 ### Network Selection
 ```bash
 # Q Coin Testnet (default)
-./start-linux-miner.sh --testnet
+./scripts/linux/start-miner.sh --testnet
 
 # Q Coin Mainnet
-./start-linux-miner.sh --mainnet
+./scripts/linux/start-miner.sh --mainnet
 ```
 
 ### Advanced Options
 ```bash
 # Full option example
-./start-linux-miner.sh \
+./scripts/linux/start-miner.sh \
   --threads 16 \
   --coinbase 0x1234567890123456789012345678901234567890 \
   --node http://localhost:8545 \
@@ -173,7 +173,7 @@ python3 -c "import qiskit_aer; print(qiskit_aer.__version__)"
 ```bash
 # Reduce batch size (edit quantum-miner source)
 # Or use fewer threads
-./start-linux-miner.sh --threads 4
+./scripts/linux/start-miner.sh --threads 4
 ```
 
 **Permission Errors:**
@@ -197,7 +197,7 @@ nvidia-smi -l 1 --query-gpu=timestamp,name,temperature.gpu,power.draw --format=c
 ### Performance Monitoring
 ```bash
 # Check miner logs
-./start-linux-miner.sh --verbose | grep "puzzles/sec"
+./scripts/linux/start-miner.sh --verbose | grep "puzzles/sec"
 
 # Monitor system resources
 htop

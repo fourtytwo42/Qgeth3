@@ -83,23 +83,17 @@ Qgeth3/
 ### Getting Started
 - **[Quick Start Guide](docs/quick-start.md)** - Get running in minutes
 - **[Installation Guide](docs/installation.md)** - Platform-specific setup
-- **[System Requirements & Dependencies](docs/installation.md#system-requirements)**
 
 ### Deployment & Operations  
 - **[VPS Deployment Guide](docs/vps-deployment.md)** - Production deployment
-- **[Auto-Service Documentation](docs/auto-service.md)** - Automated VPS management
 - **[Mining Guide](docs/mining.md)** - GPU/CPU mining optimization
 
 ### Technical Documentation
 - **[Project Structure](docs/project-structure.md)** - Codebase organization
-- **[Build System Details](docs/build-system.md)** - Build process & targets
-- **[Advanced Configuration](docs/advanced-configuration.md)** - Performance tuning
 - **[Troubleshooting Guide](docs/troubleshooting.md)** - Common issues & solutions
 
 ### Development
 - **[Contributing Guidelines](docs/contributing.md)** - Development workflow
-- **[Architecture Overview](docs/project-structure.md#core-components)** - Code structure
-- **[API Documentation](docs/advanced-configuration.md#api-configuration)** - RPC & WebSocket APIs
 
 ### Platform-Specific Guides
 - **[Linux GPU Mining](docs/LINUX-GPU-MINING.md)** - CUDA & GPU optimization
@@ -144,13 +138,14 @@ Qgeth3/
 
 ## 🛠️ Development Status
 
-### Recent Improvements [[memory:2550828625918932791]]
+### Recent Improvements
 - ✅ **Complete script reorganization** with platform-specific directories
-- ✅ **Go temp directory build fixes** for VPS environments
+- ✅ **Go temp directory build fixes** for VPS environments  
 - ✅ **Comprehensive documentation breakdown** for better navigation
 - ✅ **Enhanced .gitignore** to prevent build artifact commits
 - ✅ **One-command VPS bootstrap** with non-interactive mode
 - ✅ **Professional auto-service** with GitHub monitoring
+- ✅ **Directory context and permission fixes** for seamless VPS deployment
 
 ### Core Features
 - ✅ **Quantum Consensus (QMPoW)** - Production ready

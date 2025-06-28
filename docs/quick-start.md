@@ -76,7 +76,7 @@ cd Qgeth3
 - **Consensus:** QMPoW (Quantum Proof of Work)
 - **Default Data Directory:** 
   - Windows: `%APPDATA%\Qcoin`
-  - Linux: `~/.qcoin`
+  - Linux: `~/.qcoin/[network]` (e.g., `~/.qcoin/testnet`)
 
 ## 🎯 Build Target Guide
 
@@ -115,11 +115,13 @@ cd Qgeth3
 
 ### Attach to Console
 ```bash
-# Linux (using IPC)
-./geth.bin attach ipc:$HOME/.qcoin/geth.ipc
+# Linux (using IPC) - Replace with actual path from your network
+./geth attach ipc:$HOME/.qcoin/testnet/geth.ipc    # Testnet
+./geth attach ipc:$HOME/.qcoin/mainnet/geth.ipc    # Mainnet  
+./geth attach ipc:$HOME/.qcoin/devnet/geth.ipc     # Devnet
 
-# For devnet
-./geth.bin attach ipc:$HOME/.qcoin/devnet/geth.ipc
+# Or attach via HTTP RPC
+./geth attach http://localhost:8545
 ```
 
 ## 🏆 Next Steps
