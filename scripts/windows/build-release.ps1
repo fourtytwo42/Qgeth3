@@ -13,6 +13,9 @@ Write-Host ""
 
 $timestamp = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
 
+# Get absolute path to releases directory before changing directories
+$releasesPath = (Resolve-Path "../../releases").Path
+
 # Build geth
 if ($Component -eq "geth" -or $Component -eq "both") {
     Write-Host "Building quantum-geth..." -ForegroundColor Yellow
@@ -29,15 +32,15 @@ if ($Component -eq "geth" -or $Component -eq "both") {
         # This ensures Windows and Linux builds have identical quantum field handling
         $env:CGO_ENABLED = "0"
         Write-Host "ENFORCING: CGO_ENABLED=0 for geth build (quantum field compatibility)" -ForegroundColor Yellow
-        & go build -o "build/bin/geth.exe" "./cmd/geth"
+        & go build -o "geth.exe" "./cmd/geth"
         
         if ($LASTEXITCODE -eq 0) {
             Write-Host "quantum-geth built successfully (CGO_ENABLED=0)" -ForegroundColor Green
             
             # Create timestamped release
-            $releaseDir = "../../releases/quantum-geth-$timestamp"
+            $releaseDir = "$releasesPath\quantum-geth-$timestamp"
             New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
-            Copy-Item "build/bin/geth.exe" "$releaseDir/geth.exe" -Force
+            Copy-Item "geth.exe" "$releaseDir\geth.exe" -Force
             
             # Create release info
             @"
@@ -79,13 +82,13 @@ if ($Component -eq "miner" -or $Component -eq "both") {
             Write-Host "quantum-miner built successfully" -ForegroundColor Green
             
             # Create timestamped release
-            $releaseDir = "../../releases/quantum-miner-$timestamp"
+            $releaseDir = "$releasesPath\quantum-miner-$timestamp"
             New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
-            Copy-Item "quantum-miner.exe" "$releaseDir/quantum-miner.exe" -Force
+            Copy-Item "quantum-miner.exe" "$releaseDir\quantum-miner.exe" -Force
             
             # Copy pkg directory if it exists
             if (Test-Path "pkg") {
-                Copy-Item "pkg" "$releaseDir/pkg" -Recurse -Force
+                Copy-Item "pkg" "$releaseDir\pkg" -Recurse -Force
             }
             
             # Create release scripts
