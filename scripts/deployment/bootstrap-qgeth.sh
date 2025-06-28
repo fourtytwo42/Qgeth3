@@ -1,8 +1,8 @@
 #!/bin/bash
-# Q Geth Bootstrap Script
-# One-command setup for Q Geth auto-updating service
-# Usage: curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qgeth.sh | sudo bash
-# Usage: curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qgeth.sh | sudo bash -s -- -y
+# Q Geth Simplified Bootstrap Script
+# Single-command VPS setup for Q Geth auto-updating service
+# Usage: curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/scripts/deployment/bootstrap-qgeth.sh | sudo bash
+# Usage: curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/scripts/deployment/bootstrap-qgeth.sh | sudo bash -s -- -y
 
 set -e
 
@@ -48,181 +48,393 @@ if [ "$EUID" -ne 0 ]; then
     print_error "Please run this script with sudo"
     echo ""
     echo "Usage:"
-    echo "  curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qgeth.sh | sudo bash"
+    echo "  curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/scripts/deployment/bootstrap-qgeth.sh | sudo bash"
     echo ""
-    echo "Or download and run:"
-    echo "  wget https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qgeth.sh"
-    echo "  chmod +x bootstrap-qgeth.sh"
-    echo "  sudo ./bootstrap-qgeth.sh"
+    echo "For non-interactive mode:"
+    echo "  curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/scripts/deployment/bootstrap-qgeth.sh | sudo bash -s -- -y"
     exit 1
 fi
 
-print_step "🚀 Q Geth One-Command Bootstrap"
-echo ""
-echo "This will:"
-echo "  ✅ Detect and stop any existing Q Geth installations"
-echo "  ✅ Install required dependencies (git, curl)"
-echo "  ✅ Clone the Q Geth repository"
-echo "  ✅ Run the complete auto-service setup"
-echo "  ✅ Configure VPS with 4GB memory, firewall, and services"
-echo ""
+# Configuration
+GITHUB_REPO="fourtytwo42/Qgeth3"
+GITHUB_BRANCH="main"
+INSTALL_DIR="/opt/qgeth"
+PROJECT_DIR="$INSTALL_DIR/Qgeth3"
+LOGS_DIR="$INSTALL_DIR/logs"
 
 # Get the actual user (not root when using sudo)
 ACTUAL_USER=${SUDO_USER:-$USER}
 ACTUAL_HOME=$(eval echo ~$ACTUAL_USER)
 
-# Comprehensive cleanup of existing installations
-print_step "🔍 Detecting existing Q Geth installations"
+print_step "🚀 Q Geth Simplified Bootstrap"
+echo ""
+echo "This single script will:"
+echo "  ✅ Clean up any existing installations"
+echo "  ✅ Prepare VPS (memory, swap, dependencies)"
+echo "  ✅ Clone Q Geth repository to /opt/qgeth/"
+echo "  ✅ Build Q Geth with automated error recovery"
+echo "  ✅ Create auto-updating systemd services"
+echo "  ✅ Configure firewall for Q Geth operations"
+echo ""
 
-EXISTING_INSTALLATION=false
-
-# Check for systemd services
-if systemctl list-units --full -all | grep -E "(qgeth|geth)" | grep -v "grep"; then
-    print_warning "Found existing Q Geth systemd services"
-    EXISTING_INSTALLATION=true
+if [ "$AUTO_CONFIRM" != true ]; then
+    echo -n "Proceed with installation? (y/N): "
+    read -r RESPONSE
+    if [[ ! "$RESPONSE" =~ ^([yY][eE][sS]|[yY])$ ]]; then
+        echo "Installation cancelled."
+        exit 0
+    fi
 fi
 
-# Check for running geth processes
-if pgrep -f "geth" >/dev/null 2>&1; then
-    print_warning "Found running geth processes"
-    EXISTING_INSTALLATION=true
-fi
+# ===========================================
+# STEP 1: CLEANUP EXISTING INSTALLATIONS
+# ===========================================
+print_step "🧹 Step 1: Cleanup existing installations"
 
-# Check for existing installation directories
-if [ -d "/opt/qgeth" ] || [ -d "$ACTUAL_HOME/Qgeth3" ]; then
-    print_warning "Found existing Q Geth installation directories"
-    EXISTING_INSTALLATION=true
-fi
+# Stop and remove systemd services
+print_step "Stopping Q Geth services..."
+systemctl stop qgeth-node.service 2>/dev/null || true
+systemctl stop qgeth-monitor.service 2>/dev/null || true
+systemctl disable qgeth-node.service 2>/dev/null || true
+systemctl disable qgeth-monitor.service 2>/dev/null || true
+rm -f /etc/systemd/system/qgeth-*.service
+systemctl daemon-reload
 
-# Check for Q Geth management command
-if command -v qgeth-service >/dev/null 2>&1; then
-    print_warning "Found existing qgeth-service command"
-    EXISTING_INSTALLATION=true
-fi
+# Kill any remaining geth processes
+print_step "Terminating geth processes..."
+pkill -f "geth" 2>/dev/null || true
+sleep 2
+pkill -9 -f "geth" 2>/dev/null || true
 
-if [ "$EXISTING_INSTALLATION" = true ]; then
-    print_step "🧹 Performing comprehensive cleanup of existing installations"
-    
-    # Stop all Q Geth related systemd services
-    print_step "Stopping Q Geth systemd services..."
-    systemctl stop qgeth-node.service 2>/dev/null || true
-    systemctl stop qgeth-github-monitor.service 2>/dev/null || true  
-    systemctl stop qgeth-updater.service 2>/dev/null || true
-    systemctl disable qgeth-node.service 2>/dev/null || true
-    systemctl disable qgeth-github-monitor.service 2>/dev/null || true
-    systemctl disable qgeth-updater.service 2>/dev/null || true
-    
-    # Remove systemd service files
-    rm -f /etc/systemd/system/qgeth-*.service
-    systemctl daemon-reload
-    print_success "✅ Systemd services cleaned up"
-    
-    # Kill any remaining geth processes
-    print_step "Terminating running geth processes..."
-    pkill -f "geth" 2>/dev/null || true
-    sleep 3
-    pkill -9 -f "geth" 2>/dev/null || true
-    print_success "✅ Geth processes terminated"
-    
-    # Remove installation directories
-    print_step "Removing installation directories..."
-    rm -rf /opt/qgeth 2>/dev/null || true
-    rm -f /usr/local/bin/qgeth-service 2>/dev/null || true
-    print_success "✅ Installation directories removed"
-    
-    # Clean up lock files
-    print_step "Cleaning up lock files and temp directories..."
-    rm -f /tmp/github-monitor.lock 2>/dev/null || true
-    rm -f /tmp/update-geth.lock 2>/dev/null || true
-    rm -rf /tmp/qgeth-build* 2>/dev/null || true
-    print_success "✅ Lock files and temp directories cleaned"
-    
-    print_success "🧹 Complete cleanup finished"
-    echo ""
-fi
+# Remove installation directories and lock files
+print_step "Removing installation directories..."
+rm -rf "$INSTALL_DIR" 2>/dev/null || true
+rm -f /tmp/qgeth-*.lock 2>/dev/null || true
+rm -rf /tmp/qgeth-build* 2>/dev/null || true
 
-print_step "🔧 Installing basic dependencies"
+print_success "✅ Cleanup completed"
+
+# ===========================================
+# STEP 2: VPS PREPARATION
+# ===========================================
+print_step "🔧 Step 2: VPS Preparation"
+
+# Install dependencies
+print_step "Installing dependencies..."
 if command -v apt >/dev/null 2>&1; then
     DEBIAN_FRONTEND=noninteractive apt update -qq
-    DEBIAN_FRONTEND=noninteractive apt install -y git curl golang-go build-essential jq python3 python3-pip
+    DEBIAN_FRONTEND=noninteractive apt install -y git curl golang-go build-essential systemd ufw jq python3 python3-pip unzip
 elif command -v yum >/dev/null 2>&1; then
-    yum install -y git curl golang gcc jq python3 python3-pip
-elif command -v dnf >/dev/null 2>&1; then
-    dnf install -y git curl golang gcc jq python3 python3-pip
+    yum install -y git curl golang gcc systemd firewalld jq python3 python3-pip unzip
 else
-    print_warning "Unknown package manager. Please install dependencies manually."
+    print_error "Unsupported package manager. Please install dependencies manually."
+    exit 1
 fi
 
-print_success "✅ Basic dependencies installed"
+# Memory and swap check
+print_step "Checking memory and swap..."
+REQUIRED_MB=4096  # 4GB minimum total
+TOTAL_MB=0
+SWAP_TOTAL=0
+CURRENT_TOTAL=0
 
-# Determine working directory
-WORK_DIR="$ACTUAL_HOME"
-if [ "$ACTUAL_USER" = "root" ]; then
-    WORK_DIR="/root"
+if [ -f /proc/meminfo ]; then
+    MEM_TOTAL=$(grep MemTotal /proc/meminfo | awk '{print $2}')
+    TOTAL_MB=$((MEM_TOTAL / 1024))
+    
+    if [ -f /proc/swaps ]; then
+        SWAP_KB=$(awk 'NR>1 {sum+=$3} END {print sum+0}' /proc/swaps)
+        SWAP_TOTAL=$((SWAP_KB / 1024))
+    fi
+    
+    CURRENT_TOTAL=$((TOTAL_MB + SWAP_TOTAL))
+    
+    echo "RAM: ${TOTAL_MB}MB, Swap: ${SWAP_TOTAL}MB, Total: ${CURRENT_TOTAL}MB"
+    echo "Required: ${REQUIRED_MB}MB"
+    
+    # Create swap if needed (with 50MB tolerance)
+    if [ $CURRENT_TOTAL -lt $((REQUIRED_MB - 50)) ]; then
+        NEEDED_SWAP=$((REQUIRED_MB - TOTAL_MB))
+        if [ $NEEDED_SWAP -gt $SWAP_TOTAL ]; then
+            NEEDED_SWAP=$((NEEDED_SWAP - SWAP_TOTAL))
+            print_step "Creating ${NEEDED_SWAP}MB swap file..."
+            
+            # Remove existing swap file if present
+            if [ -f /swapfile ]; then
+                swapoff /swapfile 2>/dev/null || true
+                rm -f /swapfile
+            fi
+            
+            # Create new swap
+            fallocate -l "${NEEDED_SWAP}M" /swapfile || dd if=/dev/zero of=/swapfile bs=1024 count=$((NEEDED_SWAP * 1024))
+            chmod 600 /swapfile
+            mkswap /swapfile
+            swapon /swapfile
+            
+            # Add to fstab for persistence
+            if ! grep -q "/swapfile" /etc/fstab; then
+                echo "/swapfile none swap sw 0 0" >> /etc/fstab
+            fi
+            
+            print_success "✅ Swap file created"
+        fi
+    else
+        print_success "✅ Sufficient memory available"
+    fi
 fi
 
-print_step "📥 Cloning Q Geth repository"
-cd "$WORK_DIR"
+print_success "✅ VPS preparation completed"
 
-# Remove existing directory if it exists
-if [ -d "Qgeth3" ]; then
-    print_step "Removing existing Qgeth3 directory..."
-    rm -rf Qgeth3
+# ===========================================
+# STEP 3: FIREWALL CONFIGURATION
+# ===========================================
+print_step "🔥 Step 3: Firewall configuration"
+
+if command -v ufw >/dev/null 2>&1; then
+    # Configure UFW
+    print_step "Configuring UFW firewall..."
+    ufw --force reset
+    ufw default deny incoming
+    ufw default allow outgoing
+    
+    # Allow essential ports
+    ufw allow 22/tcp comment 'SSH'
+    ufw allow 8545/tcp comment 'Q Geth RPC API'
+    ufw allow 8546/tcp comment 'Q Geth WebSocket API'
+    ufw allow 30303/tcp comment 'Q Geth P2P TCP'
+    ufw allow 30303/udp comment 'Q Geth P2P UDP'
+    
+    ufw --force enable
+    print_success "✅ UFW firewall configured"
+else
+    print_warning "UFW not available, skipping firewall configuration"
 fi
 
-# Clone the repository
-if sudo -u "$ACTUAL_USER" git clone https://github.com/fourtytwo42/Qgeth3.git; then
+# ===========================================
+# STEP 4: REPOSITORY SETUP
+# ===========================================
+print_step "📦 Step 4: Repository setup"
+
+# Create directories
+mkdir -p "$INSTALL_DIR" "$LOGS_DIR"
+chown -R "$ACTUAL_USER:$ACTUAL_USER" "$INSTALL_DIR"
+
+# Clone repository
+print_step "Cloning Q Geth repository..."
+cd "$INSTALL_DIR"
+if sudo -u "$ACTUAL_USER" git clone "https://github.com/$GITHUB_REPO.git"; then
     print_success "✅ Repository cloned successfully"
 else
     print_error "Failed to clone repository"
-    print_step "Trying with direct download..."
-    
-    # Fallback: download as zip
-    if command -v wget >/dev/null 2>&1; then
-        wget -O Qgeth3.zip https://github.com/fourtytwo42/Qgeth3/archive/main.zip
-        unzip -q Qgeth3.zip
-        mv Qgeth3-main Qgeth3
-        rm Qgeth3.zip
-    elif command -v curl >/dev/null 2>&1; then
-        curl -L -o Qgeth3.zip https://github.com/fourtytwo42/Qgeth3/archive/main.zip
-        unzip -q Qgeth3.zip
-        mv Qgeth3-main Qgeth3
-        rm Qgeth3.zip
-    else
-        print_error "Cannot download repository. Please install git, wget, or curl."
-        exit 1
-    fi
-    
-    chown -R "$ACTUAL_USER:$ACTUAL_USER" Qgeth3
-    print_success "✅ Repository downloaded as zip"
+    exit 1
 fi
 
-# Change to the project directory
-cd Qgeth3
-
-print_step "🔧 Making all scripts executable"
-# Make ALL shell scripts executable (including in subdirectories)  
+# Make scripts executable
+cd "$PROJECT_DIR"
 find . -name "*.sh" -type f -exec chmod +x {} \; 2>/dev/null || true
-chmod +x *.sh 2>/dev/null || true
 
-# Specifically ensure critical scripts are executable
-chmod +x scripts/deployment/auto-geth-service.sh 2>/dev/null || true
-chmod +x scripts/deployment/bootstrap-qgeth.sh 2>/dev/null || true  
-chmod +x scripts/linux/build-linux.sh 2>/dev/null || true
-chmod +x scripts/linux/prepare-vps.sh 2>/dev/null || true
-chmod +x scripts/linux/start-geth.sh 2>/dev/null || true
-chmod +x scripts/windows/*.ps1 2>/dev/null || true
+print_success "✅ Repository setup completed"
 
-print_step "🚀 Starting Q Geth auto-service setup"
+# ===========================================
+# STEP 5: BUILD Q GETH
+# ===========================================
+print_step "🔨 Step 5: Building Q Geth"
+
+# Set up build environment
+export QGETH_BUILD_TEMP="$INSTALL_DIR/build-temp"
+mkdir -p "$QGETH_BUILD_TEMP"
+chown -R "$ACTUAL_USER:$ACTUAL_USER" "$QGETH_BUILD_TEMP"
+
+# Build with automated error recovery
+cd "$PROJECT_DIR/scripts/linux"
+print_step "Building with automated error recovery..."
+
+BUILD_SUCCESS=false
+BUILD_ATTEMPTS=0
+MAX_BUILD_ATTEMPTS=3
+
+while [ $BUILD_ATTEMPTS -lt $MAX_BUILD_ATTEMPTS ] && [ "$BUILD_SUCCESS" = false ]; do
+    BUILD_ATTEMPTS=$((BUILD_ATTEMPTS + 1))
+    print_step "🚀 Build attempt $BUILD_ATTEMPTS/$MAX_BUILD_ATTEMPTS"
+    
+    if [ "$AUTO_CONFIRM" = true ]; then
+        if sudo -u "$ACTUAL_USER" env QGETH_BUILD_TEMP="$QGETH_BUILD_TEMP" ./build-linux.sh geth -y; then
+            BUILD_SUCCESS=true
+        fi
+    else
+        if sudo -u "$ACTUAL_USER" env QGETH_BUILD_TEMP="$QGETH_BUILD_TEMP" ./build-linux.sh geth; then
+            BUILD_SUCCESS=true
+        fi
+    fi
+    
+    if [ "$BUILD_SUCCESS" = false ] && [ $BUILD_ATTEMPTS -lt $MAX_BUILD_ATTEMPTS ]; then
+        print_warning "Build attempt $BUILD_ATTEMPTS failed, applying recovery..."
+        
+        # Clean and retry
+        cd "$PROJECT_DIR"
+        rm -f geth geth.bin 2>/dev/null || true
+        chown -R "$ACTUAL_USER:$ACTUAL_USER" "$PROJECT_DIR"
+        sudo -u "$ACTUAL_USER" go clean -cache -modcache -testcache 2>/dev/null || true
+        
+        cd "$PROJECT_DIR/quantum-geth"
+        sudo -u "$ACTUAL_USER" go mod tidy 2>/dev/null || true
+        sudo -u "$ACTUAL_USER" go mod download 2>/dev/null || true
+        
+        cd "$PROJECT_DIR/scripts/linux"
+        sleep 5
+    fi
+done
+
+if [ "$BUILD_SUCCESS" = false ]; then
+    print_error "Build failed after $MAX_BUILD_ATTEMPTS attempts"
+    exit 1
+fi
+
+print_success "✅ Q Geth built successfully"
+
+# ===========================================
+# STEP 6: CREATE SYSTEMD SERVICES
+# ===========================================
+print_step "⚙️ Step 6: Creating systemd services"
+
+# Create Q Geth node service
+cat > /etc/systemd/system/qgeth-node.service << EOF
+[Unit]
+Description=Q Geth Node Service
+After=network.target
+Wants=network.target
+
+[Service]
+Type=exec
+User=$ACTUAL_USER
+Group=$ACTUAL_USER
+WorkingDirectory=$PROJECT_DIR
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/go/bin
+ExecStart=$PROJECT_DIR/scripts/linux/start-geth.sh testnet
+ExecReload=/bin/kill -HUP \$MAINPID
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=30
+Restart=always
+RestartSec=10
+StandardOutput=append:$LOGS_DIR/geth-node.log
+StandardError=append:$LOGS_DIR/geth-node.log
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Create GitHub monitor service
+cat > /etc/systemd/system/qgeth-monitor.service << EOF
+[Unit]
+Description=Q Geth GitHub Monitor
+After=network.target
+Wants=network.target
+
+[Service]
+Type=exec
+User=$ACTUAL_USER
+Group=$ACTUAL_USER
+WorkingDirectory=$PROJECT_DIR
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/go/bin
+ExecStart=/bin/bash -c 'while true; do \\
+    REMOTE_COMMIT=\$(curl -s https://api.github.com/repos/$GITHUB_REPO/commits/$GITHUB_BRANCH | jq -r .sha 2>/dev/null); \\
+    LOCAL_COMMIT=\$(git rev-parse HEAD 2>/dev/null); \\
+    if [ "\$REMOTE_COMMIT" != "\$LOCAL_COMMIT" ] && [ "\$REMOTE_COMMIT" != "null" ] && [ -n "\$REMOTE_COMMIT" ]; then \\
+        echo "[$(date)] New commit detected: \$REMOTE_COMMIT"; \\
+        systemctl stop qgeth-node.service; \\
+        git fetch origin && git reset --hard origin/$GITHUB_BRANCH; \\
+        find . -name "*.sh" -type f -exec chmod +x {} \\; 2>/dev/null; \\
+        cd scripts/linux && sudo -u $ACTUAL_USER env QGETH_BUILD_TEMP=$QGETH_BUILD_TEMP ./build-linux.sh geth -y; \\
+        cd $PROJECT_DIR && systemctl start qgeth-node.service; \\
+        echo "[$(date)] Update completed successfully"; \\
+    else \\
+        echo "[$(date)] No updates available"; \\
+    fi; \\
+    sleep 300; \\
+done'
+Restart=always
+RestartSec=30
+StandardOutput=append:$LOGS_DIR/github-monitor.log
+StandardError=append:$LOGS_DIR/github-monitor.log
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Enable and start services
+systemctl daemon-reload
+systemctl enable qgeth-node.service
+systemctl enable qgeth-monitor.service
+
+print_success "✅ Systemd services created and enabled"
+
+# ===========================================
+# STEP 7: START SERVICES
+# ===========================================
+print_step "🚀 Step 7: Starting services"
+
+systemctl start qgeth-node.service
+sleep 5
+systemctl start qgeth-monitor.service
+
+print_success "✅ Services started successfully"
+
+# ===========================================
+# FINAL STATUS AND INFORMATION
+# ===========================================
 echo ""
 echo "========================================"
-echo "  Starting Auto-Service Installation"
+echo "🎉 Q Geth Bootstrap Completed Successfully!"
 echo "========================================"
 echo ""
+echo "📋 Installation Summary:"
+echo "  • Install Directory: $INSTALL_DIR"
+echo "  • Project Directory: $PROJECT_DIR"
+echo "  • Log Directory: $LOGS_DIR"
+echo "  • User: $ACTUAL_USER"
+echo ""
+echo "⚙️ Services Created:"
+echo "  • qgeth-node.service     - Q Geth blockchain node"
+echo "  • qgeth-monitor.service  - GitHub auto-updater"
+echo ""
+echo "🔗 Network Access:"
+echo "  • HTTP RPC API:  http://localhost:8545"
+echo "  • WebSocket API: ws://localhost:8546"
+echo "  • P2P Network:   port 30303"
+echo ""
+echo "📊 Service Management:"
+echo "  sudo systemctl status qgeth-node.service"
+echo "  sudo systemctl restart qgeth-node.service"
+echo "  sudo systemctl logs -f qgeth-node.service"
+echo ""
+echo "📁 Log Files:"
+echo "  tail -f $LOGS_DIR/geth-node.log"
+echo "  tail -f $LOGS_DIR/github-monitor.log"
+echo ""
+echo "🔄 Auto-Update Features:"
+echo "  • Monitors GitHub every 5 minutes"
+echo "  • Automatically rebuilds on new commits"
+echo "  • Restarts services after successful updates"
+echo ""
+echo "✅ Q Geth is now running and will auto-update!"
+echo ""
 
-# Run the auto-service setup
-if [ "$AUTO_CONFIRM" = true ]; then
-    exec ./scripts/deployment/auto-geth-service.sh -y
+# Final verification
+print_step "🔍 Final verification"
+sleep 3
+
+if systemctl is-active --quiet qgeth-node.service; then
+    print_success "✅ Q Geth node is running"
 else
-    exec ./scripts/deployment/auto-geth-service.sh
-fi 
+    print_warning "⚠️ Q Geth node is not running - check logs"
+fi
+
+if systemctl is-active --quiet qgeth-monitor.service; then
+    print_success "✅ GitHub monitor is running"
+else
+    print_warning "⚠️ GitHub monitor is not running - check logs"
+fi
+
+echo ""
+echo "Installation completed! 🚀" 
