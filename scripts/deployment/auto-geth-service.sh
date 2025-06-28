@@ -366,24 +366,36 @@ chmod +x scripts/deployment/auto-geth-service.sh 2>/dev/null || true
 
 print_success "✅ All shell scripts are now executable"
 
-# Step 5: Fix permissions before build
+# Step 5: AUTOMATED BUILD WITH ERROR RECOVERY
+print_step "🔨 Step 5: Automated build with error recovery"
+
+# Step 5a: Fix permissions before build (AUTOMATED PERMISSION FIX)
 print_step "🔧 Step 5a: Fixing directory permissions for build"
 chown -R $ACTUAL_USER:$ACTUAL_USER "$PROJECT_DIR"
 print_success "✅ Directory permissions set to $ACTUAL_USER"
 
-# Step 5b: Initial build
-print_step "🔨 Step 5b: Initial build"
+# Step 5b: Pre-build environment setup
+print_step "🔧 Step 5b: Setting up build environment"
 
 # Check if VPS temp directory was created and pass it to build script
 if [ -d "./build-temp" ]; then
     print_step "Found local build temp directory from VPS preparation"
     export QGETH_BUILD_TEMP="$(pwd)/build-temp"
+    # Ensure temp directory has correct ownership
+    chown -R $ACTUAL_USER:$ACTUAL_USER "./build-temp"
 fi
 
 # Source bashrc to get any environment variables from prepare-vps.sh
 if [ -f ~/.bashrc ]; then
     source ~/.bashrc 2>/dev/null || true
 fi
+
+# AUTOMATED FIX: Clean any problematic Go module state before build
+print_step "🔧 Pre-build cleanup: Clearing Go module cache to prevent conflicts"
+sudo -u $ACTUAL_USER go clean -cache -modcache -testcache 2>/dev/null || true
+
+# Step 5c: Enhanced build with automated retry
+print_step "🔨 Step 5c: Building with automated error recovery"
 
 # Ensure build script is executable before running
 chmod +x ./scripts/linux/build-linux.sh 2>/dev/null || true
@@ -392,18 +404,71 @@ chmod +x ./scripts/linux/build-linux.sh 2>/dev/null || true
 print_step "Changing to scripts/linux directory for build..."
 cd scripts/linux
 
-# Run build with environment variables
-if [ "$AUTO_CONFIRM" = true ]; then
-    sudo -u $ACTUAL_USER env QGETH_BUILD_TEMP="$QGETH_BUILD_TEMP" ./build-linux.sh geth -y
-else
-    sudo -u $ACTUAL_USER env QGETH_BUILD_TEMP="$QGETH_BUILD_TEMP" ./build-linux.sh geth
-fi
+BUILD_SUCCESS=false
+BUILD_ATTEMPTS=0
+MAX_BUILD_ATTEMPTS=3
+
+while [ $BUILD_ATTEMPTS -lt $MAX_BUILD_ATTEMPTS ] && [ "$BUILD_SUCCESS" = false ]; do
+    BUILD_ATTEMPTS=$((BUILD_ATTEMPTS + 1))
+    print_step "🚀 Build attempt $BUILD_ATTEMPTS/$MAX_BUILD_ATTEMPTS"
+    
+    # Run build with environment variables and automated error recovery
+    if [ "$AUTO_CONFIRM" = true ]; then
+        if sudo -u $ACTUAL_USER env QGETH_BUILD_TEMP="$QGETH_BUILD_TEMP" ./build-linux.sh geth -y; then
+            BUILD_SUCCESS=true
+        fi
+    else
+        if sudo -u $ACTUAL_USER env QGETH_BUILD_TEMP="$QGETH_BUILD_TEMP" ./build-linux.sh geth; then
+            BUILD_SUCCESS=true
+        fi
+    fi
+    
+    if [ "$BUILD_SUCCESS" = false ] && [ $BUILD_ATTEMPTS -lt $MAX_BUILD_ATTEMPTS ]; then
+        print_warning "Build attempt $BUILD_ATTEMPTS failed, applying automated recovery..."
+        
+        # AUTOMATED FIX: Advanced recovery between attempts
+        cd "$PROJECT_DIR"
+        
+        # Clean any partial build artifacts
+        rm -f geth geth.bin quantum-miner 2>/dev/null || true
+        
+        # Force directory ownership fix
+        chown -R $ACTUAL_USER:$ACTUAL_USER "$PROJECT_DIR"
+        
+        # Clean Go environment as user
+        sudo -u $ACTUAL_USER go clean -cache -modcache -testcache 2>/dev/null || true
+        
+        # Re-fetch dependencies
+        cd quantum-geth
+        sudo -u $ACTUAL_USER go mod tidy 2>/dev/null || true
+        sudo -u $ACTUAL_USER go mod download 2>/dev/null || true
+        cd "$PROJECT_DIR"
+        
+        # Return to build directory
+        cd scripts/linux
+        
+        print_step "Waiting 5 seconds before retry..."
+        sleep 5
+    fi
+done
 
 # Return to project directory
 cd "$PROJECT_DIR"
-if [ $? -ne 0 ]; then
-    print_error "Initial build failed"
+
+if [ "$BUILD_SUCCESS" = false ]; then
+    print_error "Build failed after $MAX_BUILD_ATTEMPTS attempts"
+    print_error "This may be due to:"
+    echo "  1. Insufficient memory (need 4GB+ total RAM+swap)"
+    echo "  2. Go module dependency conflicts"
+    echo "  3. Network connectivity issues"
+    echo "  4. Disk space issues"
+    echo ""
+    echo "Try running manually:"
+    echo "  cd $PROJECT_DIR/scripts/linux"
+    echo "  sudo -u $ACTUAL_USER ./build-linux.sh geth -y"
     exit 1
+else
+    print_success "✅ Build completed successfully after $BUILD_ATTEMPTS attempts"
 fi
 
 # Step 6: Create GitHub monitor script
