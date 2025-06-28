@@ -6,19 +6,23 @@
 
 set -e
 
-# Parse command line arguments
+# Parse command line arguments - FIXED for curl pipe compatibility
 AUTO_CONFIRM=false
-while [[ $# -gt 0 ]]; do
-    case $1 in
+
+# Better argument parsing that works with curl pipes
+for arg in "$@"; do
+    case $arg in
         -y|--yes)
             AUTO_CONFIRM=true
-            shift
-            ;;
-        *)
-            shift
             ;;
     esac
 done
+
+# Auto-detect non-interactive environment (like curl pipe)
+if [ ! -t 0 ] || [ ! -t 1 ]; then
+    # Running via pipe or non-interactive - default to auto-confirm
+    AUTO_CONFIRM=true
+fi
 
 # Colors for output
 RED='\033[0;31m'
@@ -55,6 +59,24 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
+# Ubuntu/OS compatibility check
+print_step "🔍 Checking system compatibility..."
+if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    echo "Detected OS: $NAME $VERSION"
+    
+    # Special handling for Ubuntu 25.04+ (if it exists)
+    if [ "$ID" = "ubuntu" ]; then
+        VERSION_ID_NUM=$(echo "$VERSION_ID" | cut -d. -f1)
+        if [ "$VERSION_ID_NUM" -ge 25 ]; then
+            print_warning "Ubuntu $VERSION_ID detected - applying compatibility fixes"
+            # Set additional compatibility flags for newer Ubuntu
+            export DEBIAN_FRONTEND=noninteractive
+            export NEEDRESTART_MODE=a
+        fi
+    fi
+fi
+
 # Configuration
 GITHUB_REPO="fourtytwo42/Qgeth3"
 GITHUB_BRANCH="main"
@@ -77,13 +99,22 @@ echo "  ✅ Create auto-updating systemd services"
 echo "  ✅ Configure firewall for Q Geth operations"
 echo ""
 
+# FIXED: Better interactive prompt handling
 if [ "$AUTO_CONFIRM" != true ]; then
-    echo -n "Proceed with installation? (y/N): "
-    read -r RESPONSE
-    if [[ ! "$RESPONSE" =~ ^([yY][eE][sS]|[yY])$ ]]; then
-        echo "Installation cancelled."
-        exit 0
+    # Only prompt if we have a real terminal
+    if [ -t 0 ] && [ -t 1 ]; then
+        echo -n "Proceed with installation? (y/N): "
+        read -r RESPONSE </dev/tty
+        if [[ ! "$RESPONSE" =~ ^([yY][eE][sS]|[yY])$ ]]; then
+            echo "Installation cancelled."
+            exit 0
+        fi
+    else
+        print_warning "Non-interactive environment detected, proceeding automatically..."
+        AUTO_CONFIRM=true
     fi
+else
+    print_step "Auto-confirm mode enabled, proceeding..."
 fi
 
 # ===========================================
@@ -126,12 +157,149 @@ print_step "🔧 Step 2: VPS Preparation"
 # Install dependencies
 print_step "Installing dependencies..."
 if command -v apt >/dev/null 2>&1; then
+    # Ubuntu/Debian package installation with version compatibility
+    print_step "Updating package lists..."
     DEBIAN_FRONTEND=noninteractive apt update -qq
-    DEBIAN_FRONTEND=noninteractive apt install -y git curl golang-go build-essential systemd ufw jq python3 python3-pip unzip
+    
+    # Enhanced package installation for Ubuntu 25.04+ compatibility
+    print_step "Installing essential packages..."
+    DEBIAN_FRONTEND=noninteractive apt install -y \
+        git \
+        curl \
+        wget \
+        build-essential \
+        systemd \
+        ufw \
+        jq \
+        python3 \
+        python3-pip \
+        unzip \
+        ca-certificates \
+        software-properties-common \
+        apt-transport-https \
+        gnupg \
+        lsb-release
+
+    # Go installation with version compatibility
+    print_step "Installing Go (checking version compatibility)..."
+    
+    # Check if Go is already installed and version
+    GO_VERSION=""
+    if command -v go >/dev/null 2>&1; then
+        GO_VERSION=$(go version 2>/dev/null | grep -o 'go[0-9]*\.[0-9]*' | head -1)
+        echo "Found existing Go: $GO_VERSION"
+    fi
+    
+    # Install Go if not present or version is too old
+    GO_MIN_VERSION="1.21"
+    NEED_GO_INSTALL=true
+    
+    if [ ! -z "$GO_VERSION" ]; then
+        # Extract version numbers for comparison
+        GO_VER_MAJOR=$(echo "$GO_VERSION" | sed 's/go//' | cut -d. -f1)
+        GO_VER_MINOR=$(echo "$GO_VERSION" | sed 's/go//' | cut -d. -f2)
+        
+        if [ "$GO_VER_MAJOR" -gt 1 ] || ([ "$GO_VER_MAJOR" -eq 1 ] && [ "$GO_VER_MINOR" -ge 21 ]); then
+            print_success "✅ Go $GO_VERSION is compatible (>= $GO_MIN_VERSION)"
+            NEED_GO_INSTALL=false
+        else
+            print_warning "Go $GO_VERSION is too old, need >= $GO_MIN_VERSION"
+        fi
+    fi
+    
+    if [ "$NEED_GO_INSTALL" = true ]; then
+        print_step "Installing Go $GO_MIN_VERSION or later..."
+        
+        # Try package manager first
+        if DEBIAN_FRONTEND=noninteractive apt install -y golang-go; then
+            # Check if installed version is sufficient
+            if command -v go >/dev/null 2>&1; then
+                NEW_GO_VERSION=$(go version 2>/dev/null | grep -o 'go[0-9]*\.[0-9]*' | head -1 || echo "")
+                if [ ! -z "$NEW_GO_VERSION" ]; then
+                    NEW_GO_VER_MAJOR=$(echo "$NEW_GO_VERSION" | sed 's/go//' | cut -d. -f1)
+                    NEW_GO_VER_MINOR=$(echo "$NEW_GO_VERSION" | sed 's/go//' | cut -d. -f2)
+                    
+                    if [ "$NEW_GO_VER_MAJOR" -gt 1 ] || ([ "$NEW_GO_VER_MAJOR" -eq 1 ] && [ "$NEW_GO_VER_MINOR" -ge 21 ]); then
+                        print_success "✅ Go $NEW_GO_VERSION installed successfully"
+                    else
+                        print_warning "Package manager Go $NEW_GO_VERSION is too old, installing latest manually..."
+                        NEED_MANUAL_GO=true
+                    fi
+                else
+                    NEED_MANUAL_GO=true
+                fi
+            else
+                NEED_MANUAL_GO=true
+            fi
+        else
+            NEED_MANUAL_GO=true
+        fi
+        
+        # Manual Go installation if package manager version is insufficient
+        if [ "$NEED_MANUAL_GO" = true ]; then
+            print_step "Installing latest Go manually..."
+            
+            # Remove old Go installations
+            rm -rf /usr/local/go
+            
+            # Download and install latest Go
+            GO_LATEST_VERSION="1.21.6"  # Known working version
+            GO_ARCH="amd64"
+            if [ "$(uname -m)" = "aarch64" ]; then
+                GO_ARCH="arm64"
+            fi
+            
+            GO_TARBALL="go${GO_LATEST_VERSION}.linux-${GO_ARCH}.tar.gz"
+            
+            cd /tmp
+            if wget "https://go.dev/dl/${GO_TARBALL}"; then
+                tar -C /usr/local -xzf "$GO_TARBALL"
+                
+                # Add Go to PATH
+                echo 'export PATH=$PATH:/usr/local/go/bin' >> /etc/profile
+                export PATH=$PATH:/usr/local/go/bin
+                
+                # Verify installation
+                if /usr/local/go/bin/go version; then
+                    print_success "✅ Go $GO_LATEST_VERSION installed manually"
+                else
+                    print_error "Failed to install Go manually"
+                    exit 1
+                fi
+            else
+                print_error "Failed to download Go $GO_LATEST_VERSION"
+                exit 1
+            fi
+        fi
+    fi
+    
 elif command -v yum >/dev/null 2>&1; then
+    # CentOS/RHEL/Fedora
     yum install -y git curl golang gcc systemd firewalld jq python3 python3-pip unzip
+elif command -v dnf >/dev/null 2>&1; then
+    # Modern Fedora
+    dnf install -y git curl golang gcc systemd firewalld jq python3 python3-pip unzip
+elif command -v pacman >/dev/null 2>&1; then
+    # Arch Linux
+    pacman -Sy --noconfirm git curl go gcc systemd jq python python-pip unzip
 else
-    print_error "Unsupported package manager. Please install dependencies manually."
+    print_error "Unsupported package manager. Please install dependencies manually:"
+    echo "  - git, curl, golang (>= 1.21), build-essential, systemd, jq, python3"
+    exit 1
+fi
+
+# Final Go verification
+print_step "Verifying Go installation..."
+if command -v go >/dev/null 2>&1; then
+    GO_FINAL_VERSION=$(go version)
+    print_success "✅ Go verified: $GO_FINAL_VERSION"
+    
+    # Set up Go environment
+    export GOPATH=/tmp/go-build-bootstrap
+    export GOCACHE=/tmp/go-cache-bootstrap  
+    mkdir -p "$GOPATH" "$GOCACHE"
+else
+    print_error "Go installation failed - please install Go >= 1.21 manually"
     exit 1
 fi
 
