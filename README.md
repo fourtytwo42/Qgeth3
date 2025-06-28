@@ -80,25 +80,41 @@ Qgeth3/
 
 ## 📚 Documentation
 
-### Getting Started
-- **[Quick Start Guide](docs/quick-start.md)** - Get running in minutes
-- **[Installation Guide](docs/installation.md)** - Platform-specific setup
+### 🚀 Getting Started
+- **[Quick Start Guide](docs/getting-started/quick-start.md)** - Get running in minutes
+- **[Project Structure](docs/getting-started/project-structure.md)** - Codebase organization
+- **[Quick Start Troubleshooting](docs/getting-started/troubleshooting-quick-start.md)** - Getting started problems
 
-### Deployment & Operations  
-- **[VPS Deployment Guide](docs/vps-deployment.md)** - Production deployment
-- **[Linux Mining Guide](docs/linux-mining.md)** - Linux GPU/CPU mining optimization
-- **[Windows Mining Guide](docs/windows-mining.md)** - Windows GPU/CPU mining optimization
+### 🔨 Building from Source
+- **[Linux Q Geth Build](docs/building/linux-build-geth.md)** - Build Q Geth on Linux
+- **[Windows Q Geth Build](docs/building/windows-build-geth.md)** - Build Q Geth on Windows  
+- **[Linux Quantum Miner Build](docs/building/linux-build-quantum-miner.md)** - Build miner on Linux
+- **[Windows Quantum Miner Build](docs/building/windows-build-quantum-miner.md)** - Build miner on Windows
+- **[Linux Build Troubleshooting](docs/building/troubleshooting-linux-build-geth.md)** - Linux build issues
+- **[Windows Build Troubleshooting](docs/building/troubleshooting-windows-build-geth.md)** - Windows build issues
+- **[Linux Miner Build Troubleshooting](docs/building/troubleshooting-linux-build-quantum-miner.md)** - Linux miner issues
+- **[Windows Miner Build Troubleshooting](docs/building/troubleshooting-windows-build-quantum-miner.md)** - Windows miner issues
 
-### Technical Documentation
-- **[Project Structure](docs/project-structure.md)** - Codebase organization
-- **[Troubleshooting Guide](docs/troubleshooting.md)** - Common issues & solutions
+### 🌐 Node Operation  
+- **[Linux Geth Guide](docs/node-operation/linux-geth.md)** - Complete Linux node setup & operation
+- **[Windows Geth Guide](docs/node-operation/windows-geth.md)** - Complete Windows node setup & operation
+- **[Linux Geth Troubleshooting](docs/node-operation/troubleshooting-linux-geth.md)** - Linux node troubleshooting
+- **[Windows Geth Troubleshooting](docs/node-operation/troubleshooting-windows-geth.md)** - Windows node troubleshooting
 
-### Development
-- **[Contributing Guidelines](docs/contributing.md)** - Development workflow
+### ⚡ Mining Guides
+- **[Linux Mining Guide](docs/mining/linux-mining.md)** - CUDA & GPU optimization for Linux
+- **[Windows Mining Guide](docs/mining/windows-mining.md)** - CuPy & GPU optimization for Windows  
+- **[Linux Mining Troubleshooting](docs/mining/troubleshooting-linux-mining.md)** - Linux mining troubleshooting
+- **[Windows Mining Troubleshooting](docs/mining/troubleshooting-windows-mining.md)** - Windows mining troubleshooting
 
-### Platform-Specific Guides
-- **[Linux Mining](docs/linux-mining.md)** - CUDA & GPU optimization for Linux
-- **[Windows Mining](docs/windows-mining.md)** - CuPy & GPU optimization for Windows
+### 🚀 Production Deployment
+- **[VPS Deployment Guide](docs/deployment/vps-deployment.md)** - Production server setup & management
+- **[Windows Deployment Guide](docs/deployment/windows-deploy.md)** - Windows production deployment
+- **[VPS Deployment Troubleshooting](docs/deployment/troubleshooting-vps-deployment.md)** - Production deployment troubleshooting
+- **[Windows Deployment Troubleshooting](docs/deployment/troubleshooting-windows-deploy.md)** - Windows deployment troubleshooting
+
+### 👨‍💻 Development
+- **[Contributing Guidelines](docs/development/contributing.md)** - Development workflow
 
 ## 🎯 Use Cases
 
@@ -210,7 +226,7 @@ Qgeth3/
 - **Documentation:** See `docs/` directory for comprehensive guides
 - **Issues:** GitHub Issues for bug reports and feature requests
 - **Questions:** GitHub Discussions for general questions
-- **Emergency:** [Troubleshooting Guide](docs/troubleshooting.md) for common issues
+- **Emergency:** Use our topic-specific troubleshooting guides in the documentation section above
 
 ## 📄 License
 
