@@ -86,7 +86,8 @@ Qgeth3/
 
 ### Deployment & Operations  
 - **[VPS Deployment Guide](docs/vps-deployment.md)** - Production deployment
-- **[Mining Guide](docs/mining.md)** - GPU/CPU mining optimization
+- **[Linux Mining Guide](docs/linux-mining.md)** - Linux GPU/CPU mining optimization
+- **[Windows Mining Guide](docs/windows-mining.md)** - Windows GPU/CPU mining optimization
 
 ### Technical Documentation
 - **[Project Structure](docs/project-structure.md)** - Codebase organization
@@ -96,7 +97,8 @@ Qgeth3/
 - **[Contributing Guidelines](docs/contributing.md)** - Development workflow
 
 ### Platform-Specific Guides
-- **[Linux GPU Mining](docs/LINUX-GPU-MINING.md)** - CUDA & GPU optimization
+- **[Linux Mining](docs/linux-mining.md)** - CUDA & GPU optimization for Linux
+- **[Windows Mining](docs/windows-mining.md)** - CuPy & GPU optimization for Windows
 
 ## 🎯 Use Cases
 
