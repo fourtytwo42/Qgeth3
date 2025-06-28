@@ -204,7 +204,9 @@ if [ -n "$BUILD_TEMP_DIR" ] && [ -d "$BUILD_TEMP_DIR" ]; then
         echo "🧹 Cleaning stale build artifacts..."
         rm -rf "$BUILD_TEMP_DIR"
         mkdir -p "$BUILD_TEMP_DIR"
-        echo "  Stale temp directory cleaned"
+        # Recreate the required subdirectories
+        mkdir -p "$GOCACHE" "$GOTMPDIR" "$TMPDIR"
+        echo "  Stale temp directory cleaned and subdirectories recreated"
     fi
 fi
 
@@ -222,7 +224,9 @@ if [ "$CLEAN" = "--clean" ] || [ "$2" = "--clean" ]; then
     if [ -n "$BUILD_TEMP_DIR" ] && [ -d "$BUILD_TEMP_DIR" ]; then
         rm -rf "$BUILD_TEMP_DIR"
         mkdir -p "$BUILD_TEMP_DIR"
-        echo "  Build temp directory cleaned"
+        # Recreate the required subdirectories
+        mkdir -p "$GOCACHE" "$GOTMPDIR" "$TMPDIR"
+        echo "  Build temp directory cleaned and subdirectories recreated"
     fi
 fi
 
