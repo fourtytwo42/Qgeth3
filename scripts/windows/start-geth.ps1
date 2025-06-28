@@ -36,17 +36,30 @@ if ($Help) {
     exit 0
 }
 
+# Get the script directory and build path to project root
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$projectRoot = Resolve-Path (Join-Path $scriptDir "../..")
+$releasesDir = Join-Path $projectRoot "releases"
+
 # Find latest geth release
 function Get-LatestGethRelease {
-    $gethReleases = Get-ChildItem "../../releases" -Directory | Where-Object { $_.Name -like "quantum-geth-*" } | Sort-Object Name -Descending
+    param($ReleasesDirectory)
+    
+    if (-not (Test-Path $ReleasesDirectory)) {
+        Write-Host "ERROR: Releases directory not found: $ReleasesDirectory" -ForegroundColor Red
+        return $null
+    }
+    
+    $gethReleases = Get-ChildItem $ReleasesDirectory -Directory | Where-Object { $_.Name -like "quantum-geth-*" } | Sort-Object Name -Descending
     if ($gethReleases.Count -eq 0) {
+        Write-Host "ERROR: No quantum-geth releases found in $ReleasesDirectory" -ForegroundColor Red
         return $null
     }
     return Join-Path $gethReleases[0].FullName "geth.exe"
 }
 
 # Build if latest geth release doesn't exist
-$latestGeth = Get-LatestGethRelease
+$latestGeth = Get-LatestGethRelease $releasesDir
 if (-not $latestGeth -or -not (Test-Path $latestGeth)) {
     Write-Host "Building Q Coin Geth Release..." -ForegroundColor Yellow
     & .\build-release.ps1 geth
@@ -54,7 +67,7 @@ if (-not $latestGeth -or -not (Test-Path $latestGeth)) {
         Write-Host "ERROR: Build failed!" -ForegroundColor Red
         exit 1
     }
-    $latestGeth = Get-LatestGethRelease
+    $latestGeth = Get-LatestGethRelease $releasesDir
     if (-not $latestGeth) {
         Write-Host "ERROR: No geth release found after build!" -ForegroundColor Red
         exit 1
@@ -68,21 +81,21 @@ $configs = @{
     "mainnet" = @{
         chainid = 73236
         datadir = "$env:APPDATA\Qcoin\mainnet"
-        genesis = "../../configs/genesis_quantum_mainnet.json"
+        genesis = Join-Path $projectRoot "configs\genesis_quantum_mainnet.json"
         port = 30303
         name = "Q Coin Mainnet"
     }
     "testnet" = @{
         chainid = 73235
         datadir = "$env:APPDATA\Qcoin\testnet"
-        genesis = "../../configs/genesis_quantum_testnet.json"
+        genesis = Join-Path $projectRoot "configs\genesis_quantum_testnet.json"
         port = 30303
         name = "Q Coin Testnet"
     }
     "devnet" = @{
         chainid = 73234
         datadir = "$env:APPDATA\Qcoin\devnet"
-        genesis = "../../configs/genesis_quantum_dev.json"
+        genesis = Join-Path $projectRoot "configs\genesis_quantum_dev.json"
         port = 30305
         name = "Q Coin Dev Network"
     }
