@@ -89,10 +89,8 @@ if ($Component -eq "geth" -or $Component -eq "both") {
         if ($LASTEXITCODE -eq 0) {
             Write-Host "quantum-geth built successfully (CGO_ENABLED=0)" -ForegroundColor Green
             
-                         # Create timestamped release
-             $gethReleasesDir = Join-Path $ReleasesDir "geth"
-             New-Item -ItemType Directory -Path $gethReleasesDir -Force | Out-Null
-             $releaseDir = Join-Path $gethReleasesDir "quantum-geth-$timestamp"
+                                     # Create timestamped release directly in releases directory
+            $releaseDir = Join-Path $ReleasesDir "quantum-geth-$timestamp"
              New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
             Copy-Item "geth.exe" (Join-Path $releaseDir "geth.exe") -Force
             
@@ -215,10 +213,8 @@ if ($Component -eq "miner" -or $Component -eq "both") {
         if ($LASTEXITCODE -eq 0) {
             Write-Host "quantum-miner built successfully" -ForegroundColor Green
             
-                         # Create timestamped release
-             $minerReleasesDir = Join-Path $ReleasesDir "quantum-miner"
-             New-Item -ItemType Directory -Path $minerReleasesDir -Force | Out-Null
-             $releaseDir = Join-Path $minerReleasesDir "quantum-miner-$timestamp"
+                                     # Create timestamped release directly in releases directory
+            $releaseDir = Join-Path $ReleasesDir "quantum-miner-$timestamp"
              New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
             Copy-Item "quantum-miner.exe" (Join-Path $releaseDir "quantum-miner.exe") -Force
             
@@ -307,8 +303,8 @@ See project README for full documentation.
 Write-Host "Build completed successfully!" -ForegroundColor Green
 Write-Host "Releases created in:" -ForegroundColor Cyan
 if ($Component -eq "geth" -or $Component -eq "both") {
-    Write-Host "  Geth: $ReleasesDir\geth\" -ForegroundColor White
+    Write-Host "  Geth: $ReleasesDir\quantum-geth-*\" -ForegroundColor White
 }
 if ($Component -eq "miner" -or $Component -eq "both") {
-    Write-Host "  Miner: $ReleasesDir\quantum-miner\" -ForegroundColor White
+    Write-Host "  Miner: $ReleasesDir\quantum-miner-*\" -ForegroundColor White
 } 
