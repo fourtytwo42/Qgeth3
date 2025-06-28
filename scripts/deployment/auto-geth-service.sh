@@ -366,8 +366,13 @@ chmod +x scripts/deployment/auto-geth-service.sh 2>/dev/null || true
 
 print_success "✅ All shell scripts are now executable"
 
-# Step 5: Initial build
-print_step "🔨 Step 5: Initial build"
+# Step 5: Fix permissions before build
+print_step "🔧 Step 5a: Fixing directory permissions for build"
+chown -R $ACTUAL_USER:$ACTUAL_USER "$PROJECT_DIR"
+print_success "✅ Directory permissions set to $ACTUAL_USER"
+
+# Step 5b: Initial build
+print_step "🔨 Step 5b: Initial build"
 
 # Check if VPS temp directory was created and pass it to build script
 if [ -d "./build-temp" ]; then
