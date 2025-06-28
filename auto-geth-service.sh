@@ -49,6 +49,29 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
+# Installation lock file to prevent multiple simultaneous runs
+INSTALL_LOCK="/tmp/qgeth-auto-service.lock"
+if [ -f "$INSTALL_LOCK" ]; then
+    LOCK_PID=$(cat "$INSTALL_LOCK" 2>/dev/null)
+    if [ -n "$LOCK_PID" ] && kill -0 "$LOCK_PID" 2>/dev/null; then
+        print_error "Auto-service installation already in progress (PID: $LOCK_PID)"
+        echo "If this is an error, remove: $INSTALL_LOCK"
+        exit 1
+    else
+        print_warning "Removing stale lock file"
+        rm -f "$INSTALL_LOCK"
+    fi
+fi
+
+# Create lock file
+echo $$ > "$INSTALL_LOCK"
+
+# Cleanup function
+cleanup_install() {
+    rm -f "$INSTALL_LOCK" 2>/dev/null || true
+}
+trap cleanup_install EXIT
+
 # Get the actual user (not root when using sudo)
 ACTUAL_USER=${SUDO_USER:-$USER}
 ACTUAL_HOME=$(eval echo ~$ACTUAL_USER)
@@ -90,6 +113,48 @@ echo ""
 
 # Step 1: Prepare VPS
 print_step "💾 Step 1: Preparing VPS Environment"
+
+# Check if auto-service is already installed and running
+if systemctl list-units --full -all | grep -q "qgeth-node.service"; then
+    print_warning "Q Geth auto-service appears to be already installed!"
+    
+    if [ "$AUTO_CONFIRM" = true ]; then
+        print_step "Auto-confirming: Stopping existing services for clean reinstall"
+        REINSTALL_SERVICES=true
+    else
+        echo "Current service status:"
+        systemctl status qgeth-node.service --no-pager -l 2>/dev/null || echo "  qgeth-node: Not active"
+        systemctl status qgeth-github-monitor.service --no-pager -l 2>/dev/null || echo "  qgeth-github-monitor: Not active"
+        echo ""
+        echo -n "Stop existing services and reinstall? (y/N): "
+        read -r RESPONSE
+        if [[ "$RESPONSE" =~ ^([yY][eE][sS]|[yY])$ ]]; then
+            REINSTALL_SERVICES=true
+        else
+            print_error "Cannot proceed with services running. Please stop them first:"
+            echo "  sudo systemctl stop qgeth-node.service"
+            echo "  sudo systemctl stop qgeth-github-monitor.service"
+            exit 1
+        fi
+    fi
+    
+    if [ "$REINSTALL_SERVICES" = true ]; then
+        print_step "Gracefully stopping existing services..."
+        systemctl stop qgeth-node.service 2>/dev/null || true
+        systemctl stop qgeth-github-monitor.service 2>/dev/null || true
+        systemctl stop qgeth-updater.service 2>/dev/null || true
+        sleep 5
+        print_success "✅ Existing services stopped"
+    fi
+fi
+
+# Clean up any stale build directories
+if [ -d "./build-temp" ]; then
+    print_step "Cleaning up stale build temp directory..."
+    rm -rf "./build-temp"
+    print_success "✅ Stale build temp cleaned"
+fi
+
 if [ -f "./prepare-vps.sh" ]; then
     print_step "Running VPS preparation script..."
     if [ "$AUTO_CONFIRM" = true ]; then
@@ -139,33 +204,61 @@ fi
 
 print_step "Configuring firewall rules..."
 
-# Reset UFW to default state
-ufw --force reset
+# Check if UFW is already active and has our rules
+UFW_STATUS=$(ufw status 2>/dev/null || echo "inactive")
+if echo "$UFW_STATUS" | grep -q "Q Geth"; then
+    print_step "UFW already has Q Geth rules configured"
+    if [ "$AUTO_CONFIRM" = true ]; then
+        print_step "Auto-confirming: Reconfiguring firewall rules"
+        RECONFIGURE_UFW=true
+    else
+        echo -n "Reconfigure UFW firewall rules? (y/N): "
+        read -r RESPONSE
+        if [[ "$RESPONSE" =~ ^([yY][eE][sS]|[yY])$ ]]; then
+            RECONFIGURE_UFW=true
+        else
+            print_step "Keeping existing UFW configuration"
+            RECONFIGURE_UFW=false
+        fi
+    fi
+else
+    RECONFIGURE_UFW=true
+fi
 
-# Set default policies
-ufw default deny incoming
-ufw default allow outgoing
+if [ "$RECONFIGURE_UFW" = true ]; then
+    # Reset UFW to default state only if reconfiguring
+    ufw --force reset
 
-# Allow SSH (port 22) - CRITICAL: This must be first!
-ufw allow 22/tcp comment 'SSH'
-print_success "✅ SSH access allowed (port 22)"
+    # Set default policies
+    ufw default deny incoming
+    ufw default allow outgoing
+fi
 
-# Allow Q Geth RPC API (port 8545)
-ufw allow 8545/tcp comment 'Q Geth RPC API'
-print_success "✅ Q Geth RPC API allowed (port 8545)"
+if [ "$RECONFIGURE_UFW" = true ]; then
+    # Allow SSH (port 22) - CRITICAL: This must be first!
+    ufw allow 22/tcp comment 'SSH'
+    print_success "✅ SSH access allowed (port 22)"
 
-# Allow Q Geth P2P networking (port 30303)
-ufw allow 30303/tcp comment 'Q Geth P2P TCP'
-ufw allow 30303/udp comment 'Q Geth P2P UDP'
-print_success "✅ Q Geth P2P networking allowed (port 30303)"
+    # Allow Q Geth RPC API (port 8545)
+    ufw allow 8545/tcp comment 'Q Geth RPC API'
+    print_success "✅ Q Geth RPC API allowed (port 8545)"
 
-# Allow Q Geth WebSocket API (port 8546) - optional but useful
-ufw allow 8546/tcp comment 'Q Geth WebSocket API'
-print_success "✅ Q Geth WebSocket API allowed (port 8546)"
+    # Allow Q Geth P2P networking (port 30303)
+    ufw allow 30303/tcp comment 'Q Geth P2P TCP'
+    ufw allow 30303/udp comment 'Q Geth P2P UDP'
+    print_success "✅ Q Geth P2P networking allowed (port 30303)"
 
-# Enable UFW
-print_step "Enabling UFW firewall..."
-ufw --force enable
+    # Allow Q Geth WebSocket API (port 8546) - optional but useful
+    ufw allow 8546/tcp comment 'Q Geth WebSocket API'
+    print_success "✅ Q Geth WebSocket API allowed (port 8546)"
+
+    # Enable UFW
+    print_step "Enabling UFW firewall..."
+    ufw --force enable
+else
+    print_step "Ensuring UFW is enabled..."
+    ufw --force enable
+fi
 
 # Show firewall status
 print_step "Firewall configuration:"
@@ -176,8 +269,40 @@ echo ""
 
 # Step 3: Create directory structure
 print_step "📁 Step 3: Creating directory structure"
+
+# Check if directories exist with wrong ownership
+if [ -d "$INSTALL_DIR" ]; then
+    CURRENT_OWNER=$(stat -c %U "$INSTALL_DIR" 2>/dev/null || echo "unknown")
+    if [ "$CURRENT_OWNER" != "$ACTUAL_USER" ] && [ "$CURRENT_OWNER" != "unknown" ]; then
+        print_warning "Directory $INSTALL_DIR owned by $CURRENT_OWNER instead of $ACTUAL_USER"
+        if [ "$AUTO_CONFIRM" = true ]; then
+            print_step "Auto-confirming: Fixing directory ownership"
+            FIX_OWNERSHIP=true
+        else
+            echo -n "Fix ownership of existing directories? (y/N): "
+            read -r RESPONSE
+            if [[ "$RESPONSE" =~ ^([yY][eE][sS]|[yY])$ ]]; then
+                FIX_OWNERSHIP=true
+            else
+                print_warning "Directory ownership not fixed - this may cause permission issues"
+                FIX_OWNERSHIP=false
+            fi
+        fi
+    else
+        FIX_OWNERSHIP=true
+    fi
+else
+    FIX_OWNERSHIP=true
+fi
+
+# Create directories
 mkdir -p "$INSTALL_DIR" "$LOGS_DIR" "$BACKUP_DIR" "$SCRIPTS_DIR"
-chown -R $ACTUAL_USER:$ACTUAL_USER "$INSTALL_DIR"
+
+# Fix ownership if needed
+if [ "$FIX_OWNERSHIP" = true ]; then
+    chown -R $ACTUAL_USER:$ACTUAL_USER "$INSTALL_DIR"
+    print_success "✅ Directory ownership set to $ACTUAL_USER"
+fi
 
 # Step 4: Clone/setup project
 print_step "📦 Step 4: Setting up project"

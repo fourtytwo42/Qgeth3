@@ -175,6 +175,26 @@ check_memory
 # Setup temporary build environment
 setup_temp_build
 
+# Check for interrupted/partial builds and clean if needed
+if [ -f "geth.bin" ] && [ ! -f "geth" ]; then
+    echo "🔍 Detected partial build (geth.bin without geth wrapper)"
+    echo "🧹 Cleaning partial build state..."
+    rm -f geth.bin geth quantum-miner quantum_solver.py
+    echo "  Partial build artifacts removed"
+fi
+
+# Check for stale build artifacts in case of interruption
+if [ -n "$BUILD_TEMP_DIR" ] && [ -d "$BUILD_TEMP_DIR" ]; then
+    # Check if temp directory has stale content
+    if [ "$(find "$BUILD_TEMP_DIR" -type f 2>/dev/null | wc -l)" -gt 0 ]; then
+        echo "🔍 Found stale build temp directory: $BUILD_TEMP_DIR"
+        echo "🧹 Cleaning stale build artifacts..."
+        rm -rf "$BUILD_TEMP_DIR"
+        mkdir -p "$BUILD_TEMP_DIR"
+        echo "  Stale temp directory cleaned"
+    fi
+fi
+
 # Clean previous builds if requested
 if [ "$CLEAN" = "--clean" ] || [ "$2" = "--clean" ]; then
     echo "🧹 Cleaning previous builds..."
@@ -184,6 +204,13 @@ if [ "$CLEAN" = "--clean" ] || [ "$2" = "--clean" ]; then
     # Clean Go cache
     go clean -cache 2>/dev/null || true
     echo "  Go cache cleaned"
+    
+    # Clean build temp directory
+    if [ -n "$BUILD_TEMP_DIR" ] && [ -d "$BUILD_TEMP_DIR" ]; then
+        rm -rf "$BUILD_TEMP_DIR"
+        mkdir -p "$BUILD_TEMP_DIR"
+        echo "  Build temp directory cleaned"
+    fi
 fi
 
 # Check directories exist
