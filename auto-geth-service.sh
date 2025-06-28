@@ -524,6 +524,12 @@ cd "$PROJECT_DIR" || {
 
 if sudo -u "$ACTUAL_USER" git fetch origin && sudo -u "$ACTUAL_USER" git reset --hard "origin/$GITHUB_BRANCH"; then
     log "✅ Successfully pulled latest changes"
+    
+    # Fix permissions on shell scripts after git pull
+    log "🔧 Setting execute permissions on shell scripts..."
+    chmod +x *.sh 2>/dev/null || true
+    chmod +x quantum-geth/tools/solver/*.py 2>/dev/null || true
+    log "✅ Permissions updated"
 else
     log "❌ Failed to pull updates"
     cleanup
