@@ -96,17 +96,17 @@ func SetupGenesisBlockWithOverride(db ethdb.Database, triedb *triedb.Database, g
 		return params.QCoinTestnetChainConfig, common.Hash{}, genesisT.ErrGenesisNoConfig
 	}
 
-	applyOverrides := func(config ctypes.ChainConfigurator) {
-		if config != nil {
+	applyOverrides := func(cfg ctypes.ChainConfigurator) {
+		if cfg != nil {
 			// Block-based overrides are not provided because Shanghai is
 			// ETH-network specific and that protocol is defined exclusively in time-based forks.
 			if overrides != nil && overrides.OverrideCancun != nil {
-				config.SetEIP1153TransitionTime(overrides.OverrideCancun)
-				config.SetEIP4788TransitionTime(overrides.OverrideCancun)
-				config.SetEIP4844TransitionTime(overrides.OverrideCancun)
-				config.SetEIP5656TransitionTime(overrides.OverrideCancun)
-				config.SetEIP6780TransitionTime(overrides.OverrideCancun)
-				config.SetEIP7516TransitionTime(overrides.OverrideCancun)
+				cfg.SetEIP1153TransitionTime(overrides.OverrideCancun)
+				cfg.SetEIP4788TransitionTime(overrides.OverrideCancun)
+				cfg.SetEIP4844TransitionTime(overrides.OverrideCancun)
+				cfg.SetEIP5656TransitionTime(overrides.OverrideCancun)
+				cfg.SetEIP6780TransitionTime(overrides.OverrideCancun)
+				cfg.SetEIP7516TransitionTime(overrides.OverrideCancun)
 			}
 			if overrides != nil && overrides.OverrideVerkle != nil {
 				log.Warn("Verkle-fork is not yet supported")
@@ -118,8 +118,7 @@ func SetupGenesisBlockWithOverride(db ethdb.Database, triedb *triedb.Database, g
 	stored := rawdb.ReadCanonicalHash(db, 0)
 	if (stored == common.Hash{}) {
 		if genesis == nil {
-			log.Info("Writing default main-net genesis block")
-			log.Warn("Not specifying a chain flag is deprecated and will be removed in the future, please use --mainnet for Ethereum mainnet")
+			log.Info("Writing default genesis block")
 			genesis = params.DefaultGenesisBlock()
 		} else {
 			log.Info("Writing custom genesis block")
@@ -129,7 +128,6 @@ func SetupGenesisBlockWithOverride(db ethdb.Database, triedb *triedb.Database, g
 		if err != nil {
 			return genesis.Config, common.Hash{}, err
 		}
-		log.Info("Wrote genesis block OK", "config", genesis.Config)
 		return genesis.Config, block.Hash(), nil
 	}
 	// The genesis block is present(perhaps in ancient database) while the
@@ -145,7 +143,28 @@ func SetupGenesisBlockWithOverride(db ethdb.Database, triedb *triedb.Database, g
 		// Ensure the stored genesis matches with the given one.
 		hash := GenesisToBlock(genesis, nil).Hash()
 		if hash != stored {
-			return genesis.Config, hash, &genesisT.GenesisMismatchError{Stored: stored, New: hash}
+			// 🚀 TESTNET AUTO-RESET: Instead of erroring, wipe and restart with new genesis
+			log.Warn("🔄 TESTNET AUTO-RESET: Genesis mismatch detected, automatically resetting blockchain!",
+				"storedGenesis", stored.Hex(),
+				"newGenesis", hash.Hex())
+			
+			// Wipe all blockchain data
+			if err := wipeBlockchainData(db); err != nil {
+				return genesis.Config, hash, fmt.Errorf("failed to wipe blockchain for genesis reset: %v", err)
+			}
+			
+			// Commit the new genesis
+			block, err := CommitGenesis(genesis, db, triedb)
+			if err != nil {
+				return genesis.Config, hash, err
+			}
+			
+			log.Warn("🚀 TESTNET AUTO-RESET: Fresh blockchain started with new genesis!",
+				"newGenesisHash", block.Hash().Hex(),
+				"blockNumber", block.NumberU64(),
+				"difficulty", block.Difficulty())
+			
+			return genesis.Config, block.Hash(), nil
 		}
 		block, err := CommitGenesis(genesis, db, triedb)
 		if err != nil {
@@ -158,7 +177,28 @@ func SetupGenesisBlockWithOverride(db ethdb.Database, triedb *triedb.Database, g
 		applyOverrides(genesis.Config)
 		hash := GenesisToBlock(genesis, nil).Hash()
 		if hash != stored {
-			return genesis.Config, hash, &genesisT.GenesisMismatchError{Stored: stored, New: hash}
+			// 🚀 TESTNET AUTO-RESET: Instead of erroring, wipe and restart with new genesis
+			log.Warn("🔄 TESTNET AUTO-RESET: Genesis mismatch detected, automatically resetting blockchain!",
+				"storedGenesis", stored.Hex(),
+				"newGenesis", hash.Hex())
+			
+			// Wipe all blockchain data
+			if err := wipeBlockchainData(db); err != nil {
+				return genesis.Config, hash, fmt.Errorf("failed to wipe blockchain for genesis reset: %v", err)
+			}
+			
+			// Commit the new genesis
+			block, err := CommitGenesis(genesis, db, triedb)
+			if err != nil {
+				return genesis.Config, hash, err
+			}
+			
+			log.Warn("🚀 TESTNET AUTO-RESET: Fresh blockchain started with new genesis!",
+				"newGenesisHash", block.Hash().Hex(),
+				"blockNumber", block.NumberU64(),
+				"difficulty", block.Difficulty())
+			
+			return genesis.Config, block.Hash(), nil
 		}
 	}
 	// Get the existing chain configuration.
@@ -256,7 +296,19 @@ func LoadCliqueConfig(db ethdb.Database, genesis *genesisT.Genesis) (*ctypes.Cli
 		db := rawdb.NewMemoryDatabase()
 		genesisBlock := MustCommitGenesis(db, triedb.NewDatabase(db, nil), genesis)
 		if stored != (common.Hash{}) && genesisBlock.Hash() != stored {
-			return nil, &genesisT.GenesisMismatchError{Stored: stored, New: genesisBlock.Hash()}
+			// 🚀 TESTNET AUTO-RESET: Log genesis mismatch for LoadCliqueConfig
+			log.Warn("🔄 TESTNET AUTO-RESET: Genesis mismatch detected in LoadCliqueConfig!",
+				"storedGenesis", stored.Hex(),
+				"newGenesis", genesisBlock.Hash().Hex(),
+				"note", "Auto-reset will occur during SetupGenesisBlock")
+			// Don't reset here - let SetupGenesisBlock handle it to avoid double-reset
+			if genesis.Config.GetConsensusEngineType() == ctypes.ConsensusEngineT_Clique {
+				return &ctypes.CliqueConfig{
+					Period: genesis.Config.GetCliquePeriod(),
+					Epoch:  genesis.Config.GetCliqueEpoch(),
+				}, nil
+			}
+			return nil, nil
 		}
 		if genesis.Config.GetConsensusEngineType() == ctypes.ConsensusEngineT_Clique {
 			return &ctypes.CliqueConfig{
@@ -296,7 +348,13 @@ func LoadChainConfig(db ethdb.Database, genesis *genesisT.Genesis) (ctypes.Chain
 		// is matched.
 		genesisBlock := GenesisToBlock(genesis, nil)
 		if stored != (common.Hash{}) && genesisBlock.Hash() != stored {
-			return nil, &genesisT.GenesisMismatchError{Stored: stored, New: genesisBlock.Hash()}
+			// 🚀 TESTNET AUTO-RESET: Log genesis mismatch for LoadChainConfig
+			log.Warn("🔄 TESTNET AUTO-RESET: Genesis mismatch detected in LoadChainConfig!",
+				"storedGenesis", stored.Hex(),
+				"newGenesis", genesisBlock.Hash().Hex(),
+				"note", "Auto-reset will occur during SetupGenesisBlock")
+			// Don't reset here - let SetupGenesisBlock handle it to avoid double-reset
+			return genesis.Config, nil
 		}
 		return genesis.Config, nil
 	}
@@ -628,4 +686,55 @@ func GenesisBlockForTesting(db ethdb.Database, addr common.Address, balance *big
 		BaseFee: big.NewInt(vars.InitialBaseFee),
 	}
 	return MustCommitGenesis(db, triedb.NewDatabase(db, nil), &g)
+}
+
+// wipeBlockchainData removes all blockchain data from the database to allow fresh start
+func wipeBlockchainData(db ethdb.Database) error {
+	log.Warn("🧹 TESTNET AUTO-RESET: Wiping blockchain data for fresh genesis start...")
+	
+	// Delete canonical chain data
+	it := db.NewIterator([]byte("h"), nil) // Header prefix
+	defer it.Release()
+	
+	batch := db.NewBatch()
+	deleteCount := 0
+	
+	// Delete headers, bodies, receipts, and related data
+	for it.Next() {
+		batch.Delete(it.Key())
+		deleteCount++
+		if deleteCount%10000 == 0 {
+			log.Info("🧹 Deleting blockchain data...", "deleted", deleteCount)
+		}
+	}
+	
+	// Delete other blockchain-related prefixes
+	prefixes := [][]byte{
+		[]byte("B"), // Block bodies
+		[]byte("r"), // Receipts
+		[]byte("t"), // Total difficulty
+		[]byte("H"), // Header number mapping
+		[]byte("n"), // Block number to hash
+		[]byte("s"), // State data
+		[]byte("p"), // State trie preimages
+		[]byte("b"), // Block number to hash
+		[]byte("l"), // Transaction log
+	}
+	
+	for _, prefix := range prefixes {
+		prefixIt := db.NewIterator(prefix, nil)
+		for prefixIt.Next() {
+			batch.Delete(prefixIt.Key())
+			deleteCount++
+		}
+		prefixIt.Release()
+	}
+	
+	// Execute batch deletion
+	if err := batch.Write(); err != nil {
+		return fmt.Errorf("failed to wipe blockchain data: %v", err)
+	}
+	
+	log.Warn("🧹 TESTNET AUTO-RESET: Blockchain data wiped successfully", "deletedEntries", deleteCount)
+	return nil
 }
