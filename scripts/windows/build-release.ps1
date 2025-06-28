@@ -82,7 +82,7 @@ if ($Component -eq "geth" -or $Component -eq "both") {
         $GIT_COMMIT = git rev-parse --short HEAD 2>$null
         if (-not $GIT_COMMIT) { $GIT_COMMIT = "unknown" }
         
-        $LDFLAGS = "-X main.gitCommit=$GIT_COMMIT -X main.buildTime=$BUILD_TIME"
+        $LDFLAGS = "-checklinkname=0 -X main.gitCommit=$GIT_COMMIT -X main.buildTime=$BUILD_TIME"
         
         go build -ldflags $LDFLAGS -o "geth.exe" "./cmd/geth"
         
