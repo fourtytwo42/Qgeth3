@@ -130,8 +130,9 @@ Once you have Q Geth running:
 
 1. **[Installation Guide](installation.md)** - Detailed setup for your platform
 2. **[VPS Deployment](vps-deployment.md)** - Production deployment guide
-3. **[Mining Guide](mining.md)** - Optimize your mining setup
-4. **[Troubleshooting](troubleshooting.md)** - Fix common issues
+3. **[Linux Mining Guide](linux-mining.md)** - Optimize your Linux mining setup
+4. **[Windows Mining Guide](windows-mining.md)** - Optimize your Windows mining setup
+5. **[Troubleshooting](troubleshooting.md)** - Fix common issues
 
 ## 🎯 Getting Started Checklist
 

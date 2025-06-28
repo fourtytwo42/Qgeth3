@@ -28,11 +28,11 @@ Qgeth3/
 │   ├── quick-start.md         # Getting started guide
 │   ├── installation.md       # Installation instructions
 │   ├── vps-deployment.md     # VPS deployment guide
-│   ├── mining.md             # Mining documentation
+│   ├── linux-mining.md       # Linux mining guide (GPU/CPU)
+│   ├── windows-mining.md     # Windows mining guide (GPU/CPU)
 │   ├── troubleshooting.md    # Troubleshooting guide
 │   ├── project-structure.md  # This file
-│   ├── contributing.md       # Contributing guidelines
-│   └── LINUX-GPU-MINING.md  # GPU mining specific guide
+│   └── contributing.md       # Contributing guidelines
 ├── 📁 quantum-geth/       # Quantum-enhanced Ethereum client
 │   ├── cmd/geth/              # Main geth command
 │   ├── core/                  # Blockchain core logic
