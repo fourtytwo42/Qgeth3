@@ -3,6 +3,7 @@
 # Ensures complete compatibility between Windows and Linux builds
 # Handles minimal Linux environments with missing utilities
 # Optimized for low-memory VPS environments (requires minimum 3GB RAM)
+# AUTOMATED ERROR RECOVERY: Handles permission issues and module conflicts
 # Usage: ./build-linux.sh [geth|miner|both] [--clean] [-y|--yes]
 
 # Set robust PATH for minimal Linux environments
@@ -29,13 +30,157 @@ done
 
 VERSION="1.0.0"
 
-echo "🚀 Building Q Coin Linux Binaries (Memory-Optimized)..."
+echo "🚀 Building Q Coin Linux Binaries (Memory-Optimized + Auto-Recovery)..."
 echo "Target: $TARGET"
 echo "Version: $VERSION"
 if [ "$AUTO_CONFIRM" = true ]; then
     echo "Mode: Non-interactive (auto-confirm enabled)"
 fi
 echo ""
+
+# AUTOMATED FIX 1: Directory ownership detection and correction
+check_and_fix_permissions() {
+    echo "🔒 Checking directory permissions..."
+    
+    local output_dir=$(pwd)
+    local current_user=$(whoami)
+    local dir_owner=""
+    
+    # Get directory owner
+    if command -v stat >/dev/null 2>&1; then
+        dir_owner=$(stat -c '%U' "$output_dir" 2>/dev/null || echo "unknown")
+    fi
+    
+    echo "  Current directory: $output_dir"
+    echo "  Current user: $current_user"
+    echo "  Directory owner: $dir_owner"
+    
+    # Check if we can write to current directory
+    if [ ! -w "$output_dir" ]; then
+        echo "🚨 Permission issue detected: Cannot write to output directory"
+        
+        # If running as root, fix ownership
+        if [ "$current_user" = "root" ] && [ "$dir_owner" != "root" ]; then
+            echo "🔧 Auto-fix: Changing directory ownership to root..."
+            chown -R root:root "$output_dir" 2>/dev/null || true
+        # If non-root user and directory owned by root, try to fix with sudo
+        elif [ "$current_user" != "root" ] && [ "$dir_owner" = "root" ]; then
+            echo "🔧 Auto-fix: Attempting to change ownership to $current_user..."
+            if command -v sudo >/dev/null 2>&1; then
+                if sudo chown -R "$current_user:$current_user" "$output_dir" 2>/dev/null; then
+                    echo "✅ Directory ownership fixed with sudo"
+                else
+                    echo "🚨 Failed to fix directory ownership - you may need to run:"
+                    echo "   sudo chown -R $current_user:$current_user $output_dir"
+                    
+                    if [ "$AUTO_CONFIRM" != true ]; then
+                        echo -n "Continue anyway? (y/N): "
+                        read -r RESPONSE
+                        if [[ ! "$RESPONSE" =~ ^([yY][eE][sS]|[yY])$ ]]; then
+                            echo "Build aborted."
+                            exit 1
+                        fi
+                    else
+                        echo "⚠️ Auto-continuing in non-interactive mode"
+                    fi
+                fi
+            else
+                echo "🚨 sudo not available and cannot write to directory"
+                echo "   Manual fix needed: chown -R $current_user:$current_user $output_dir"
+                exit 1
+            fi
+        fi
+    else
+        echo "✅ Directory permissions OK"
+    fi
+    echo ""
+}
+
+# AUTOMATED FIX 2: Go module dependency conflict resolution
+fix_go_module_conflicts() {
+    local module_dir="$1"
+    echo "🔧 Checking and fixing Go module dependencies in $module_dir..."
+    
+    cd "$module_dir"
+    
+    # Check for known problematic dependencies
+    if grep -q "github.com/fjl/memsize" go.mod 2>/dev/null; then
+        echo "🚨 Detected problematic memsize dependency"
+        echo "🔧 Auto-fix: Cleaning Go module cache and dependencies..."
+        
+        # Clean everything
+        go clean -cache -modcache -testcache 2>/dev/null || true
+        go clean -r -cache 2>/dev/null || true
+        
+        # Remove go.sum to force fresh resolution
+        rm -f go.sum
+        
+        # Download with explicit module proxy
+        echo "🚀 Re-downloading dependencies with fresh resolution..."
+        GOPROXY=direct go mod download 2>/dev/null || true
+        go mod tidy 2>/dev/null || true
+        
+        # Verify dependencies
+        if go mod verify 2>/dev/null; then
+            echo "✅ Module dependencies verified and fixed"
+        else
+            echo "🚨 Module verification failed, trying alternative approach..."
+            
+            # Try with different Go version/tags if available
+            go clean -cache -modcache 2>/dev/null || true
+            GOPROXY=https://proxy.golang.org go mod download 2>/dev/null || true
+            go mod tidy 2>/dev/null || true
+        fi
+    else
+        echo "✅ No known problematic dependencies detected"
+    fi
+    
+    cd - >/dev/null
+}
+
+# AUTOMATED FIX 3: Build retry with error recovery
+build_with_retry() {
+    local build_type="$1"
+    local build_cmd="$2"
+    local output_binary="$3"
+    local max_retries=3
+    local retry_count=0
+    
+    while [ $retry_count -lt $max_retries ]; do
+        echo "🚀 Build attempt $((retry_count + 1))/$max_retries for $build_type..."
+        
+        # Try the build
+        if eval "$build_cmd"; then
+            echo "✅ $build_type built successfully"
+            return 0
+        else
+            retry_count=$((retry_count + 1))
+            echo "🚨 Build attempt $retry_count failed for $build_type"
+            
+            if [ $retry_count -lt $max_retries ]; then
+                echo "🔧 Attempting automated recovery..."
+                
+                # Clean build artifacts
+                rm -f "$output_binary" 2>/dev/null || true
+                
+                # Clean Go cache and modules
+                go clean -cache -testcache 2>/dev/null || true
+                
+                # Fix module dependencies
+                go mod tidy 2>/dev/null || true
+                go mod download 2>/dev/null || true
+                
+                # Wait a moment before retry
+                sleep 2
+            else
+                echo "🚨 All build attempts failed for $build_type"
+                return 1
+            fi
+        fi
+    done
+    
+    return 1
+}
 
 # Memory check function
 check_memory() {
@@ -188,6 +333,10 @@ get_build_flags() {
     echo ""
 }
 
+# EXECUTE AUTOMATED FIXES
+echo "🔧 Running automated pre-build checks and fixes..."
+check_and_fix_permissions
+
 # Run memory check
 check_memory
 
@@ -281,15 +430,18 @@ echo "  Output Directory: $CURRENT_DIR"
 echo "  PATH: $PATH"
 echo ""
 
-# Function to build quantum-geth with memory optimization
+# Function to build quantum-geth with automated error recovery
 build_geth() {
-    echo "🚀 Building Quantum-Geth (Memory-Optimized)..."
+    echo "🚀 Building Quantum-Geth (Memory-Optimized + Auto-Recovery)..."
     
     # Check if go.mod exists
     if [ ! -f "../../quantum-geth/go.mod" ]; then
         echo "🚨 Error: go.mod not found in quantum-geth directory!"
         exit 1
     fi
+    
+    # AUTOMATED FIX: Pre-build module dependency resolution
+    fix_go_module_conflicts "../../quantum-geth"
     
     # CRITICAL: ALWAYS enforce CGO_ENABLED=0 for geth
     # This ensures 100% compatibility with Windows builds for quantum fields
@@ -307,9 +459,11 @@ build_geth() {
     echo "🔧 Ensuring Go temp directories exist..."
     mkdir -p "$GOCACHE" "$GOTMPDIR" "$TMPDIR"
     
-    # Memory-efficient build command
-    echo "🚀 Building with memory optimization..."
-    if CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -trimpath -buildvcs=false -o ../../../../../geth.bin .; then
+    # Build command for retry mechanism
+    BUILD_CMD="CGO_ENABLED=0 go build -ldflags \"$LDFLAGS\" -trimpath -buildvcs=false -o ../../../../../geth.bin ."
+    
+    # Use automated retry with error recovery
+    if build_with_retry "quantum-geth" "$BUILD_CMD" "../../../../../geth.bin"; then
         cd ../../../../..
         echo "✅ Quantum-Geth built successfully: ./geth.bin (CGO_ENABLED=0)"
         
@@ -324,7 +478,12 @@ build_geth() {
         fi
     else
         cd ../../../../..
-        echo "🚨 Error: Failed to build quantum-geth"
+        echo "🚨 Error: Failed to build quantum-geth after all retry attempts"
+        echo "🔧 Manual troubleshooting steps:"
+        echo "  1. Check Go version: go version"
+        echo "  2. Clean everything: go clean -cache -modcache -testcache"
+        echo "  3. Verify network: ping proxy.golang.org"
+        echo "  4. Check disk space: df -h"
         exit 1
     fi
     
@@ -332,15 +491,18 @@ build_geth() {
     export CGO_ENABLED=$ORIGINAL_CGO
 }
 
-# Function to build quantum-miner with memory optimization
+# Function to build quantum-miner with automated error recovery
 build_miner() {
-    echo "🚀 Building Quantum-Miner (Memory-Optimized)..."
+    echo "🚀 Building Quantum-Miner (Memory-Optimized + Auto-Recovery)..."
     
     # Check if go.mod exists
     if [ ! -f "../../quantum-miner/go.mod" ]; then
         echo "🚨 Error: go.mod not found in quantum-miner directory!"
         exit 1
     fi
+    
+    # AUTOMATED FIX: Pre-build module dependency resolution
+    fix_go_module_conflicts "../../quantum-miner"
     
     # Detect GPU capabilities and build accordingly
     BUILD_TAGS=""
@@ -388,15 +550,15 @@ build_miner() {
     echo "🔧 Ensuring Go temp directories exist..."
     mkdir -p "$GOCACHE" "$GOTMPDIR" "$TMPDIR"
     
-    # Build with appropriate tags and memory optimization
-    BUILD_CMD="go build -ldflags '$LDFLAGS' -trimpath -buildvcs=false"
+    # Build command for retry mechanism
+    BUILD_CMD="go build -ldflags \"$LDFLAGS\" -trimpath -buildvcs=false"
     if [ -n "$BUILD_TAGS" ]; then
         BUILD_CMD="$BUILD_CMD -tags $BUILD_TAGS"
     fi
     BUILD_CMD="$BUILD_CMD -o ../../../quantum-miner ."
     
-    echo "🚀 Executing: $BUILD_CMD"
-    if eval $BUILD_CMD; then
+    # Use automated retry with error recovery
+    if build_with_retry "quantum-miner" "$BUILD_CMD" "../../../quantum-miner"; then
         cd ../../..
         echo "✅ Quantum-Miner built successfully: ./quantum-miner ($GPU_TYPE)"
         
@@ -418,7 +580,12 @@ build_miner() {
         fi
     else
         cd ../../..
-        echo "🚨 Error: Failed to build quantum-miner"
+        echo "🚨 Error: Failed to build quantum-miner after all retry attempts"
+        echo "🔧 Manual troubleshooting steps:"
+        echo "  1. Check Go version: go version"
+        echo "  2. Clean everything: go clean -cache -modcache -testcache"
+        echo "  3. Install build tools: apt install build-essential"
+        echo "  4. Check GPU drivers: nvidia-smi"
         exit 1
     fi
 }

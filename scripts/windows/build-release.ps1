@@ -1,14 +1,17 @@
-# Q Coin Build Script - Creates timestamped releases
+# Q Coin Build Script - Creates timestamped releases with automated error recovery
 # Usage: ./build-release.ps1 [component]
 # Components: geth, miner, both (default: both)
 
 param(
     [Parameter(Position=0)]
     [ValidateSet("geth", "miner", "both")]
-    [string]$Component = "both"
+    [string]$Component = "both",
+    
+    [switch]$Clean,
+    [switch]$ForceClean
 )
 
-Write-Host "Building Q Coin Release..." -ForegroundColor Cyan
+Write-Host "Building Q Coin Release (with automated error recovery)..." -ForegroundColor Cyan
 Write-Host ""
 
 $timestamp = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
@@ -16,25 +19,146 @@ $timestamp = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
 # Get absolute path to releases directory before changing directories
 $releasesPath = (Resolve-Path "../../releases").Path
 
-# Build geth
+# AUTOMATED FIX 1: Go module dependency conflict resolution
+function Fix-GoModuleConflicts {
+    param([string]$ModuleDir)
+    
+    Write-Host "🔧 Checking and fixing Go module dependencies in $ModuleDir..." -ForegroundColor Yellow
+    
+    Push-Location $ModuleDir
+    try {
+        # Check for known problematic dependencies
+        if (Get-Content "go.mod" -ErrorAction SilentlyContinue | Select-String "github.com/fjl/memsize") {
+            Write-Host "🚨 Detected problematic memsize dependency" -ForegroundColor Red
+            Write-Host "🔧 Auto-fix: Cleaning Go module cache and dependencies..." -ForegroundColor Yellow
+            
+            # Clean everything
+            & go clean -cache -modcache -testcache 2>$null
+            & go clean -r -cache 2>$null
+            
+            # Remove go.sum to force fresh resolution
+            if (Test-Path "go.sum") { Remove-Item "go.sum" -Force }
+            
+            # Download with explicit module proxy
+            Write-Host "🚀 Re-downloading dependencies with fresh resolution..." -ForegroundColor Green
+            $env:GOPROXY = "direct"
+            & go mod download 2>$null
+            & go mod tidy 2>$null
+            
+            # Verify dependencies
+            if ((& go mod verify 2>$null) -and $LASTEXITCODE -eq 0) {
+                Write-Host "✅ Module dependencies verified and fixed" -ForegroundColor Green
+            } else {
+                Write-Host "🚨 Module verification failed, trying alternative approach..." -ForegroundColor Yellow
+                
+                # Try with different proxy
+                & go clean -cache -modcache 2>$null
+                $env:GOPROXY = "https://proxy.golang.org"
+                & go mod download 2>$null
+                & go mod tidy 2>$null
+            }
+        } else {
+            Write-Host "✅ No known problematic dependencies detected" -ForegroundColor Green
+        }
+    } finally {
+        Pop-Location
+    }
+}
+
+# AUTOMATED FIX 2: Build retry with error recovery
+function Build-WithRetry {
+    param(
+        [string]$BuildType,
+        [scriptblock]$BuildCommand,
+        [string]$OutputBinary,
+        [int]$MaxRetries = 3
+    )
+    
+    $retryCount = 0
+    $buildSuccess = $false
+    
+    while ($retryCount -lt $MaxRetries -and -not $buildSuccess) {
+        $retryCount++
+        Write-Host "🚀 Build attempt $retryCount/$MaxRetries for $BuildType..." -ForegroundColor Cyan
+        
+        # Try the build
+        try {
+            & $BuildCommand
+            if ($LASTEXITCODE -eq 0 -and (Test-Path $OutputBinary)) {
+                Write-Host "✅ $BuildType built successfully" -ForegroundColor Green
+                $buildSuccess = $true
+            } else {
+                throw "Build command failed with exit code $LASTEXITCODE"
+            }
+        } catch {
+            Write-Host "🚨 Build attempt $retryCount failed for $BuildType" -ForegroundColor Red
+            
+            if ($retryCount -lt $MaxRetries) {
+                Write-Host "🔧 Attempting automated recovery..." -ForegroundColor Yellow
+                
+                # Clean build artifacts
+                if (Test-Path $OutputBinary) { Remove-Item $OutputBinary -Force -ErrorAction SilentlyContinue }
+                
+                # Clean Go cache and modules
+                & go clean -cache -testcache 2>$null
+                
+                # Fix module dependencies
+                & go mod tidy 2>$null
+                & go mod download 2>$null
+                
+                # Wait a moment before retry
+                Start-Sleep -Seconds 3
+            } else {
+                Write-Host "🚨 All build attempts failed for $BuildType" -ForegroundColor Red
+                return $false
+            }
+        }
+    }
+    
+    return $buildSuccess
+}
+
+# Clean previous builds if requested
+if ($Clean -or $ForceClean) {
+    Write-Host "🧹 Cleaning previous builds..." -ForegroundColor Yellow
+    
+    # Clean Go cache
+    & go clean -cache -modcache -testcache 2>$null
+    Write-Host "  Go cache cleaned" -ForegroundColor Gray
+    
+    # Clean build artifacts
+    if (Test-Path "../../quantum-geth/geth.exe") { Remove-Item "../../quantum-geth/geth.exe" -Force }
+    if (Test-Path "../../quantum-miner/quantum-miner.exe") { Remove-Item "../../quantum-miner/quantum-miner.exe" -Force }
+    Write-Host "  Build artifacts cleaned" -ForegroundColor Gray
+    
+    Write-Host "✅ Cleanup completed" -ForegroundColor Green
+}
+
+# Build geth with automated error recovery
 if ($Component -eq "geth" -or $Component -eq "both") {
-    Write-Host "Building quantum-geth..." -ForegroundColor Yellow
+    Write-Host "Building quantum-geth with automated error recovery..." -ForegroundColor Yellow
     
     if (-not (Test-Path "../../quantum-geth")) {
         Write-Host "quantum-geth directory not found!" -ForegroundColor Red
         exit 1
     }
     
-    # Build to regular location first
+    # Pre-build dependency fix
+    Fix-GoModuleConflicts "../../quantum-geth"
+    
+    # Build to regular location first with retry mechanism
     Push-Location "../../quantum-geth"
     try {
         # CRITICAL: Always use CGO_ENABLED=0 for geth to ensure compatibility
         # This ensures Windows and Linux builds have identical quantum field handling
         $env:CGO_ENABLED = "0"
         Write-Host "ENFORCING: CGO_ENABLED=0 for geth build (quantum field compatibility)" -ForegroundColor Yellow
-        & go build -o "geth.exe" "./cmd/geth"
         
-        if ($LASTEXITCODE -eq 0) {
+        # Use automated retry system
+        $buildCommand = { & go build -o "geth.exe" "./cmd/geth" }
+        $buildSuccess = Build-WithRetry -BuildType "quantum-geth" -BuildCommand $buildCommand -OutputBinary "geth.exe"
+        
+        if ($buildSuccess) {
             Write-Host "quantum-geth built successfully (CGO_ENABLED=0)" -ForegroundColor Green
             
             # Create timestamped release in geth subfolder
@@ -385,7 +509,12 @@ Adjust verbosity for debugging:
             
             Write-Host "Created release: $releaseDir" -ForegroundColor Green
         } else {
-            Write-Host "quantum-geth build failed!" -ForegroundColor Red
+            Write-Host "quantum-geth build failed after all retry attempts!" -ForegroundColor Red
+            Write-Host "🔧 Manual troubleshooting steps:" -ForegroundColor Yellow
+            Write-Host "  1. Check Go version: go version" -ForegroundColor Gray
+            Write-Host "  2. Clean everything: go clean -cache -modcache -testcache" -ForegroundColor Gray
+            Write-Host "  3. Verify network: Test-NetConnection proxy.golang.org -Port 443" -ForegroundColor Gray
+            Write-Host "  4. Check disk space: Get-PSDrive C" -ForegroundColor Gray
             exit 1
         }
     } finally {
@@ -394,24 +523,30 @@ Adjust verbosity for debugging:
     Write-Host ""
 }
 
-# Build miner
+# Build miner with automated error recovery
 if ($Component -eq "miner" -or $Component -eq "both") {
-    Write-Host "Building quantum-miner..." -ForegroundColor Yellow
+    Write-Host "Building quantum-miner with automated error recovery..." -ForegroundColor Yellow
     
     if (-not (Test-Path "../../quantum-miner")) {
         Write-Host "quantum-miner directory not found!" -ForegroundColor Red
         exit 1
     }
     
-    # Build to regular location first
+    # Pre-build dependency fix
+    Fix-GoModuleConflicts "../../quantum-miner"
+    
+    # Build to regular location first with retry mechanism
     Push-Location "../../quantum-miner"
     try {
         # Use CGO_ENABLED=0 for Windows miner (uses CuPy instead of native CUDA)
         $env:CGO_ENABLED = "0"
         Write-Host "INFO: Using CGO_ENABLED=0 for Windows miner (CuPy GPU support)" -ForegroundColor Cyan
-        & go build -o "quantum-miner.exe" "."
         
-        if ($LASTEXITCODE -eq 0) {
+        # Use automated retry system
+        $buildCommand = { & go build -o "quantum-miner.exe" "." }
+        $buildSuccess = Build-WithRetry -BuildType "quantum-miner" -BuildCommand $buildCommand -OutputBinary "quantum-miner.exe"
+        
+        if ($buildSuccess) {
             Write-Host "quantum-miner built successfully" -ForegroundColor Green
             
             # Create timestamped release in quantum-miner subfolder
@@ -853,7 +988,12 @@ quantum-miner.exe -gpu -help
             
             Write-Host "Created release: $releaseDir" -ForegroundColor Green
         } else {
-            Write-Host "quantum-miner build failed!" -ForegroundColor Red
+            Write-Host "quantum-miner build failed after all retry attempts!" -ForegroundColor Red
+            Write-Host "🔧 Manual troubleshooting steps:" -ForegroundColor Yellow
+            Write-Host "  1. Check Go version: go version" -ForegroundColor Gray
+            Write-Host "  2. Clean everything: go clean -cache -modcache -testcache" -ForegroundColor Gray
+            Write-Host "  3. Install build tools: Install Visual Studio Build Tools" -ForegroundColor Gray
+            Write-Host "  4. Check Python/CuPy: python -c 'import cupy'" -ForegroundColor Gray
             exit 1
         }
     } finally {
