@@ -89,33 +89,75 @@ if ($Component -eq "geth" -or $Component -eq "both") {
         if ($LASTEXITCODE -eq 0) {
             Write-Host "quantum-geth built successfully (CGO_ENABLED=0)" -ForegroundColor Green
             
-                                     # Create timestamped release directly in releases directory
+            # Create timestamped release directly in releases directory
             $releaseDir = Join-Path $ReleasesDir "quantum-geth-$timestamp"
-             New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
+            New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
             Copy-Item "geth.exe" (Join-Path $releaseDir "geth.exe") -Force
             
-            # Create PowerShell launcher
+            # Copy genesis JSON files for auto-reset functionality
+            Write-Host "Adding genesis configurations for auto-reset..." -ForegroundColor Yellow
+            $configsDir = Join-Path $ProjectRoot "configs"
+            if (Test-Path $configsDir) {
+                Copy-Item (Join-Path $configsDir "genesis_quantum_testnet.json") (Join-Path $releaseDir "genesis_quantum_testnet.json") -Force
+                Copy-Item (Join-Path $configsDir "genesis_quantum_dev.json") (Join-Path $releaseDir "genesis_quantum_dev.json") -Force
+                Write-Host "Genesis files added successfully" -ForegroundColor Green
+            } else {
+                Write-Host "Warning: configs directory not found, skipping genesis files" -ForegroundColor Yellow
+            }
+            
+            # Create PowerShell launcher with genesis auto-reset
             @'
 param([string]$Network = "testnet", [switch]$Mining, [switch]$Help)
 
 if ($Help) {
-    Write-Host "Q Coin Geth Launcher" -ForegroundColor Cyan
+    Write-Host "Q Coin Geth Launcher with Auto-Reset" -ForegroundColor Cyan
     Write-Host "Usage: .\start-geth.ps1 [network] [options]"
-    Write-Host "Networks: mainnet, testnet, devnet"
+    Write-Host "Networks: testnet, devnet"
+    Write-Host "Features: Automatic blockchain reset when genesis changes"
     exit 0
 }
 
 $configs = @{
-    "mainnet" = @{ chainid = 73236; datadir = "$env:APPDATA\Qcoin\mainnet"; port = 30303 }
-    "testnet" = @{ chainid = 73235; datadir = "$env:APPDATA\Qcoin\testnet"; port = 30303 }
-    "devnet" = @{ chainid = 73234; datadir = "$env:APPDATA\Qcoin\devnet"; port = 30305 }
+    "testnet" = @{ 
+        chainid = 73235; 
+        datadir = "$env:APPDATA\Qcoin\testnet"; 
+        port = 30303; 
+        genesis = "genesis_quantum_testnet.json" 
+    }
+    "devnet" = @{ 
+        chainid = 73234; 
+        datadir = "$env:APPDATA\Qcoin\devnet"; 
+        port = 30305; 
+        genesis = "genesis_quantum_dev.json" 
+    }
+}
+
+if (-not $configs.ContainsKey($Network)) {
+    Write-Host "Error: Invalid network '$Network'. Use: testnet, devnet" -ForegroundColor Red
+    exit 1
 }
 
 $config = $configs[$Network]
 Write-Host "Starting Q Coin $Network (Chain ID: $($config.chainid))" -ForegroundColor Cyan
+Write-Host "Genesis: $($config.genesis)" -ForegroundColor Yellow
 
 if (-not (Test-Path $config.datadir)) {
     New-Item -ItemType Directory -Path $config.datadir -Force | Out-Null
+}
+
+# CRITICAL: Initialize with genesis file for auto-reset functionality
+Write-Host "Initializing with genesis file (auto-reset if changed)..." -ForegroundColor Yellow
+if (Test-Path $config.genesis) {
+    & ".\geth.exe" --datadir $config.datadir init $config.genesis
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "Genesis initialization successful" -ForegroundColor Green
+    } else {
+        Write-Host "Genesis initialization failed" -ForegroundColor Red
+        exit 1
+    }
+} else {
+    Write-Host "Error: Genesis file $($config.genesis) not found!" -ForegroundColor Red
+    exit 1
 }
 
 $threads = if ($Mining) { "1" } else { "0" }
@@ -124,51 +166,86 @@ $args = @("--datadir", $config.datadir, "--networkid", $config.chainid, "--port"
     "--http", "--http.addr", "0.0.0.0", "--http.port", "8545", "--http.corsdomain", "*",
     "--http.api", "eth,net,web3,personal,admin,txpool,miner,qmpow", "--mine", "--miner.threads", $threads, "--miner.etherbase", $coinbase)
 
+Write-Host "Starting Q Coin node..." -ForegroundColor Cyan
 & ".\geth.exe" @args
 '@ | Out-File -FilePath (Join-Path $releaseDir "start-geth.ps1") -Encoding UTF8
 
-            # Create batch launcher
+            # Create batch launcher with genesis auto-reset
             @'
 @echo off
 set NETWORK=%1
 if "%NETWORK%"=="" set NETWORK=testnet
 
-if "%NETWORK%"=="mainnet" (
-    set CHAINID=73236
-    set DATADIR=%APPDATA%\Qcoin\mainnet
-) else if "%NETWORK%"=="testnet" (
+if "%NETWORK%"=="testnet" (
     set CHAINID=73235
     set DATADIR=%APPDATA%\Qcoin\testnet
-) else (
+    set GENESIS=genesis_quantum_testnet.json
+) else if "%NETWORK%"=="devnet" (
     set CHAINID=73234
     set DATADIR=%APPDATA%\Qcoin\devnet
+    set GENESIS=genesis_quantum_dev.json
+) else (
+    echo Error: Invalid network '%NETWORK%'. Use: testnet, devnet
+    exit /b 1
 )
 
 echo Starting Q Coin %NETWORK% (Chain ID: %CHAINID%)
+echo Genesis: %GENESIS%
 if not exist "%DATADIR%" mkdir "%DATADIR%"
 
+echo Initializing with genesis file (auto-reset if changed)...
+if not exist "%GENESIS%" (
+    echo Error: Genesis file %GENESIS% not found!
+    exit /b 1
+)
+
+geth.exe --datadir "%DATADIR%" init "%GENESIS%"
+if %ERRORLEVEL% neq 0 (
+    echo Genesis initialization failed
+    exit /b 1
+)
+echo Genesis initialization successful
+
+echo Starting Q Coin node...
 geth.exe --datadir "%DATADIR%" --networkid %CHAINID% --http --http.addr 0.0.0.0 --http.port 8545 --http.corsdomain "*" --http.api "eth,net,web3,personal,admin,txpool,miner,qmpow" --mine --miner.threads 0 --miner.etherbase 0x0000000000000000000000000000000000000001
 '@ | Out-File -FilePath (Join-Path $releaseDir "start-geth.bat") -Encoding ASCII
 
-            # Create README
+            # Create enhanced README
             @"
 # Q Coin Geth Release $timestamp
 
 Built: $(Get-Date)
 Component: Quantum-Geth (Q Coin Blockchain Node)
 
+## Features
+- 🔄 **Auto-Reset**: Automatically wipes and restarts blockchain when genesis changes
+- 🚀 **QMPoW Consensus**: Quantum Micro-Puzzle Proof of Work
+- 🛡️ **Minimum Difficulty**: Protected against difficulty collapse (minimum 200)
+- 🔗 **External Miner Support**: Full qmpow API for external mining
+
 ## Quick Start
-PowerShell: .\start-geth.ps1 [mainnet|testnet|devnet] [-mining]
-Batch: start-geth.bat [mainnet|testnet|devnet]
+PowerShell: .\start-geth.ps1 [testnet|devnet] [-mining]
+Batch: start-geth.bat [testnet|devnet]
 
 ## Network Information
-- Testnet: Chain ID 73235
-- Mainnet: Chain ID 73236  
-- Devnet: Chain ID 73234
+- **Testnet**: Chain ID 73235, genesis_quantum_testnet.json
+- **Devnet**: Chain ID 73234, genesis_quantum_dev.json
+
+## Auto-Reset Functionality
+The node automatically detects when genesis parameters change and:
+1. 🔍 Compares stored vs new genesis hash
+2. ⚠️ Logs warning about blockchain reset
+3. 🧹 Wipes all blockchain data completely  
+4. 🚀 Starts fresh from block 1 with new genesis
 
 ## API Access
-- HTTP RPC: http://localhost:8545
-- Data Directory: %APPDATA%\Qcoin\[network]\
+- **HTTP RPC**: http://localhost:8545
+- **APIs**: eth, net, web3, personal, admin, txpool, miner, qmpow
+- **Data Directory**: %APPDATA%\Qcoin\[network]\
+
+## Genesis Files Included
+- genesis_quantum_testnet.json (Chain ID: 73235)
+- genesis_quantum_dev.json (Chain ID: 73234)
 
 See project README for full documentation.
 "@ | Out-File -FilePath (Join-Path $releaseDir "README.md") -Encoding UTF8
