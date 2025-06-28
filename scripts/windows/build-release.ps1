@@ -119,9 +119,10 @@ if (-not (Test-Path $config.datadir)) {
 }
 
 $threads = if ($Mining) { "1" } else { "0" }
+$coinbase = "0x0000000000000000000000000000000000000001"
 $args = @("--datadir", $config.datadir, "--networkid", $config.chainid, "--port", $config.port,
     "--http", "--http.addr", "0.0.0.0", "--http.port", "8545", "--http.corsdomain", "*",
-    "--http.api", "eth,net,web3,personal,admin,txpool,miner", "--mine", "--miner.threads", $threads)
+    "--http.api", "eth,net,web3,personal,admin,txpool,miner", "--mine", "--miner.threads", $threads, "--miner.etherbase", $coinbase)
 
 & ".\geth.exe" @args
 '@ | Out-File -FilePath (Join-Path $releaseDir "start-geth.ps1") -Encoding UTF8
@@ -146,7 +147,7 @@ if "%NETWORK%"=="mainnet" (
 echo Starting Q Coin %NETWORK% (Chain ID: %CHAINID%)
 if not exist "%DATADIR%" mkdir "%DATADIR%"
 
-geth.exe --datadir "%DATADIR%" --networkid %CHAINID% --http --http.addr 0.0.0.0 --http.port 8545 --http.corsdomain "*" --http.api "eth,net,web3,personal,admin,txpool,miner" --mine --miner.threads 0
+geth.exe --datadir "%DATADIR%" --networkid %CHAINID% --http --http.addr 0.0.0.0 --http.port 8545 --http.corsdomain "*" --http.api "eth,net,web3,personal,admin,txpool,miner" --mine --miner.threads 0 --miner.etherbase 0x0000000000000000000000000000000000000001
 '@ | Out-File -FilePath (Join-Path $releaseDir "start-geth.bat") -Encoding ASCII
 
             # Create README
