@@ -125,10 +125,6 @@ $gethArgs = @(
     "--ws.port", "8546",
     "--ws.origins", "*",
     "--ws.api", "eth,net,web3,personal,admin,txpool,miner,qmpow",
-    "--authrpc.addr", "127.0.0.1",
-    "--authrpc.port", "8551",
-    "--authrpc.vhosts", "localhost",
-    "--authrpc.jwtsecret", "jwt.hex",
     "--maxpeers", "25",
     "--verbosity", "3"
 )
