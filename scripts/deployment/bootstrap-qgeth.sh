@@ -91,13 +91,17 @@ fi
 # ===========================================
 print_step "🧹 Step 1: Cleanup existing installations"
 
-# Stop and remove systemd services
+# Stop and remove systemd services (handle both old and new service names)
 print_step "Stopping Q Geth services..."
+systemctl stop qgeth.service 2>/dev/null || true
 systemctl stop qgeth-node.service 2>/dev/null || true
 systemctl stop qgeth-monitor.service 2>/dev/null || true
+systemctl disable qgeth.service 2>/dev/null || true
 systemctl disable qgeth-node.service 2>/dev/null || true
 systemctl disable qgeth-monitor.service 2>/dev/null || true
-rm -f /etc/systemd/system/qgeth-*.service
+rm -f /etc/systemd/system/qgeth.service
+rm -f /etc/systemd/system/qgeth-node.service
+rm -f /etc/systemd/system/qgeth-monitor.service
 systemctl daemon-reload
 
 # Kill any remaining geth processes
@@ -249,6 +253,9 @@ chown -R "$ACTUAL_USER:$ACTUAL_USER" "$QGETH_BUILD_TEMP"
 cd "$PROJECT_DIR/scripts/linux"
 print_step "Building with automated error recovery..."
 
+# Ensure proper ownership before build
+chown -R "$ACTUAL_USER:$ACTUAL_USER" "$PROJECT_DIR"
+
 BUILD_SUCCESS=false
 BUILD_ATTEMPTS=0
 MAX_BUILD_ATTEMPTS=3
@@ -270,9 +277,9 @@ while [ $BUILD_ATTEMPTS -lt $MAX_BUILD_ATTEMPTS ] && [ "$BUILD_SUCCESS" = false 
     if [ "$BUILD_SUCCESS" = false ] && [ $BUILD_ATTEMPTS -lt $MAX_BUILD_ATTEMPTS ]; then
         print_warning "Build attempt $BUILD_ATTEMPTS failed, applying recovery..."
         
-        # Clean and retry
+        # Clean and retry with proper ownership
         cd "$PROJECT_DIR"
-        rm -f geth geth.bin 2>/dev/null || true
+        rm -f geth geth.bin quantum_solver.py 2>/dev/null || true
         chown -R "$ACTUAL_USER:$ACTUAL_USER" "$PROJECT_DIR"
         sudo -u "$ACTUAL_USER" go clean -cache -modcache -testcache 2>/dev/null || true
         
@@ -290,6 +297,11 @@ if [ "$BUILD_SUCCESS" = false ]; then
     exit 1
 fi
 
+# Fix ownership of created files
+cd "$PROJECT_DIR"
+chown "$ACTUAL_USER:$ACTUAL_USER" geth geth.bin quantum_solver.py 2>/dev/null || true
+chmod +x geth geth.bin quantum_solver.py 2>/dev/null || true
+
 print_success "✅ Q Geth built successfully"
 
 # ===========================================
@@ -297,10 +309,10 @@ print_success "✅ Q Geth built successfully"
 # ===========================================
 print_step "⚙️ Step 6: Creating systemd services"
 
-# Create Q Geth node service
-cat > /etc/systemd/system/qgeth-node.service << EOF
+# Create single Q Geth service (simplified approach)
+cat > /etc/systemd/system/qgeth.service << EOF
 [Unit]
-Description=Q Geth Node Service
+Description=Q Geth Quantum Blockchain Node
 After=network.target
 Wants=network.target
 
@@ -308,7 +320,7 @@ Wants=network.target
 Type=exec
 User=$ACTUAL_USER
 Group=$ACTUAL_USER
-WorkingDirectory=$PROJECT_DIR
+WorkingDirectory=$PROJECT_DIR/scripts/linux
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/go/bin
 ExecStart=$PROJECT_DIR/scripts/linux/start-geth.sh testnet
 ExecReload=/bin/kill -HUP \$MAINPID
@@ -317,68 +329,27 @@ KillSignal=SIGTERM
 TimeoutStopSec=30
 Restart=always
 RestartSec=10
-StandardOutput=append:$LOGS_DIR/geth-node.log
-StandardError=append:$LOGS_DIR/geth-node.log
+StandardOutput=append:$LOGS_DIR/geth.log
+StandardError=append:$LOGS_DIR/geth.log
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-# Create GitHub monitor service
-cat > /etc/systemd/system/qgeth-monitor.service << EOF
-[Unit]
-Description=Q Geth GitHub Monitor
-After=network.target
-Wants=network.target
-
-[Service]
-Type=exec
-User=$ACTUAL_USER
-Group=$ACTUAL_USER
-WorkingDirectory=$PROJECT_DIR
-Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/go/bin
-ExecStart=/bin/bash -c 'while true; do \\
-    REMOTE_COMMIT=\$(curl -s https://api.github.com/repos/$GITHUB_REPO/commits/$GITHUB_BRANCH | jq -r .sha 2>/dev/null); \\
-    LOCAL_COMMIT=\$(git rev-parse HEAD 2>/dev/null); \\
-    if [ "\$REMOTE_COMMIT" != "\$LOCAL_COMMIT" ] && [ "\$REMOTE_COMMIT" != "null" ] && [ -n "\$REMOTE_COMMIT" ]; then \\
-        echo "[$(date)] New commit detected: \$REMOTE_COMMIT"; \\
-        systemctl stop qgeth-node.service; \\
-        git fetch origin && git reset --hard origin/$GITHUB_BRANCH; \\
-        find . -name "*.sh" -type f -exec chmod +x {} \\; 2>/dev/null; \\
-        cd scripts/linux && sudo -u $ACTUAL_USER env QGETH_BUILD_TEMP=$QGETH_BUILD_TEMP ./build-linux.sh geth -y; \\
-        cd $PROJECT_DIR && systemctl start qgeth-node.service; \\
-        echo "[$(date)] Update completed successfully"; \\
-    else \\
-        echo "[$(date)] No updates available"; \\
-    fi; \\
-    sleep 300; \\
-done'
-Restart=always
-RestartSec=30
-StandardOutput=append:$LOGS_DIR/github-monitor.log
-StandardError=append:$LOGS_DIR/github-monitor.log
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-# Enable and start services
+# Enable and start service
 systemctl daemon-reload
-systemctl enable qgeth-node.service
-systemctl enable qgeth-monitor.service
+systemctl enable qgeth.service
 
-print_success "✅ Systemd services created and enabled"
+print_success "✅ Systemd service created and enabled"
 
 # ===========================================
-# STEP 7: START SERVICES
+# STEP 7: START SERVICE
 # ===========================================
-print_step "🚀 Step 7: Starting services"
+print_step "🚀 Step 7: Starting service"
 
-systemctl start qgeth-node.service
-sleep 5
-systemctl start qgeth-monitor.service
+systemctl start qgeth.service
 
-print_success "✅ Services started successfully"
+print_success "✅ Service started successfully"
 
 # ===========================================
 # FINAL STATUS AND INFORMATION
@@ -394,9 +365,8 @@ echo "  • Project Directory: $PROJECT_DIR"
 echo "  • Log Directory: $LOGS_DIR"
 echo "  • User: $ACTUAL_USER"
 echo ""
-echo "⚙️ Services Created:"
-echo "  • qgeth-node.service     - Q Geth blockchain node"
-echo "  • qgeth-monitor.service  - GitHub auto-updater"
+echo "⚙️ Service Created:"
+echo "  • qgeth.service - Q Geth blockchain node"
 echo ""
 echo "🔗 Network Access:"
 echo "  • HTTP RPC API:  http://localhost:8545"
@@ -404,37 +374,22 @@ echo "  • WebSocket API: ws://localhost:8546"
 echo "  • P2P Network:   port 30303"
 echo ""
 echo "📊 Service Management:"
-echo "  sudo systemctl status qgeth-node.service"
-echo "  sudo systemctl restart qgeth-node.service"
-echo "  sudo systemctl logs -f qgeth-node.service"
+echo "  sudo systemctl status qgeth.service"
+echo "  sudo systemctl restart qgeth.service"
+echo "  sudo journalctl -u qgeth.service -f"
 echo ""
 echo "📁 Log Files:"
-echo "  tail -f $LOGS_DIR/geth-node.log"
-echo "  tail -f $LOGS_DIR/github-monitor.log"
+echo "  tail -f $LOGS_DIR/geth.log"
 echo ""
-echo "🔄 Auto-Update Features:"
-echo "  • Monitors GitHub every 5 minutes"
-echo "  • Automatically rebuilds on new commits"
-echo "  • Restarts services after successful updates"
-echo ""
-echo "✅ Q Geth is now running and will auto-update!"
+echo "✅ Q Geth is now running!"
 echo ""
 
 # Final verification
 print_step "🔍 Final verification"
 sleep 3
 
-if systemctl is-active --quiet qgeth-node.service; then
-    print_success "✅ Q Geth node is running"
+if systemctl is-active --quiet qgeth.service; then
+    print_success "✅ Q Geth service is running"
 else
-    print_warning "⚠️ Q Geth node is not running - check logs"
-fi
-
-if systemctl is-active --quiet qgeth-monitor.service; then
-    print_success "✅ GitHub monitor is running"
-else
-    print_warning "⚠️ GitHub monitor is not running - check logs"
-fi
-
-echo ""
-echo "Installation completed! 🚀" 
+    print_warning "⚠️ Q Geth service is not running - check logs"
+fi 
