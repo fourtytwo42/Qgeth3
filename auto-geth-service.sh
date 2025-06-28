@@ -98,7 +98,7 @@ SCRIPTS_DIR="$INSTALL_DIR/scripts"
 
 # Geth configuration
 GETH_NETWORK="testnet"
-GETH_ARGS="--http.corsdomain \"*\" --http.api \"eth,net,web3,personal,txpool\""
+GETH_ARGS="--http.corsdomain * --http.api eth,net,web3,personal,txpool"
 CHECK_INTERVAL=300  # Check GitHub every 5 minutes
 CRASH_RETRY_DELAY=300  # Wait 5 minutes after crash before retry
 MAX_RETRIES=999999  # Essentially infinite retries
@@ -145,6 +145,30 @@ if systemctl list-units --full -all | grep -q "qgeth-node.service"; then
         systemctl stop qgeth-updater.service 2>/dev/null || true
         sleep 5
         print_success "✅ Existing services stopped"
+        
+        # Additional cleanup for robust reinstall
+        print_step "Performing additional cleanup..."
+        
+        # Kill any remaining geth processes
+        pkill -f "geth" 2>/dev/null || true
+        sleep 2
+        
+        # Clean up lock files that might prevent startup
+        rm -f /tmp/github-monitor.lock 2>/dev/null || true
+        rm -f /tmp/update-geth.lock 2>/dev/null || true
+        
+        # Clean up any stale log files that might cause confusion
+        if [ -d "/opt/qgeth/logs" ]; then
+            rm -f /opt/qgeth/logs/*.log 2>/dev/null || true
+            rm -f /opt/qgeth/logs/crash_count.txt 2>/dev/null || true
+            rm -f /opt/qgeth/logs/last_commit.txt 2>/dev/null || true
+        fi
+        
+        # Remove old systemd service files to ensure fresh creation
+        rm -f /etc/systemd/system/qgeth-*.service 2>/dev/null || true
+        systemctl daemon-reload
+        
+        print_success "✅ Comprehensive cleanup completed"
     fi
 fi
 
