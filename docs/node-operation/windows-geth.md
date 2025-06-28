@@ -266,8 +266,15 @@ Start-Process -FilePath ".\scripts\windows\start-geth.ps1" -ArgumentList "-Netwo
 # Attach to running node (IPC - fastest)
 .\geth.exe attach "$env:USERPROFILE\.qcoin\testnet\geth.ipc"
 
-# Attach via HTTP
+# Attach via HTTP (local)
 .\geth.exe attach http://localhost:8545
+
+# Attach to remote geth node via HTTP (manage remote nodes)
+.\geth.exe attach http://YOUR_VPS_IP:8545
+
+# Examples:
+# .\geth.exe attach http://134.199.202.42:8545
+# .\geth.exe attach http://192.168.1.100:8545
 
 # JavaScript console examples
 > eth.accounts
@@ -276,6 +283,15 @@ Start-Process -FilePath ".\scripts\windows\start-geth.ps1" -ArgumentList "-Netwo
 > personal.newAccount("password")
 > eth.sendTransaction({from: eth.accounts[0], to: "0x...", value: web3.toWei(1, "ether")})
 ```
+
+**Remote Console Management:**
+The HTTP attach method allows you to manage remote Q Geth nodes from your local machine. This is particularly useful for:
+- Managing VPS-deployed nodes
+- Monitoring multiple nodes from one location
+- Remote administration and debugging
+- Testing network connectivity between nodes
+
+**Security Note:** Ensure the remote node is configured with `--http.addr "0.0.0.0"` and proper firewall rules for external HTTP RPC access.
 
 ### Account Management
 ```powershell
