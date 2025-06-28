@@ -218,11 +218,6 @@ if ($Component -eq "miner" -or $Component -eq "both") {
              New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
             Copy-Item "quantum-miner.exe" (Join-Path $releaseDir "quantum-miner.exe") -Force
             
-            # Copy pkg directory if it exists
-            if (Test-Path "pkg") {
-                Copy-Item "pkg" (Join-Path $releaseDir "pkg") -Recurse -Force
-            }
-            
             # Create PowerShell launcher
             @'
 param([int]$Threads = 8, [string]$Node = "http://localhost:8545", [string]$Coinbase = "", [switch]$Help)
