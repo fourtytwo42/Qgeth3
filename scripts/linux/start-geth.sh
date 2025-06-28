@@ -12,7 +12,7 @@ EXTRA_ARGS=()
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
-        mainnet|testnet|devnet)
+        testnet|devnet)
             NETWORK="$1"
             shift
             ;;
@@ -43,12 +43,11 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [ "$HELP" = true ]; then
-    echo -e "\033[1;36mQ Coin Geth Node Starter\033[0m"
+    echo -e "\033[1;36mQ Coin Geth Node Starter with Auto-Reset\033[0m"
     echo ""
     echo -e "\033[1;37mUsage: ./start-geth.sh [network] [options]\033[0m"
     echo ""
     echo -e "\033[1;33mNetworks:\033[0m"
-    echo "  mainnet   - Q Coin Mainnet (Chain ID 73236)"
     echo "  testnet   - Q Coin Testnet (Chain ID 73235) [DEFAULT]"
     echo "  devnet    - Q Coin Dev Network (Chain ID 73234)"
     echo ""
@@ -56,9 +55,13 @@ if [ "$HELP" = true ]; then
     echo "  --mining  - Enable mining with single thread"
     echo "  --help    - Show this help message"
     echo ""
+    echo -e "\033[1;32mFeatures:\033[0m"
+    echo "  🔄 Auto-Reset: Automatically detects genesis changes and resets blockchain"
+    echo "  🛡️ Minimum Difficulty: Protected against difficulty collapse (minimum 200)"
+    echo "  🔗 External Miner Support: Full qmpow API for external mining"
+    echo ""
     echo -e "\033[1;32mExamples:\033[0m"
     echo "  ./start-geth.sh                  # Start testnet node"
-    echo "  ./start-geth.sh mainnet          # Start mainnet node"
     echo "  ./start-geth.sh devnet --mining  # Start dev node with mining"
     exit 0
 fi
@@ -85,14 +88,6 @@ fi
 
 # Network configurations
 case $NETWORK in
-    mainnet)
-        CHAINID=73236
-        DATADIR="$HOME/.qcoin/mainnet"
-        GENESIS="../../configs/genesis_quantum_mainnet.json"
-        PORT=30303
-        NAME="Q Coin Mainnet"
-        BOOTNODE_PORT=30303
-        ;;
     testnet)
         CHAINID=73235
         DATADIR="$HOME/.qcoin/testnet"
@@ -108,6 +103,10 @@ case $NETWORK in
         PORT=30305
         NAME="Q Coin Dev Network"
         BOOTNODE_PORT=30305
+        ;;
+    *)
+        echo -e "\033[1;31m[ERROR] Invalid network '$NETWORK'. Use: testnet, devnet\033[0m"
+        exit 1
         ;;
 esac
 
@@ -132,30 +131,28 @@ if [ ! -d "$DATADIR" ]; then
     echo -e "\033[1;32m[CREATED] Data directory: $DATADIR\033[0m"
 fi
 
-# Initialize with genesis if needed
-if [ ! -d "$DATADIR/geth/chaindata" ]; then
-    echo -e "\033[1;33m[INIT] Initializing blockchain with genesis file...\033[0m"
-    
-    # Check if genesis file exists
-    if [ ! -f "$GENESIS" ]; then
-        echo -e "\033[1;31m[ERROR] Genesis file not found: $GENESIS\033[0m"
-        echo -e "\033[1;33m[INFO] Available genesis files:\033[0m"
-        ls -la ../../configs/genesis_quantum_*.json 2>/dev/null || echo "No genesis files found!"
-        exit 1
-    fi
-    
-    # Initialize with correct argument order
-    ../../geth --datadir "$DATADIR" init "$GENESIS"
-    if [ $? -ne 0 ]; then
-        echo -e "\033[1;31m[ERROR] Genesis initialization failed!\033[0m"
-        echo -e "\033[1;33m[DEBUG] Debug info:\033[0m"
-        echo "  Genesis file: $GENESIS"
-        echo "  Data directory: $DATADIR"
-        echo "  Command: ../../geth --datadir \"$DATADIR\" init \"$GENESIS\""
-        exit 1
-    fi
-    echo -e "\033[1;32m[SUCCESS] Blockchain initialized successfully\033[0m"
+# CRITICAL: Always initialize with genesis file for auto-reset functionality  
+echo -e "\033[1;33m[INIT] Initializing with genesis file (auto-reset if changed)...\033[0m"
+
+# Check if genesis file exists
+if [ ! -f "$GENESIS" ]; then
+    echo -e "\033[1;31m[ERROR] Genesis file not found: $GENESIS\033[0m"
+    echo -e "\033[1;33m[INFO] Available genesis files:\033[0m"
+    ls -la ../../configs/genesis_quantum_*.json 2>/dev/null || echo "No genesis files found!"
+    exit 1
 fi
+
+# Always initialize to trigger auto-reset when genesis changes
+../../geth --datadir "$DATADIR" init "$GENESIS"
+if [ $? -ne 0 ]; then
+    echo -e "\033[1;31m[ERROR] Genesis initialization failed!\033[0m"
+    echo -e "\033[1;33m[DEBUG] Debug info:\033[0m"
+    echo "  Genesis file: $GENESIS"
+    echo "  Data directory: $DATADIR"
+    echo "  Command: ../../geth --datadir \"$DATADIR\" init \"$GENESIS\""
+    exit 1
+fi
+echo -e "\033[1;32m[SUCCESS] Genesis initialization successful\033[0m"
 
 # Prepare geth arguments
 GETH_ARGS=(
