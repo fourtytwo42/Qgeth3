@@ -72,10 +72,13 @@ Q Coin supports three networks:
 # Start testnet node
 ./scripts/linux/start-geth.sh testnet
 
-# Custom testnet configuration
+# Custom testnet configuration (manual setup)
+# First initialize with genesis:
+./geth.bin --datadir ~/.qcoin/testnet init configs/genesis_quantum_testnet.json
+
+# Then start the node:
 ./geth.bin --datadir ~/.qcoin/testnet \
-  --networkid 1337 \
-  --genesis configs/genesis_quantum_testnet.json \
+  --networkid 73235 \
   --http --http.addr "0.0.0.0" --http.port 8545 \
   --http.corsdomain "*" --http.api "eth,net,web3,personal,txpool" \
   --ws --ws.addr "0.0.0.0" --ws.port 8546 \
@@ -90,10 +93,13 @@ Q Coin supports three networks:
 # Start development network
 ./scripts/linux/start-geth.sh devnet
 
-# Custom devnet with mining
+# Custom devnet with mining (manual setup)
+# First initialize with genesis:
+./geth.bin --datadir ~/.qcoin/devnet init configs/genesis_quantum_dev.json
+
+# Then start with mining:
 ./geth.bin --datadir ~/.qcoin/devnet \
-  --networkid 1338 \
-  --genesis configs/genesis_quantum_dev.json \
+  --networkid 73234 \
   --http --http.addr "127.0.0.1" --http.port 8545 \
   --mine --miner.etherbase "0xYourCoinbaseAddress" \
   console
@@ -104,10 +110,13 @@ Q Coin supports three networks:
 # Start mainnet node (when available)
 ./scripts/linux/start-geth.sh mainnet
 
-# Mainnet with conservative settings
+# Mainnet with conservative settings (manual setup)
+# First initialize with genesis:
+./geth.bin --datadir ~/.qcoin/mainnet init configs/genesis_quantum_mainnet.json
+
+# Then start the node:
 ./geth.bin --datadir ~/.qcoin/mainnet \
-  --networkid 1339 \
-  --genesis configs/genesis_quantum_mainnet.json \
+  --networkid 73236 \
   --http --http.addr "127.0.0.1" --http.port 8545 \
   --http.api "eth,net,web3" \
   --port 30303 \
@@ -136,7 +145,7 @@ Q Coin supports three networks:
 mkdir -p ~/.qcoin/config
 cat > ~/.qcoin/config/geth.toml << EOF
 [Eth]
-NetworkId = 1337
+NetworkId = 73235
 DatabaseHandles = 1024
 DatabaseCache = 1024
 TrieCleanCache = 256
@@ -239,9 +248,9 @@ sudo netstat -tulpn | grep -E "(8545|8546|30303)"
 # Start in background
 nohup ./scripts/linux/start-geth.sh testnet > geth.log 2>&1 &
 
-# Start with custom options
+# Start with custom options (remember to init first!)
 ./geth.bin --datadir ~/.qcoin/testnet \
-  --networkid 1337 \
+  --networkid 73235 \
   --http --http.port 8545 \
   --port 30303 \
   --verbosity 3 \
@@ -322,9 +331,9 @@ The HTTP attach method allows you to manage remote Q Geth nodes from your local 
 
 ### Solo Mining Setup
 ```bash
-# Start geth with mining enabled
+# Start geth with mining enabled (remember to init first!)
 ./geth.bin --datadir ~/.qcoin/testnet \
-  --networkid 1337 \
+  --networkid 73235 \
   --mine --miner.etherbase "0xYourCoinbaseAddress" \
   --miner.threads 1 \
   console
@@ -337,8 +346,9 @@ The HTTP attach method allows you to manage remote Q Geth nodes from your local 
 
 ### External Miner Connection
 ```bash
-# Start geth as mining pool backend
+# Start geth as mining pool backend (remember to init first!)
 ./geth.bin --datadir ~/.qcoin/testnet \
+  --networkid 73235 \
   --http --http.addr "127.0.0.1" --http.port 8545 \
   --http.api "eth,net,web3,personal,txpool" \
   --allow-insecure-unlock
