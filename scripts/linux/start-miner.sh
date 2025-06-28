@@ -67,7 +67,7 @@ echo -e "\033[1;36mðŸŽ¯ Q Coin Smart Miner Starting...\033[0m"
 echo -e "\033[1;33mðŸ” Auto-detecting optimal mining configuration...\033[0m"
 
 # Build miner if it doesn't exist
-MINER_PATH="quantum-miner/quantum-miner"
+MINER_PATH="../../quantum-miner"
 if [ ! -f "$MINER_PATH" ]; then
     echo -e "\033[1;33mðŸ”¨ Building Q Coin Miner...\033[0m"
     ./build-linux.sh miner

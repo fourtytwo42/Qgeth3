@@ -54,7 +54,7 @@ Write-Host "Auto-detecting optimal mining configuration..." -ForegroundColor Yel
 
 # Find latest miner release
 function Get-LatestMinerRelease {
-    $minerReleases = Get-ChildItem "releases" -Directory | Where-Object { $_.Name -like "quantum-miner-*" } | Sort-Object Name -Descending
+    $minerReleases = Get-ChildItem "../../releases" -Directory | Where-Object { $_.Name -like "quantum-miner-*" } | Sort-Object Name -Descending
     if ($minerReleases.Count -eq 0) {
         return $null
     }
