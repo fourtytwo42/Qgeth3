@@ -1,0 +1,45 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+  
+  body {
+    @apply bg-gray-900 text-gray-100;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+  
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+  }
+  
+  ::-webkit-scrollbar-track {
+    @apply bg-gray-800;
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    @apply bg-gray-600 rounded-full;
+  }
+  
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-gray-500;
+  }
+}
+
+@layer components {
+  .quantum-card {
+    @apply bg-gray-800/50 backdrop-blur-sm border border-gray-700/50 rounded-xl p-6;
+  }
+  
+  .quantum-button {
+    @apply bg-gradient-to-r from-quantum-600 to-quantum-700 text-white px-6 py-3 rounded-lg font-medium transition-all duration-200 hover:shadow-glow hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  
+  .quantum-input {
+    @apply bg-gray-800 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:border-quantum-500 focus:ring-2 focus:ring-quantum-500/20 transition-colors;
+  }
+} 

@@ -4,7 +4,7 @@
 # Usage: ./start-miner.ps1 [options]
 
 param(
-    [int]$Threads = 0,
+    [int]$Threads = 64,
     [string]$GethRpc = "http://localhost:8545",
     [string]$Node = "",
     [string]$Etherbase = "",
