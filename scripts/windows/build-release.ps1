@@ -225,7 +225,7 @@ if ($Component -eq "miner" -or $Component -eq "both") {
             
             # Create PowerShell launcher
             @'
-param([int]$Threads = 0, [string]$Node = "http://localhost:8545", [string]$Coinbase = "", [switch]$Help)
+param([int]$Threads = 8, [string]$Node = "http://localhost:8545", [string]$Coinbase = "", [switch]$Help)
 
 if ($Help) {
     Write-Host "Q Coin Quantum Miner Launcher" -ForegroundColor Cyan
@@ -245,7 +245,7 @@ try {
     exit 1
 }
 
-if ($Threads -eq 0) { $Threads = [Environment]::ProcessorCount }
+if ($Threads -eq 0) { $Threads = 8 }
 if ($Coinbase -eq "") { $Coinbase = "0x0000000000000000000000000000000000000001" }
 
 Write-Host "Mining with $Threads threads to $Coinbase" -ForegroundColor Cyan
@@ -258,7 +258,7 @@ Write-Host "Mining with $Threads threads to $Coinbase" -ForegroundColor Cyan
 set THREADS=%1
 set NODE=%2
 set COINBASE=%3
-if "%THREADS%"=="" set THREADS=0
+if "%THREADS%"=="" set THREADS=8
 if "%NODE%"=="" set NODE=http://localhost:8545
 if "%COINBASE%"=="" set COINBASE=0x0000000000000000000000000000000000000001
 
