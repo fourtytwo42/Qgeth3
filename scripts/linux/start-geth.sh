@@ -66,11 +66,11 @@ fi
 # Check for geth binary
 if [ ! -f "./geth" ]; then
     echo -e "\033[1;33mðŸ"¨ Q Coin Geth binary not found. Building...\033[0m"
-    if [ ! -f "./build-linux.sh" ]; then
+    if [ ! -f "./scripts/linux/build-linux.sh" ]; then
         echo -e "\033[1;31mâŒ build-linux.sh not found! Are you in the correct directory?\033[0m"
         exit 1
     fi
-    ./build-linux.sh geth
+    ./scripts/linux/build-linux.sh geth
     if [ $? -ne 0 ]; then
         echo -e "\033[1;31mâŒ Build failed!\033[0m"
         exit 1
@@ -88,7 +88,7 @@ case $NETWORK in
     mainnet)
         CHAINID=73236
         DATADIR="$HOME/.qcoin/mainnet"
-        GENESIS="genesis_quantum_mainnet.json"
+        GENESIS="configs/genesis_quantum_mainnet.json"
         PORT=30303
         NAME="Q Coin Mainnet"
         BOOTNODE_PORT=30303
@@ -96,7 +96,7 @@ case $NETWORK in
     testnet)
         CHAINID=73235
         DATADIR="$HOME/.qcoin/testnet"
-        GENESIS="genesis_quantum_testnet.json"
+        GENESIS="configs/genesis_quantum_testnet.json"
         PORT=30303
         NAME="Q Coin Testnet"
         BOOTNODE_PORT=30303
@@ -104,7 +104,7 @@ case $NETWORK in
     devnet)
         CHAINID=73234
         DATADIR="$HOME/.qcoin/devnet"
-        GENESIS="genesis_quantum_dev.json"
+        GENESIS="configs/genesis_quantum_dev.json"
         PORT=30305
         NAME="Q Coin Dev Network"
         BOOTNODE_PORT=30305
@@ -140,7 +140,7 @@ if [ ! -d "$DATADIR/geth/chaindata" ]; then
     if [ ! -f "$GENESIS" ]; then
         echo -e "\033[1;31mâŒ Genesis file not found: $GENESIS\033[0m"
         echo -e "\033[1;33mðŸ"‹ Available genesis files:\033[0m"
-        ls -la genesis_quantum_*.json 2>/dev/null || echo "No genesis files found!"
+        ls -la configs/genesis_quantum_*.json 2>/dev/null || echo "No genesis files found!"
         exit 1
     fi
     

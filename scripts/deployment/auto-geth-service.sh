@@ -179,12 +179,12 @@ if [ -d "./build-temp" ]; then
     print_success "✅ Stale build temp cleaned"
 fi
 
-if [ -f "./prepare-vps.sh" ]; then
+if [ -f "./scripts/linux/prepare-vps.sh" ]; then
     print_step "Running VPS preparation script..."
     if [ "$AUTO_CONFIRM" = true ]; then
-        ./prepare-vps.sh -y
+        ./scripts/linux/prepare-vps.sh -y
     else
-        ./prepare-vps.sh
+        ./scripts/linux/prepare-vps.sh
     fi
 else
     print_warning "prepare-vps.sh not found in current directory"
@@ -364,9 +364,9 @@ fi
 
 # Run build with environment variables
 if [ "$AUTO_CONFIRM" = true ]; then
-    sudo -u $ACTUAL_USER env QGETH_BUILD_TEMP="$QGETH_BUILD_TEMP" ./build-linux.sh geth -y
+    sudo -u $ACTUAL_USER env QGETH_BUILD_TEMP="$QGETH_BUILD_TEMP" ./scripts/linux/build-linux.sh geth -y
 else
-    sudo -u $ACTUAL_USER env QGETH_BUILD_TEMP="$QGETH_BUILD_TEMP" ./build-linux.sh geth
+    sudo -u $ACTUAL_USER env QGETH_BUILD_TEMP="$QGETH_BUILD_TEMP" ./scripts/linux/build-linux.sh geth
 fi
 if [ $? -ne 0 ]; then
     print_error "Initial build failed"

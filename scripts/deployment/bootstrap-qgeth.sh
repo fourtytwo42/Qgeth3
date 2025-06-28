@@ -201,7 +201,7 @@ fi
 cd Qgeth3
 
 print_step "🔧 Making auto-service script executable"
-chmod +x auto-geth-service.sh
+chmod +x scripts/deployment/auto-geth-service.sh
 
 print_step "🚀 Starting Q Geth auto-service setup"
 echo ""
@@ -212,7 +212,7 @@ echo ""
 
 # Run the auto-service setup
 if [ "$AUTO_CONFIRM" = true ]; then
-    exec ./auto-geth-service.sh -y
+    exec ./scripts/deployment/auto-geth-service.sh -y
 else
-    exec ./auto-geth-service.sh
+    exec ./scripts/deployment/auto-geth-service.sh
 fi 
