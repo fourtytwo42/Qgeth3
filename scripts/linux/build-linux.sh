@@ -133,7 +133,13 @@ setup_temp_build() {
         echo "📁 Created temporary build directory: $BUILD_TEMP_DIR"
     fi
     
-    # Set Go build cache and temp directories
+    # Convert to absolute path (required by Go)
+    if [ "${BUILD_TEMP_DIR#/}" = "$BUILD_TEMP_DIR" ]; then
+        # Relative path, convert to absolute
+        BUILD_TEMP_DIR="$(pwd)/$BUILD_TEMP_DIR"
+    fi
+    
+    # Set Go build cache and temp directories (Go requires absolute paths)
     export GOCACHE="$BUILD_TEMP_DIR/gocache"
     export GOTMPDIR="$BUILD_TEMP_DIR/gotmp"
     export TMPDIR="$BUILD_TEMP_DIR/tmp"
