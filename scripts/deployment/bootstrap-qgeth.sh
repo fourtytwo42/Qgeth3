@@ -302,6 +302,20 @@ cd "$PROJECT_DIR"
 chown "$ACTUAL_USER:$ACTUAL_USER" geth geth.bin quantum_solver.py 2>/dev/null || true
 chmod +x geth geth.bin quantum_solver.py 2>/dev/null || true
 
+# Ensure geth wrapper exists with correct path resolution (backup creation)
+if [ -f "geth.bin" ] && [ ! -f "geth" ]; then
+    print_step "Creating backup geth wrapper (build didn't create it)..."
+    cat > geth << 'EOF'
+#!/bin/bash
+# Q Coin Geth Wrapper - Fixed path version
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec "$SCRIPT_DIR/geth.bin" "$@"
+EOF
+    chown "$ACTUAL_USER:$ACTUAL_USER" geth
+    chmod +x geth
+    print_success "✅ Backup geth wrapper created"
+fi
+
 print_success "✅ Q Geth built successfully"
 
 # ===========================================

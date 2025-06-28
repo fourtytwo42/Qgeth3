@@ -594,106 +594,109 @@ build_miner() {
 create_geth_wrapper() {
     echo "🚀 Creating Q Coin geth wrapper (prevents Ethereum connections)..."
     
-    # Create wrapper using shell built-ins (no external cat/chmod needed)
-    {
-        echo '#!/bin/bash'
-        echo '# Q Coin Geth Wrapper'
-        echo '# This wrapper ensures geth ALWAYS uses Q Coin networks, never Ethereum'
-        echo '# Default: Q Coin Testnet (Chain ID 73235)'
-        echo '# Use --qcoin-mainnet for Q Coin Mainnet (Chain ID 73236)'
-        echo ''
-        echo '# Set robust PATH for minimal Linux environments'
-        echo 'export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/go/bin:$PATH"'
-        echo ''
-        echo '# Check if actual geth binary exists'
-        echo 'REAL_GETH="./geth.bin"'
-        echo 'if [ ! -f "./geth.bin" ]; then'
-        echo '    echo "🚨 ERROR: Q Coin geth binary not found!"'
-        echo '    echo "   Build it first: ./build-linux.sh"'
-        echo '    exit 1'
-        echo 'fi'
-        echo ''
-        echo '# Parse Q Coin specific flags'
-        echo 'USE_QCOIN_MAINNET=false'
-        echo 'FILTERED_ARGS=()'
-        echo ''
-        echo 'for arg in "$@"; do'
-        echo '    case $arg in'
-        echo '        --qcoin-mainnet)'
-        echo '            USE_QCOIN_MAINNET=true'
-        echo '            ;;'
-        echo '        --help|-h)'
-        echo '            echo "Q Coin Geth - Quantum Blockchain Node"'
-        echo '            echo ""'
-        echo '            echo "This geth ONLY connects to Q Coin networks, never Ethereum!"'
-        echo '            echo ""'
-        echo '            echo "Q Coin Networks:"'
-        echo '            echo "  Default:         Q Coin Testnet (Chain ID 73235)"'
-        echo '            echo "  --qcoin-mainnet  Q Coin Mainnet (Chain ID 73236)"'
-        echo '            echo ""'
-        echo '            echo "Quick Start:"'
-        echo '            echo "  ./start-geth.sh              # Easy testnet startup"'
-        echo '            echo "  ./start-geth.sh mainnet      # Easy mainnet startup"'
-        echo '            echo ""'
-        echo '            echo "Manual Usage:"'
-        echo '            echo "  ./geth --datadir \$HOME/.qcoin init configs/genesis_quantum_testnet.json"'
-        echo '            echo "  ./geth --datadir \$HOME/.qcoin --networkid 73235 --mine --miner.threads 0"'
-        echo '            echo ""'
-        echo '            echo "Standard geth options also available."'
-        echo '            exit 0'
-        echo '            ;;'
-        echo '        *)'
-        echo '            FILTERED_ARGS+=("$arg")'
-        echo '            ;;'
-        echo '    esac'
-        echo 'done'
-        echo ''
-        echo '# Check if this is a bare geth call (likely trying to connect to Ethereum)'
-        echo '# Allow init commands and commands with --datadir or --networkid through'
-        echo 'if [ ${#FILTERED_ARGS[@]} -eq 0 ] || ([[ ! " ${FILTERED_ARGS[*]} " =~ " --networkid " ]] && [[ ! " ${FILTERED_ARGS[*]} " =~ " --datadir " ]] && [[ ! " ${FILTERED_ARGS[*]} " =~ " init " ]]); then'
-        echo '    echo "🚨 Q Coin Geth: Prevented connection to Ethereum mainnet!"'
-        echo '    echo ""'
-        echo '    echo "This geth is configured for Q Coin networks only."'
-        echo '    echo ""'
-        echo '    echo "Quick Start:"'
-        echo '    echo "  ./start-geth.sh              # Q Coin Testnet"'
-        echo '    echo "  ./start-geth.sh mainnet      # Q Coin Mainnet"'
-        echo '    echo ""'
-        echo '    echo "Manual Start:"'
-        echo '    if $USE_QCOIN_MAINNET; then'
-        echo '        echo "  ./geth --datadir ~/.qcoin/mainnet --networkid 73236 init configs/genesis_quantum_mainnet.json"'
-        echo '        echo "  ./geth --datadir ~/.qcoin/mainnet --networkid 73236 --mine --miner.threads 0"'
-        echo '    else'
-        echo '        echo "  ./geth --datadir \$HOME/.qcoin --networkid 73235 init configs/genesis_quantum_testnet.json"'
-        echo '        echo "  ./geth --datadir \$HOME/.qcoin --networkid 73235 --mine --miner.threads 0"'
-        echo '    fi'
-        echo '    echo ""'
-        echo '    echo "Use --help for more options."'
-        echo '    exit 1'
-        echo 'fi'
-        echo ''
-        echo '# Add Q Coin network defaults if not specified (but not for init commands)'
-        echo 'if [[ ! " ${FILTERED_ARGS[*]} " =~ " --networkid " ]] && [[ ! " ${FILTERED_ARGS[*]} " =~ " init " ]]; then'
-        echo '    if $USE_QCOIN_MAINNET; then'
-        echo '        FILTERED_ARGS+=("--networkid" "73236")'
-        echo '    else'
-        echo '        FILTERED_ARGS+=("--networkid" "73235")'
-        echo '    fi'
-        echo 'fi'
-        echo ''
-        echo '# Execute the real geth with filtered arguments'
-        echo 'exec "$REAL_GETH" "${FILTERED_ARGS[@]}"'
-    } > ../../geth
+    # Use absolute path to avoid directory context issues
+    WRAPPER_PATH="../../geth"
     
-    # Make executable using shell built-in if possible, fallback to chmod
-    if command -v chmod >/dev/null 2>&1; then
-        chmod +x ../../geth
+    # Create wrapper with fixed path resolution
+    cat > "$WRAPPER_PATH" << 'EOF'
+#!/bin/bash
+# Q Coin Geth Wrapper - Fixed path version
+# This wrapper ensures geth ALWAYS uses Q Coin networks, never Ethereum
+# Default: Q Coin Testnet (Chain ID 73235)
+# Use --qcoin-mainnet for Q Coin Mainnet (Chain ID 73236)
+
+# Set robust PATH for minimal Linux environments
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/go/bin:$PATH"
+
+# Get absolute path to geth.bin regardless of where this script is called from
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REAL_GETH="$SCRIPT_DIR/geth.bin"
+
+# Check if actual geth binary exists
+if [ ! -f "$REAL_GETH" ]; then
+    echo "🚨 ERROR: Q Coin geth binary not found at $REAL_GETH"
+    echo "   Build it first: ./build-linux.sh"
+    exit 1
+fi
+# Parse Q Coin specific flags
+USE_QCOIN_MAINNET=false
+FILTERED_ARGS=()
+
+for arg in "$@"; do
+    case $arg in
+        --qcoin-mainnet)
+            USE_QCOIN_MAINNET=true
+            ;;
+        --help|-h)
+            echo "Q Coin Geth - Quantum Blockchain Node"
+            echo ""
+            echo "This geth ONLY connects to Q Coin networks, never Ethereum!"
+            echo ""
+            echo "Q Coin Networks:"
+            echo "  Default:         Q Coin Testnet (Chain ID 73235)"
+            echo "  --qcoin-mainnet  Q Coin Mainnet (Chain ID 73236)"
+            echo ""
+            echo "Quick Start:"
+            echo "  ./start-geth.sh              # Easy testnet startup"
+            echo "  ./start-geth.sh mainnet      # Easy mainnet startup"
+            echo ""
+            echo "Manual Usage:"
+            echo "  ./geth --datadir \$HOME/.qcoin init configs/genesis_quantum_testnet.json"
+            echo "  ./geth --datadir \$HOME/.qcoin --networkid 73235 --mine --miner.threads 0"
+            echo ""
+            echo "Standard geth options also available."
+            exit 0
+            ;;
+        *)
+            FILTERED_ARGS+=("$arg")
+            ;;
+    esac
+done
+
+# Check if this is a bare geth call (likely trying to connect to Ethereum)
+# Allow init commands and commands with --datadir or --networkid through
+if [ ${#FILTERED_ARGS[@]} -eq 0 ] || ([[ ! " ${FILTERED_ARGS[*]} " =~ " --networkid " ]] && [[ ! " ${FILTERED_ARGS[*]} " =~ " --datadir " ]] && [[ ! " ${FILTERED_ARGS[*]} " =~ " init " ]]); then
+    echo "🚨 Q Coin Geth: Prevented connection to Ethereum mainnet!"
+    echo ""
+    echo "This geth is configured for Q Coin networks only."
+    echo ""
+    echo "Quick Start:"
+    echo "  ./start-geth.sh              # Q Coin Testnet"
+    echo "  ./start-geth.sh mainnet      # Q Coin Mainnet"
+    echo ""
+    echo "Manual Start:"
+    if $USE_QCOIN_MAINNET; then
+        echo "  ./geth --datadir ~/.qcoin/mainnet --networkid 73236 init configs/genesis_quantum_mainnet.json"
+        echo "  ./geth --datadir ~/.qcoin/mainnet --networkid 73236 --mine --miner.threads 0"
     else
-        # Fallback: set executable bit manually
-        [ -f ../../geth ] && exec 9<>../../geth && exec 9<&-
+        echo "  ./geth --datadir \$HOME/.qcoin --networkid 73235 init configs/genesis_quantum_testnet.json"
+        echo "  ./geth --datadir \$HOME/.qcoin --networkid 73235 --mine --miner.threads 0"
     fi
+    echo ""
+    echo "Use --help for more options."
+    exit 1
+fi
+
+# Add Q Coin network defaults if not specified (but not for init commands)
+if [[ ! " ${FILTERED_ARGS[*]} " =~ " --networkid " ]] && [[ ! " ${FILTERED_ARGS[*]} " =~ " init " ]]; then
+    if $USE_QCOIN_MAINNET; then
+        FILTERED_ARGS+=("--networkid" "73236")
+    else
+        FILTERED_ARGS+=("--networkid" "73235")
+    fi
+fi
+
+# Execute the real geth with filtered arguments
+exec "$REAL_GETH" "${FILTERED_ARGS[@]}"
+EOF
     
-    echo "✅ Q Coin geth wrapper created: ../../geth"
+    # Make wrapper executable with proper error handling
+    if chmod +x "$WRAPPER_PATH" 2>/dev/null; then
+        echo "✅ Q Coin geth wrapper created: ../../geth"
+    else
+        echo "⚠️ Q Coin geth wrapper created but chmod failed (may need manual chmod +x)"
+        echo "✅ Wrapper created at: ../../geth"
+    fi
 }
 
 # Function to create quantum solver Python script
