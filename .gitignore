@@ -148,6 +148,18 @@ qdata_quantum/
 releases/
 .releases/
 
+# Large release archives (use GitHub Releases instead)
+*.zip
+*.rar
+*.7z
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+Q-Coin-*.rar
+Qcoin-*.zip
+quantum-*.zip
+quantum-*.rar
+
 # Build output and executables
 quantum-geth/build/
 *.exe
