@@ -84,7 +84,7 @@ if ($Component -eq "geth" -or $Component -eq "both") {
         
         $LDFLAGS = "-X main.gitCommit=$GIT_COMMIT -X main.buildTime=$BUILD_TIME"
         
-        go build -ldflags $LDFLAGS -checklinkname=0 -o "geth.exe" "./cmd/geth"
+        go build -ldflags $LDFLAGS -o "geth.exe" "./cmd/geth"
         
         if ($LASTEXITCODE -eq 0) {
             Write-Host "quantum-geth built successfully (CGO_ENABLED=0)" -ForegroundColor Green
