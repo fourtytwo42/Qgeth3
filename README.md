@@ -17,10 +17,10 @@ A complete quantum blockchain platform featuring **Q Coin** with **Quantum-Geth*
 
 ### Linux - One Command Setup
 ```bash
-# Complete VPS setup (downloads everything automatically)
-curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/scripts/deployment/bootstrap-qgeth.sh | sudo bash -s -- -y
+# Complete VPS setup (everything automated!)
+curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qgeth.sh | sudo bash -s -- -y
 
-# Or manual setup
+# Or manual setup  
 git clone https://github.com/fourtytwo42/Qgeth3.git
 cd Qgeth3
 ./quick-start.sh build
@@ -211,9 +211,9 @@ Qgeth3/
 
 ### Production Deployment
 - [ ] VPS with 2+ vCPU, 4GB+ RAM
-- [ ] Run: `curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/scripts/deployment/bootstrap-qgeth.sh | sudo bash -s -- -y`
-- [ ] Verify service: `qgeth-service status`
-- [ ] Monitor: `qgeth-service logs geth`
+- [ ] Run: `curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qgeth.sh | sudo bash -s -- -y`
+- [ ] Verify service: `sudo systemctl status qgeth-node.service`
+- [ ] Monitor: `sudo journalctl -fu qgeth-node.service`
 
 ### Development Setup
 - [ ] Read [Contributing Guidelines](docs/contributing.md)
