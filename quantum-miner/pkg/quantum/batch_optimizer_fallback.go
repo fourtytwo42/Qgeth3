@@ -31,6 +31,7 @@ var (
 	gpuAvailabilityTested bool              = false
 	globalCupyGPU         *CupyGPUSimulator = nil
 	gpuAvailabilityMutex  sync.RWMutex
+	fallbackLogged        bool              = false  // Prevent duplicate fallback logging
 )
 
 // NewHighPerformanceQuantumSimulator creates simulator with CuPy GPU + Qiskit fallback
@@ -64,18 +65,24 @@ func NewHighPerformanceQuantumSimulatorWithDevice(nQubits int, deviceID int) (*H
 	if globalCupyGPU != nil && globalCupyGPU.IsAvailable() {
 		sim.cupyGPU = globalCupyGPU
 	} else {
-		// Fallback to Qiskit GPU backend
+		// Fallback to Qiskit GPU backend (log only once globally)
 		qiskitSim, err := NewQiskitGPUSimulator(deviceID)
 		if err != nil {
-			log.Printf("⚠️  Qiskit GPU initialization failed for device %d: %v", deviceID, err)
-			log.Printf("💡 Using CPU fallback simulation")
+			if !fallbackLogged {
+				log.Printf("⚠️  Qiskit GPU initialization failed for device %d: %v", deviceID, err)
+				log.Printf("💡 Using CPU fallback simulation")
+				fallbackLogged = true  // Prevent duplicate messages
+			}
 			sim.qiskitSim = nil
 		} else {
 			sim.qiskitSim = qiskitSim
 			if qiskitSim.IsGPUAvailable() {
 				log.Printf("🚀 Qiskit CUDA 12.9 GPU quantum simulator ACTIVE on device %d!", deviceID)
 			} else {
-				log.Printf("💻 Qiskit CPU quantum simulator active")
+				if !fallbackLogged {
+					log.Printf("💻 Qiskit CPU quantum simulator active")
+					fallbackLogged = true  // Prevent duplicate messages
+				}
 			}
 		}
 	}
@@ -97,8 +104,7 @@ func (h *HighPerformanceQuantumSimulator) BatchSimulateQuantumPuzzles(workHash s
 		return h.qiskitSim.BatchSimulateQuantumPuzzles(workHash, qnonce, nQubits, nGates, nPuzzles)
 	}
 
-	// Final fallback to simple CPU simulation
-	log.Printf("🔧 Using basic CPU fallback simulation for %d puzzles", nPuzzles)
+	// Final fallback to simple CPU simulation (don't log again - already logged above)
 	outcomes := make([][]byte, nPuzzles)
 	for i := 0; i < nPuzzles; i++ {
 		outcome := make([]byte, (nQubits+7)/8)

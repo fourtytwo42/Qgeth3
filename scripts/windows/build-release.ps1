@@ -291,10 +291,37 @@ if ($Component -eq "miner" -or $Component -eq "both") {
         if ($LASTEXITCODE -eq 0) {
             Write-Host "quantum-miner built successfully" -ForegroundColor Green
             
-                                     # Create timestamped release directly in releases directory
+            # Create timestamped release directly in releases directory
             $releaseDir = Join-Path $ReleasesDir "quantum-miner-$timestamp"
-             New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
+            New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
             Copy-Item "quantum-miner.exe" (Join-Path $releaseDir "quantum-miner.exe") -Force
+            
+            # Copy essential Python scripts for GPU mining support
+            Write-Host "Adding Python GPU scripts for GPU acceleration..." -ForegroundColor Yellow
+            $pythonScriptsDir = Join-Path $releaseDir "pkg" 
+            $quantumScriptsDir = Join-Path $pythonScriptsDir "quantum"
+            New-Item -ItemType Directory -Path $quantumScriptsDir -Force | Out-Null
+            
+            $requiredScripts = @(
+                "pkg/quantum/qiskit_gpu.py",
+                "pkg/quantum/cupy_gpu.py", 
+                "test_gpu.py"
+            )
+            
+            foreach ($script in $requiredScripts) {
+                $scriptPath = Join-Path $QuantumMinerDir $script
+                if (Test-Path $scriptPath) {
+                    if ($script -eq "test_gpu.py") {
+                        Copy-Item $scriptPath (Join-Path $releaseDir "test_gpu.py") -Force
+                    } else {
+                        Copy-Item $scriptPath (Join-Path $quantumScriptsDir (Split-Path $script -Leaf)) -Force
+                    }
+                    Write-Host "  Added: $script" -ForegroundColor Green
+                } else {
+                    Write-Host "  Warning: $script not found" -ForegroundColor Yellow
+                }
+            }
+            Write-Host "Python GPU scripts added successfully" -ForegroundColor Green
             
             # Create PowerShell launcher
             @'
