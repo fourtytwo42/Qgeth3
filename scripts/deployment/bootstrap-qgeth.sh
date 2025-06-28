@@ -200,8 +200,18 @@ fi
 # Change to the project directory
 cd Qgeth3
 
-print_step "🔧 Making auto-service script executable"
-chmod +x scripts/deployment/auto-geth-service.sh
+print_step "🔧 Making all scripts executable"
+# Make ALL shell scripts executable (including in subdirectories)  
+find . -name "*.sh" -type f -exec chmod +x {} \; 2>/dev/null || true
+chmod +x *.sh 2>/dev/null || true
+
+# Specifically ensure critical scripts are executable
+chmod +x scripts/deployment/auto-geth-service.sh 2>/dev/null || true
+chmod +x scripts/deployment/bootstrap-qgeth.sh 2>/dev/null || true  
+chmod +x scripts/linux/build-linux.sh 2>/dev/null || true
+chmod +x scripts/linux/prepare-vps.sh 2>/dev/null || true
+chmod +x scripts/linux/start-geth.sh 2>/dev/null || true
+chmod +x scripts/windows/*.ps1 2>/dev/null || true
 
 print_step "🚀 Starting Q Geth auto-service setup"
 echo ""
