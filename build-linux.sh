@@ -110,12 +110,25 @@ check_memory() {
 # Setup temporary build directory
 setup_temp_build() {
     # Use temp directory from prepare-vps.sh if available
-    if [ -n "$QGETH_BUILD_TEMP" ] && [ -d "$QGETH_BUILD_TEMP" ]; then
+    if [ -n "$QGETH_BUILD_TEMP" ]; then
         BUILD_TEMP_DIR="$QGETH_BUILD_TEMP"
+        # Create the directory if it doesn't exist
+        mkdir -p "$BUILD_TEMP_DIR"
         echo "📁 Using VPS-prepared temp directory: $BUILD_TEMP_DIR"
     else
-        # Create temporary build directory
-        BUILD_TEMP_DIR="/tmp/qgeth-build-$$"
+        # Check /tmp space availability
+        if command -v df >/dev/null 2>&1; then
+            tmp_space=$(df /tmp 2>/dev/null | awk 'NR==2 {print $4}' || echo "0")
+            if [ "$tmp_space" -lt 1048576 ]; then  # Less than 1GB in KB
+                echo "⚠️  Low /tmp space detected, using local temp directory"
+                BUILD_TEMP_DIR="./build-temp-$$"
+            else
+                BUILD_TEMP_DIR="/tmp/qgeth-build-$$"
+            fi
+        else
+            # Default to local if df not available
+            BUILD_TEMP_DIR="./build-temp-$$"
+        fi
         mkdir -p "$BUILD_TEMP_DIR"
         echo "📁 Created temporary build directory: $BUILD_TEMP_DIR"
     fi
