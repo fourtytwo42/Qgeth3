@@ -269,6 +269,23 @@ func (w *WalletService) GetAccounts() ([]*Account, error) {
 	return accounts, nil
 }
 
+// GetBalance returns the balance for a specific account address
+func (w *WalletService) GetBalance(address string) (string, error) {
+	if !w.isConnected || w.client == nil {
+		return "0", fmt.Errorf("not connected to quantum network")
+	}
+
+	addr := common.HexToAddress(address)
+	balance, err := w.client.BalanceAt(context.Background(), addr, nil)
+	if err != nil {
+		return "0", fmt.Errorf("failed to get balance: %v", err)
+	}
+
+	// Convert from Wei to Ether (Q tokens)
+	ethBalance := new(big.Float).Quo(new(big.Float).SetInt(balance), big.NewFloat(1e18))
+	return ethBalance.String(), nil
+}
+
 // GetNetworkInfo returns current network information
 func (w *WalletService) GetNetworkInfo() *NetworkInfo {
 	w.mu.RLock()
@@ -531,4 +548,38 @@ func (w *WalletService) ExecuteConsoleCommand(command string) (string, error) {
 	default:
 		return "", fmt.Errorf("command not supported: %s", parts[0])
 	}
+}
+
+// ConnectToNode connects to a quantum geth node at the specified endpoint
+func (w *WalletService) ConnectToNode(endpoint string) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	// Close existing connection if any
+	if w.client != nil {
+		w.client.Close()
+		w.client = nil
+	}
+	if w.rpcClient != nil {
+		w.rpcClient.Close()
+		w.rpcClient = nil
+	}
+
+	// Try to connect to the specified endpoint
+	client, err := ethclient.Dial(endpoint)
+	if err != nil {
+		w.isConnected = false
+		return fmt.Errorf("failed to connect to %s: %v", endpoint, err)
+	}
+
+	w.client = client
+	w.rpcClient = client.Client()
+	w.isConnected = true
+
+	log.Info("Connected to quantum node", "endpoint", endpoint)
+
+	// Update network info
+	go w.updateNetworkInfo()
+
+	return nil
 } 

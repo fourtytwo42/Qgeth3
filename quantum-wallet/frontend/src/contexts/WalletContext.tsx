@@ -17,11 +17,13 @@ interface Transaction {
 
 interface NetworkInfo {
   chainId: number;
+  networkName: string;
   blockNumber: number;
   peerCount: number;
+  syncing: boolean;
   gasPrice: string;
-  mining: boolean;
-  hashrate: string;
+  difficulty: string;
+  hashRate: string;
 }
 
 interface WalletState {
@@ -70,6 +72,26 @@ interface WalletProviderProps {
   children: ReactNode;
 }
 
+// Declare Wails backend functions
+declare global {
+  interface Window {
+    backend: {
+      WalletService: {
+        CreateAccount: (passphrase: string) => Promise<string>;
+        GetAccounts: () => Promise<Account[]>;
+        GetBalance: (address: string) => Promise<string>;
+        SendTransaction: (from: string, to: string, amount: string, passphrase: string) => Promise<string>;
+        GetTransactions: (address: string) => Promise<Transaction[]>;
+        StartMining: () => Promise<void>;
+        StopMining: () => Promise<void>;
+        ConnectToNode: (endpoint: string) => Promise<void>;
+        GetNetworkInfo: () => Promise<NetworkInfo>;
+        ExecuteConsoleCommand: (command: string) => Promise<string>;
+      };
+    };
+  }
+}
+
 export function WalletProvider({ children }: WalletProviderProps) {
   const [state, setState] = useState<WalletState>({
     accounts: [],
@@ -81,55 +103,60 @@ export function WalletProvider({ children }: WalletProviderProps) {
     error: null,
   });
 
-  // Helper function to call backend API with proper typing
-  const callAPI = async (method: string, ...args: any[]): Promise<any> => {
+  // Helper function to call backend API with proper error handling
+  const callAPI = async (method: keyof typeof window.backend.WalletService, ...args: any[]): Promise<any> => {
     try {
-      // In a real Wails app, this would be: window.backend.WalletService[method](...args)
-      // For now, we'll use a mock implementation
-      console.log(`Calling API: ${method}`, args);
-      
-      // Mock responses for development
-      switch (method) {
-        case 'GetAccounts':
-          return [
-            { address: '0x742d35Cc6BfE4C1672C4C6B1e4d50e8B6B8B7B0f', balance: '125.5' },
-            { address: '0x8ba1f109551bD432803012645Hac136c0A7c2B10', balance: '42.3' }
-          ] as Account[];
-        case 'GetNetworkInfo':
-          return {
-            chainId: 73235,
-            blockNumber: 15243,
-            peerCount: 8,
-            gasPrice: '20000000000',
-            mining: false,
-            hashrate: '0'
-          } as NetworkInfo;
-        case 'GetTransactions':
-          return [
-            {
-              hash: '0x1234567890abcdef...',
-              from: '0x742d35Cc6BfE4C1672C4C6B1e4d50e8B6B8B7B0f',
-              to: '0x8ba1f109551bD432803012645Hac136c0A7c2B10',
-              value: '10.5',
-              timestamp: Date.now() - 3600000,
-              status: 'confirmed'
-            }
-          ] as Transaction[];
-        case 'CreateAccount':
-          return '0x' + Math.random().toString(16).substring(2, 42);
-        case 'GetBalance':
-          return '0.0';
-        case 'SendTransaction':
-          return '0x' + Math.random().toString(16).substring(2, 66);
-        case 'StartMining':
-        case 'StopMining':
-        case 'ConnectToNode':
-          return true;
-        case 'ExecuteConsoleCommand':
-          return 'Command executed successfully';
-        default:
-          throw new Error(`Unknown API method: ${method}`);
+      if (!window.backend?.WalletService) {
+        // Fallback for development/testing - use mock data
+        console.log(`Mock API call: ${method}`, args);
+        switch (method) {
+          case 'GetAccounts':
+            return [
+              { address: '0x742d35Cc6BfE4C1672C4C6B1e4d50e8B6B8B7B0f', balance: '125.5' },
+              { address: '0x8ba1f109551bD432803012645Hac136c0A7c2B10', balance: '42.3' }
+            ] as Account[];
+          case 'GetNetworkInfo':
+            return {
+              chainId: 73235,
+              networkName: 'Quantum Testnet',
+              blockNumber: 15243,
+              peerCount: 8,
+              syncing: false,
+              gasPrice: '20000000000',
+              difficulty: '12345678',
+              hashRate: '0'
+            } as NetworkInfo;
+          case 'GetTransactions':
+            return [
+              {
+                hash: '0x1234567890abcdef...',
+                from: '0x742d35Cc6BfE4C1672C4C6B1e4d50e8B6B8B7B0f',
+                to: '0x8ba1f109551bD432803012645Hac136c0A7c2B10',
+                value: '10.5',
+                timestamp: Date.now() - 3600000,
+                status: 'confirmed'
+              }
+            ] as Transaction[];
+          case 'CreateAccount':
+            return '0x' + Math.random().toString(16).substring(2, 42);
+          case 'GetBalance':
+            return '0.0';
+          case 'SendTransaction':
+            return '0x' + Math.random().toString(16).substring(2, 66);
+          case 'StartMining':
+          case 'StopMining':
+          case 'ConnectToNode':
+            return true;
+          case 'ExecuteConsoleCommand':
+            return 'Command executed successfully (mock)';
+          default:
+            throw new Error(`Unknown API method: ${method}`);
+        }
       }
+
+      // Real API call
+      const apiMethod = window.backend.WalletService[method] as any;
+      return await apiMethod(...args);
     } catch (error) {
       console.error(`API call failed: ${method}`, error);
       throw error;
@@ -204,8 +231,9 @@ export function WalletProvider({ children }: WalletProviderProps) {
   };
 
   const refreshTransactions = async () => {
+    if (!state.selectedAccount) return;
     try {
-      const transactions = await callAPI('GetTransactions', state.selectedAccount?.address);
+      const transactions = await callAPI('GetTransactions', state.selectedAccount.address);
       setState(prev => ({ ...prev, transactions }));
     } catch (error) {
       setState(prev => ({ ...prev, error: (error as Error).message }));
@@ -255,9 +283,9 @@ export function WalletProvider({ children }: WalletProviderProps) {
   const refreshNetworkInfo = async () => {
     try {
       const networkInfo = await callAPI('GetNetworkInfo');
-      setState(prev => ({ ...prev, networkInfo }));
+      setState(prev => ({ ...prev, networkInfo, isConnected: true }));
     } catch (error) {
-      setState(prev => ({ ...prev, error: (error as Error).message }));
+      setState(prev => ({ ...prev, error: (error as Error).message, isConnected: false }));
     }
   };
 
@@ -279,6 +307,9 @@ export function WalletProvider({ children }: WalletProviderProps) {
         await connectToNode('http://localhost:8545');
       } catch (error) {
         console.log('Failed to connect to default node:', error);
+        // Still load mock data for UI testing
+        await refreshNetworkInfo();
+        await refreshAccounts();
         setState(prev => ({ ...prev, isLoading: false }));
       }
     };
