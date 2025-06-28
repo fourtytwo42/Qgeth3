@@ -38,10 +38,14 @@ wget -qO- https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qg
 # ✅ Builds and configures Q Geth with auto-updating service
 # ✅ Sets up crash recovery and GitHub monitoring
 # ✅ Handles 4095MB vs 4096MB memory requirements automatically
+# ✅ **Safe to run multiple times** - detects existing installations gracefully
+# ✅ **Handles partial builds** - cleans interrupted compilations automatically
+# ✅ **Lock file protection** - prevents simultaneous installations
 # No manual git clone, chmod, or dependency installation needed!
 
 # 🚀 RECOMMENDED: Use -y flag for completely unattended installation!
 # Perfect for automated deployments and resolves memory confirmation prompts.
+# Safe to re-run - won't break existing installations.
 ```
 
 **Option 2: Full Auto-Service (Manual Clone)**
@@ -735,6 +739,63 @@ qgeth-service restart
 
 # If build failed, restore from backup
 ls -la /opt/qgeth/backup/
+```
+
+### Edge Cases & Safe Re-installation
+
+**Running bootstrap on already-installed system:**
+The bootstrap script is **safe to re-run** and handles these scenarios gracefully:
+
+```bash
+# This is SAFE even on existing installations:
+curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qgeth.sh | sudo bash -s -- -y
+
+# What happens automatically:
+# ✅ Detects existing qgeth services and stops them gracefully
+# ✅ Cleans stale build directories and temp files  
+# ✅ Preserves existing firewall rules (asks before changing)
+# ✅ Fixes directory ownership issues automatically
+# ✅ Uses lock files to prevent multiple simultaneous installs
+# ✅ Handles partial/interrupted builds by cleaning them
+```
+
+**Interrupted build recovery:**
+```bash
+# If build was interrupted (Ctrl+C, network issues, etc.)
+cd /opt/qgeth/Qgeth3
+sudo ./build-linux.sh geth --clean
+
+# The script automatically detects and cleans:
+# - Partial binaries (geth.bin without geth wrapper)
+# - Stale temp directories with incomplete builds
+# - Mixed binary states from interrupted compilations
+```
+
+**Multiple bootstrap attempts:**
+```bash
+# Error: "Auto-service installation already in progress"
+# If this is incorrect, remove the lock file:
+sudo rm -f /tmp/qgeth-auto-service.lock
+```
+
+**Mixed ownership problems:**
+```bash
+# If directories have wrong ownership (common with sudo/root changes)
+sudo chown -R $(whoami):$(whoami) /opt/qgeth
+
+# Or let auto-service fix it automatically:
+sudo ./auto-geth-service.sh -y  # Auto-fixes ownership issues
+```
+
+**Service conflicts:**
+```bash
+# If services are in weird states after failed installation:
+sudo systemctl stop qgeth-node.service qgeth-github-monitor.service qgeth-updater.service
+sudo systemctl reset-failed
+sudo systemctl daemon-reload
+
+# Then run bootstrap again:
+curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qgeth.sh | sudo bash -s -- -y
 ```
 
 ## 📁 Script Organization
