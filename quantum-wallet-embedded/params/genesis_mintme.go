@@ -48,6 +48,6 @@ func DefaultMintMeGenesisBlock() *genesisT.Genesis {
 		GasLimit:   hexutil.MustDecodeUint64("0x2fefd8"),
 		Difficulty: hexutil.MustDecodeBig("0x200000"),
 		Timestamp:  1623664673,
-		Alloc:      DecodeMintmeAlloc(allocMintme),
+		Alloc:      genesisT.GenesisAlloc{},
 	}
 }
