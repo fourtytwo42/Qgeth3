@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts"
@@ -19,7 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
-// WalletService handles all quantum blockchain operations
+// WalletService handles all quantum blockchain operations with embedded geth node
 type WalletService struct {
 	mu          sync.RWMutex
 	keystore    *keystore.KeyStore
@@ -30,6 +32,11 @@ type WalletService struct {
 	networkInfo *NetworkInfo
 	isConnected bool
 	isMining    bool
+	
+	// Embedded quantum-geth process
+	gethProcess *exec.Cmd
+	gethBinary  string
+	genesisFile string
 }
 
 // Account represents a wallet account
@@ -56,22 +63,22 @@ type Transaction struct {
 
 // NetworkInfo contains network status information
 type NetworkInfo struct {
-	ChainID      *big.Int `json:"chainId"`
-	NetworkName  string   `json:"networkName"`
-	BlockNumber  uint64   `json:"blockNumber"`
-	PeerCount    uint64   `json:"peerCount"`
-	Syncing      bool     `json:"syncing"`
-	GasPrice     *big.Int `json:"gasPrice"`
-	Difficulty   *big.Int `json:"difficulty"`
-	HashRate     *big.Int `json:"hashRate"`
+	ChainID      string `json:"chainId"`
+	NetworkName  string `json:"networkName"`
+	BlockNumber  uint64 `json:"blockNumber"`
+	PeerCount    uint64 `json:"peerCount"`
+	Syncing      bool   `json:"syncing"`
+	GasPrice     string `json:"gasPrice"`
+	Difficulty   string `json:"difficulty"`
+	HashRate     string `json:"hashRate"`
 }
 
 // MiningInfo contains mining status and configuration
 type MiningInfo struct {
-	IsMining     bool     `json:"isMining"`
-	HashRate     *big.Int `json:"hashRate"`
-	MinerAddress string   `json:"minerAddress"`
-	BlocksMined  uint64   `json:"blocksMined"`
+	IsMining     bool   `json:"isMining"`
+	HashRate     string `json:"hashRate"`
+	MinerAddress string `json:"minerAddress"`
+	BlocksMined  uint64 `json:"blocksMined"`
 }
 
 // WalletConfig contains wallet configuration
@@ -88,80 +95,220 @@ type WalletConfig struct {
 	LogLevel       string `json:"logLevel"`
 }
 
-// NewWalletService creates a new wallet service
+// NewWalletService creates a new wallet service with embedded geth node
 func NewWalletService() *WalletService {
 	homeDir, _ := os.UserHomeDir()
 	dataDir := filepath.Join(homeDir, ".quantum-wallet")
+	
+	// Get the directory where the wallet executable is located
+	execPath, _ := os.Executable()
+	execDir := filepath.Dir(execPath)
 	
 	return &WalletService{
 		dataDir: dataDir,
 		networkInfo: &NetworkInfo{
 			NetworkName: "Quantum Testnet",
 		},
+		gethBinary:  filepath.Join(execDir, "geth.exe"),
+		genesisFile: filepath.Join(execDir, "genesis_quantum_testnet.json"),
 	}
 }
 
-// Initialize sets up the wallet service
+// Initialize sets up the wallet service and starts embedded geth node
 func (w *WalletService) Initialize() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
+	log.Info("Initializing Quantum Wallet Service...")
+
 	// Create data directory
 	if err := os.MkdirAll(w.dataDir, 0755); err != nil {
+		log.Error("Failed to create data directory", "error", err)
 		return fmt.Errorf("failed to create data directory: %v", err)
 	}
+	log.Info("Data directory created", "path", w.dataDir)
 
 	// Initialize keystore
 	keystoreDir := filepath.Join(w.dataDir, "keystore")
 	w.keystore = keystore.NewKeyStore(keystoreDir, keystore.StandardScryptN, keystore.StandardScryptP)
+	log.Info("Keystore initialized", "path", keystoreDir)
 
 	// Load existing accounts
 	if err := w.loadAccounts(); err != nil {
 		log.Warn("Failed to load accounts", "error", err)
+	} else {
+		log.Info("Accounts loaded", "count", len(w.accounts))
 	}
 
-	// Try to connect to local quantum node
-	w.connectToNode()
+	// Start embedded quantum-geth process
+	log.Info("Starting embedded quantum-geth process...")
+	if err := w.startEmbeddedGeth(); err != nil {
+		log.Error("Failed to start embedded quantum-geth", "error", err)
+		return fmt.Errorf("failed to start embedded quantum-geth: %v", err)
+	}
 
+	log.Info("Quantum Wallet Service initialization completed")
 	return nil
 }
 
-// Shutdown gracefully shuts down the wallet service
+// startEmbeddedGeth starts the embedded quantum-geth process
+func (w *WalletService) startEmbeddedGeth() error {
+	log.Info("Configuring embedded quantum-geth process...")
+
+	// Check if geth binary exists
+	if _, err := os.Stat(w.gethBinary); os.IsNotExist(err) {
+		return fmt.Errorf("quantum-geth binary not found at %s", w.gethBinary)
+	}
+
+	// Check if genesis file exists
+	if _, err := os.Stat(w.genesisFile); os.IsNotExist(err) {
+		return fmt.Errorf("genesis file not found at %s", w.genesisFile)
+	}
+
+	// Create quantum-geth data directory
+	gethDataDir := filepath.Join(w.dataDir, "geth-data")
+	if err := os.MkdirAll(gethDataDir, 0755); err != nil {
+		return fmt.Errorf("failed to create geth data directory: %v", err)
+	}
+
+	// Initialize with genesis if needed
+	genesisDBPath := filepath.Join(gethDataDir, "chaindata")
+	if _, err := os.Stat(genesisDBPath); os.IsNotExist(err) {
+		log.Info("Initializing quantum blockchain with genesis...")
+		initCmd := exec.Command(w.gethBinary, "init", "--datadir", gethDataDir, w.genesisFile)
+		if output, err := initCmd.CombinedOutput(); err != nil {
+			log.Error("Genesis initialization failed", "output", string(output))
+			return fmt.Errorf("failed to initialize genesis: %v", err)
+		}
+		log.Info("Genesis initialization completed")
+	}
+
+	// Prepare quantum-geth command arguments
+	args := []string{
+		"--datadir", gethDataDir,
+		"--networkid", "73235", // Quantum Testnet
+		"--http", "--http.addr", "127.0.0.1", "--http.port", "8545",
+		"--http.api", "eth,net,web3,personal,admin,txpool,miner,qmpow",
+		"--http.corsdomain", "*",
+		"--ws", "--ws.addr", "127.0.0.1", "--ws.port", "8546",
+		"--ws.api", "eth,net,web3,personal,admin,txpool,miner,qmpow",
+		"--ws.origins", "*",
+		"--allow-insecure-unlock",
+		"--nodiscover", // Disable P2P discovery for embedded mode
+		"--maxpeers", "0", // No external peers for embedded mode
+		"--verbosity", "3",
+	}
+
+	// Start the quantum-geth process
+	log.Info("Starting quantum-geth process", "binary", w.gethBinary, "datadir", gethDataDir)
+	w.gethProcess = exec.Command(w.gethBinary, args...)
+	
+	// Set up process to run in background
+	w.gethProcess.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	
+	if err := w.gethProcess.Start(); err != nil {
+		return fmt.Errorf("failed to start quantum-geth process: %v", err)
+	}
+
+	log.Info("Quantum-geth process started", "pid", w.gethProcess.Process.Pid)
+
+	// Wait a moment for geth to start up
+	time.Sleep(3 * time.Second)
+
+	// Connect to the embedded geth process
+	log.Info("Connecting to embedded quantum-geth...")
+	if err := w.ConnectToNode("http://127.0.0.1:8545"); err != nil {
+		// Kill the process if connection fails
+		w.gethProcess.Process.Kill()
+		return fmt.Errorf("failed to connect to embedded quantum-geth: %v", err)
+	}
+
+	log.Info("Embedded quantum-geth started and connected successfully")
+	return nil
+}
+
+// ConnectToNode connects to an external Q Geth node
+func (w *WalletService) ConnectToNode(endpoint string) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	log.Info("Attempting to connect to Q Geth node", "endpoint", endpoint)
+
+	// Close existing connection
+	if w.client != nil {
+		w.client.Close()
+		log.Info("Closed existing client connection")
+	}
+	if w.rpcClient != nil {
+		w.rpcClient.Close()
+		log.Info("Closed existing RPC client connection")
+	}
+
+	// Connect to the new endpoint
+	log.Info("Dialing Q Geth node...")
+	client, err := ethclient.Dial(endpoint)
+	if err != nil {
+		log.Error("Failed to dial Q Geth node", "endpoint", endpoint, "error", err)
+		return fmt.Errorf("failed to connect to node at %s: %v", endpoint, err)
+	}
+
+	w.client = client
+	w.rpcClient = client.Client()
+	w.isConnected = true
+
+	log.Info("Successfully connected to Q Geth node", "endpoint", endpoint)
+
+	// Start network info updates
+	log.Info("Starting network info update goroutine")
+	go w.updateNetworkInfo()
+
+	log.Info("Q Geth node connection completed successfully")
+	return nil
+}
+
+// Embedded node methods disabled for now - using external node connection instead
+// TODO: Re-implement when Q Geth API is stable
+
+// Shutdown gracefully shuts down the wallet service and embedded quantum-geth process
 func (w *WalletService) Shutdown() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
+	log.Info("Shutting down Quantum Wallet service...")
+
 	if w.client != nil {
 		w.client.Close()
+		log.Info("Closed client connection")
 	}
 	if w.rpcClient != nil {
 		w.rpcClient.Close()
-	}
-}
-
-// connectToNode attempts to connect to a quantum geth node
-func (w *WalletService) connectToNode() {
-	// Try multiple connection methods
-	endpoints := []string{
-		"http://localhost:8545",  // HTTP RPC
-		"ws://localhost:8546",    // WebSocket
-		filepath.Join(w.dataDir, "geth.ipc"), // IPC
-	}
-
-	for _, endpoint := range endpoints {
-		if client, err := ethclient.Dial(endpoint); err == nil {
-			w.client = client
-			w.rpcClient = client.Client()
-			w.isConnected = true
-			log.Info("Connected to quantum node", "endpoint", endpoint)
-			
-			// Update network info
-			go w.updateNetworkInfo()
-			return
-		}
+		log.Info("Closed RPC client connection")
 	}
 	
-	log.Warn("Could not connect to quantum node, running in offline mode")
+	// Terminate embedded quantum-geth process
+	if w.gethProcess != nil && w.gethProcess.Process != nil {
+		log.Info("Terminating embedded quantum-geth process", "pid", w.gethProcess.Process.Pid)
+		
+		// Try graceful shutdown first
+		if err := w.gethProcess.Process.Signal(syscall.SIGTERM); err != nil {
+			log.Warn("Failed to send SIGTERM, forcing kill", "error", err)
+			w.gethProcess.Process.Kill()
+		} else {
+			// Wait a bit for graceful shutdown
+			time.Sleep(2 * time.Second)
+			
+			// Force kill if still running
+			if w.gethProcess.ProcessState == nil {
+				w.gethProcess.Process.Kill()
+			}
+		}
+		
+		// Wait for process to exit
+		w.gethProcess.Wait()
+		log.Info("Embedded quantum-geth process terminated")
+	}
+	
+	log.Info("Quantum Wallet service shutdown completed")
 }
 
 // updateNetworkInfo periodically updates network information
@@ -178,7 +325,7 @@ func (w *WalletService) updateNetworkInfo() {
 		
 		// Get chain ID
 		if chainID, err := w.client.ChainID(ctx); err == nil {
-			w.networkInfo.ChainID = chainID
+			w.networkInfo.ChainID = chainID.String()
 			
 			// Determine network name based on chain ID
 			switch chainID.Int64() {
@@ -194,7 +341,7 @@ func (w *WalletService) updateNetworkInfo() {
 		// Get latest block
 		if block, err := w.client.BlockByNumber(ctx, nil); err == nil {
 			w.networkInfo.BlockNumber = block.NumberU64()
-			w.networkInfo.Difficulty = block.Difficulty()
+			w.networkInfo.Difficulty = block.Difficulty().String()
 		}
 
 		// Get peer count
@@ -209,7 +356,7 @@ func (w *WalletService) updateNetworkInfo() {
 
 		// Get gas price
 		if gasPrice, err := w.client.SuggestGasPrice(ctx); err == nil {
-			w.networkInfo.GasPrice = gasPrice
+			w.networkInfo.GasPrice = gasPrice.String()
 		}
 
 		cancel()
@@ -398,7 +545,12 @@ func (w *WalletService) GetTransactionHistory(address string) ([]*Transaction, e
 		}
 
 		for _, tx := range block.Transactions() {
-			msg, err := types.Sender(types.NewEIP155Signer(w.networkInfo.ChainID), tx)
+			// Convert string ChainID back to *big.Int for transaction sender calculation
+			chainID, ok := new(big.Int).SetString(w.networkInfo.ChainID, 10)
+			if !ok {
+				continue
+			}
+			msg, err := types.Sender(types.NewEIP155Signer(chainID), tx)
 			if err != nil {
 				continue
 			}
@@ -482,7 +634,7 @@ func (w *WalletService) GetMiningInfo() *MiningInfo {
 
 	info := &MiningInfo{
 		IsMining: w.isMining,
-		HashRate: big.NewInt(0),
+		HashRate: "0",
 	}
 
 	if w.isConnected && w.rpcClient != nil {
@@ -490,7 +642,7 @@ func (w *WalletService) GetMiningInfo() *MiningInfo {
 		var hashRate string
 		if err := w.rpcClient.Call(&hashRate, "eth_hashrate"); err == nil {
 			if rate, ok := new(big.Int).SetString(strings.TrimPrefix(hashRate, "0x"), 16); ok {
-				info.HashRate = rate
+				info.HashRate = rate.String()
 			}
 		}
 
@@ -548,38 +700,4 @@ func (w *WalletService) ExecuteConsoleCommand(command string) (string, error) {
 	default:
 		return "", fmt.Errorf("command not supported: %s", parts[0])
 	}
-}
-
-// ConnectToNode connects to a quantum geth node at the specified endpoint
-func (w *WalletService) ConnectToNode(endpoint string) error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	// Close existing connection if any
-	if w.client != nil {
-		w.client.Close()
-		w.client = nil
-	}
-	if w.rpcClient != nil {
-		w.rpcClient.Close()
-		w.rpcClient = nil
-	}
-
-	// Try to connect to the specified endpoint
-	client, err := ethclient.Dial(endpoint)
-	if err != nil {
-		w.isConnected = false
-		return fmt.Errorf("failed to connect to %s: %v", endpoint, err)
-	}
-
-	w.client = client
-	w.rpcClient = client.Client()
-	w.isConnected = true
-
-	log.Info("Connected to quantum node", "endpoint", endpoint)
-
-	// Update network info
-	go w.updateNetworkInfo()
-
-	return nil
 } 
