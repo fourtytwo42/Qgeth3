@@ -297,6 +297,10 @@ build_geth() {
     
     cd quantum-geth/cmd/geth
     
+    # Ensure Go temp directories exist before build
+    echo "🔧 Ensuring Go temp directories exist..."
+    mkdir -p "$GOCACHE" "$GOTMPDIR" "$TMPDIR"
+    
     # Memory-efficient build command
     echo "🚀 Building with memory optimization..."
     if CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -trimpath -buildvcs=false -o ../../../geth.bin .; then
@@ -373,6 +377,10 @@ build_miner() {
     echo ""
     
     cd quantum-miner
+    
+    # Ensure Go temp directories exist before build
+    echo "🔧 Ensuring Go temp directories exist..."
+    mkdir -p "$GOCACHE" "$GOTMPDIR" "$TMPDIR"
     
     # Build with appropriate tags and memory optimization
     BUILD_CMD="go build -ldflags '$LDFLAGS' -trimpath -buildvcs=false"
@@ -455,7 +463,7 @@ create_geth_wrapper() {
         echo '            echo "  ./start-geth.sh mainnet      # Easy mainnet startup"'
         echo '            echo ""'
         echo '            echo "Manual Usage:"'
-        echo '            echo "  ./geth --datadir \$HOME/.qcoin init genesis_quantum_testnet.json"'
+        echo '            echo "  ./geth --datadir \$HOME/.qcoin init configs/genesis_quantum_testnet.json"'
         echo '            echo "  ./geth --datadir \$HOME/.qcoin --networkid 73235 --mine --miner.threads 0"'
         echo '            echo ""'
         echo '            echo "Standard geth options also available."'
@@ -480,10 +488,10 @@ create_geth_wrapper() {
         echo '    echo ""'
         echo '    echo "Manual Start:"'
         echo '    if $USE_QCOIN_MAINNET; then'
-        echo '        echo "  ./geth --datadir ~/.qcoin/mainnet --networkid 73236 init genesis_quantum_mainnet.json"'
+        echo '        echo "  ./geth --datadir ~/.qcoin/mainnet --networkid 73236 init configs/genesis_quantum_mainnet.json"'
         echo '        echo "  ./geth --datadir ~/.qcoin/mainnet --networkid 73236 --mine --miner.threads 0"'
         echo '    else'
-        echo '        echo "  ./geth --datadir \$HOME/.qcoin --networkid 73235 init genesis_quantum_testnet.json"'
+        echo '        echo "  ./geth --datadir \$HOME/.qcoin --networkid 73235 init configs/genesis_quantum_testnet.json"'
         echo '        echo "  ./geth --datadir \$HOME/.qcoin --networkid 73235 --mine --miner.threads 0"'
         echo '    fi'
         echo '    echo ""'
