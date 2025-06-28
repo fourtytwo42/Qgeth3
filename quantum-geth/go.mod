@@ -22,10 +22,8 @@ require (
 	github.com/deckarep/golang-set v1.8.0
 	github.com/deckarep/golang-set/v2 v2.3.1
 	github.com/dop251/goja v0.0.0-20230806174421-c933cf95e127
-	github.com/edsrzf/mmap-go v1.1.0
 	github.com/etclabscore/go-openrpc-reflect v0.0.37
 	github.com/ethereum/c-kzg-4844 v0.4.0
-	github.com/ethereum/evmc/v7 v7.4.0
 	github.com/fatih/color v1.13.0
 	github.com/ferranbt/fastssz v0.1.2
 	github.com/fjl/gencodec v0.0.0-20230517082657-f9840df7b83e
@@ -70,7 +68,6 @@ require (
 	github.com/supranational/blst v0.3.11
 	github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7
 	github.com/tidwall/gjson v1.6.0
-	github.com/tyler-smith/go-bip39 v1.1.0
 	github.com/urfave/cli/v2 v2.25.7
 	github.com/xeipuuv/gojsonschema v1.2.0
 	go.uber.org/automaxprocs v1.5.2
@@ -81,7 +78,6 @@ require (
 	golang.org/x/text v0.14.0
 	golang.org/x/time v0.3.0
 	golang.org/x/tools v0.15.0
-	gonum.org/v1/gonum v0.14.0
 	gonum.org/v1/plot v0.14.0
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 	gopkg.in/urfave/cli.v1 v1.20.0
@@ -109,7 +105,6 @@ require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bits-and-blooms/bitset v1.10.0 // indirect
 	github.com/btcsuite/btcd v0.20.1-beta // indirect
-	github.com/btcsuite/btcutil v0.0.0-20190425235716-9e5f4b9a998d // indirect
 	github.com/campoy/embedmd v1.0.0 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/cockroachdb/errors v1.8.1 // indirect

@@ -467,6 +467,9 @@ build_geth() {
         cd ../../../..
         echo "✅ Quantum-Geth built successfully: ./geth.bin (CGO_ENABLED=0)"
         
+        # Go to project root to create wrapper
+        cd ../..
+        
         # Create Q Coin geth wrapper that prevents Ethereum connections
         create_geth_wrapper
         
@@ -476,6 +479,9 @@ build_geth() {
         else
             echo "Binaries created: geth.bin, geth"
         fi
+        
+        # Return to scripts/linux directory
+        cd scripts/linux
     else
         cd ../../../..
         echo "🚨 Error: Failed to build quantum-geth after all retry attempts"
@@ -562,6 +568,9 @@ build_miner() {
         cd ../../..
         echo "✅ Quantum-Miner built successfully: ./quantum-miner ($GPU_TYPE)"
         
+        # Go to project root 
+        cd ../..
+        
         # Show file info if ls is available
         if command -v ls >/dev/null 2>&1; then
             ls -lh quantum-miner 2>/dev/null || echo "Binary created: quantum-miner"
@@ -578,6 +587,9 @@ build_miner() {
                 echo "🚨 GPU support may not be active (check dependencies)"
             fi
         fi
+        
+        # Return to scripts/linux directory
+        cd scripts/linux
     else
         cd ../../..
         echo "🚨 Error: Failed to build quantum-miner after all retry attempts"
@@ -855,18 +867,27 @@ create_linux_miner_script() {
 case $TARGET in
     "geth")
         build_geth
+        # Go to project root to create solver
+        cd ../..
         create_solver
+        cd scripts/linux
         ;;
     "miner")
         build_miner
+        # Go to project root to create solver and miner script
+        cd ../..
         create_solver
         create_linux_miner_script
+        cd scripts/linux
         ;;
     "both")
         build_geth
         build_miner
+        # Go to project root to create solver and miner script
+        cd ../..
         create_solver
         create_linux_miner_script
+        cd scripts/linux
         ;;
     *)
         echo "🚨 Error: Invalid target '$TARGET'"
@@ -878,16 +899,16 @@ esac
 echo ""
 echo "✅ Build Complete!"
 echo ""
-echo "🚀 Binaries created in root directory:"
+echo "🚀 Binaries created in project root directory:"
 if [ "$TARGET" = "geth" ] || [ "$TARGET" = "both" ]; then
-    echo "  ./geth                 - Q Coin Geth wrapper (prevents Ethereum connections)"
-    echo "  ./geth.bin             - Quantum-Geth binary"
+    echo "  ../../geth                 - Q Coin Geth wrapper (prevents Ethereum connections)"
+    echo "  ../../geth.bin             - Quantum-Geth binary"
 fi
 if [ "$TARGET" = "miner" ] || [ "$TARGET" = "both" ]; then
-    echo "  ./quantum-miner        - Quantum Miner"
-    echo "  ./start-linux-miner.sh - Easy miner startup"
+    echo "  ../../quantum-miner        - Quantum Miner"
+    echo "  ../../start-linux-miner.sh - Easy miner startup"
 fi
-echo "  ./quantum_solver.py    - Python quantum solver helper"
+echo "  ../../quantum_solver.py    - Python quantum solver helper"
 echo ""
 echo "🚀 Quick Start (Easy Method):"
 if [ "$TARGET" = "geth" ] || [ "$TARGET" = "both" ]; then
@@ -896,23 +917,23 @@ if [ "$TARGET" = "geth" ] || [ "$TARGET" = "both" ]; then
 fi
 if [ "$TARGET" = "miner" ] || [ "$TARGET" = "both" ]; then
     echo "  # Start mining (in another terminal):"
-    echo "  ./start-linux-miner.sh"
+    echo "  ../../start-linux-miner.sh"
 fi
 echo ""
 echo "💾 Manual Method:"
 if [ "$TARGET" = "geth" ] || [ "$TARGET" = "both" ]; then
     echo "  # Initialize blockchain:"
-    echo "  ./geth --datadir \$HOME/.qcoin init genesis_quantum_testnet.json"
+    echo "  ../../geth --datadir \$HOME/.qcoin init ../../configs/genesis_quantum_testnet.json"
     echo ""
     echo "  # Start node (testnet, external mining):"
-    echo "  ./geth --datadir \$HOME/.qcoin --networkid 73235 --mine --miner.threads 0 \\"
+    echo "  ../../geth --datadir \$HOME/.qcoin --networkid 73235 --mine --miner.threads 0 \\"
     echo "         --http --http.api eth,net,web3,personal,admin,miner \\"
     echo "         --miner.etherbase 0x742d35C6C4e6d8de6f10E7FF75DD98dd25b02C3A"
 fi
 if [ "$TARGET" = "miner" ] || [ "$TARGET" = "both" ]; then
     echo ""
     echo "  # Start mining (in another terminal):"
-    echo "  ./quantum-miner -rpc-url http://127.0.0.1:8545 \\"
+    echo "  ../../quantum-miner -rpc-url http://127.0.0.1:8545 \\"
     echo "                  -address 0x742d35C6C4e6d8de6f10E7FF75DD98dd25b02C3A"
 fi
 echo ""
