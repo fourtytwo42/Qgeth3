@@ -69,7 +69,7 @@ qgeth-service status    # Check status
 qgeth-service logs geth # View logs
 ```
 
-**Option 2: Manual Setup**
+**Option 3: Manual Setup**
 ```bash
 # Install dependencies (Ubuntu/Debian)
 sudo apt update && sudo apt install -y golang-go python3 python3-pip git
@@ -82,15 +82,27 @@ chmod +x *.sh
 # For low-memory VPS (<3GB RAM), prepare system first
 sudo ./prepare-vps.sh  # Auto-checks memory and creates swap if needed
 
-# Build with memory optimization
-./build-linux.sh both
+# Build options (choose based on your needs):
+./build-linux.sh geth    # Node only (recommended for VPS)
+./build-linux.sh miner   # Miner only (for dedicated mining rigs)
+./build-linux.sh both    # Node + miner (for development/testing)
 
 # Start testnet node
 ./start-geth.sh testnet
 
-# Start mining (in another terminal)
+# Start mining (only if you built the miner)
 ./start-linux-miner.sh --testnet --verbose
 ```
+
+### 🎯 Build Target Guide
+
+| Build Target | What Gets Built | Best For | Auto-Service Uses |
+|--------------|-----------------|----------|-------------------|
+| **`geth`** | Blockchain node only | VPS nodes, validators | ✅ **Yes** |
+| **`miner`** | Mining software only | Dedicated mining rigs | ❌ No |
+| **`both`** | Node + miner | Development, testing | ❌ No |
+
+**💡 VPS Recommendation:** Use auto-service (builds only `geth`) for clean, efficient node deployment. Run miners separately on dedicated hardware for optimal performance.
 
 ## 🌐 Q Coin Testnet Details
 
@@ -293,12 +305,14 @@ sudo ./auto-geth-service.sh
 3. **Memory Optimization** - Checks RAM, creates swap if needed (<3GB RAM)
 4. **Dependency Installation** - Installs Go, Git, build tools, systemd
 5. **Project Setup** - Clones repo to `/opt/qgeth/Qgeth3`
-6. **Initial Build** - Builds geth with memory optimization
+6. **Initial Build** - **Builds ONLY geth node** (no miner) with memory optimization
 7. **Service Creation** - Creates 3 systemd services:
    - `qgeth-node.service` - Main geth service with crash recovery
    - `qgeth-github-monitor.service` - Monitors GitHub for updates
    - `qgeth-updater.service` - Handles updates when triggered
 8. **Auto-Start Setup** - Enables services to start on boot
+
+**🎯 VPS Optimization:** The auto-service is specifically designed for **blockchain nodes**, not mining. It only builds the `geth` blockchain client, saving resources and build time. Mining can be done separately on dedicated hardware.
 
 ### Service Management Commands
 
