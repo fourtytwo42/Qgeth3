@@ -60,6 +60,7 @@ fi
 print_step "🚀 Q Geth One-Command Bootstrap"
 echo ""
 echo "This will:"
+echo "  ✅ Detect and stop any existing Q Geth installations"
 echo "  ✅ Install required dependencies (git, curl)"
 echo "  ✅ Clone the Q Geth repository"
 echo "  ✅ Run the complete auto-service setup"
@@ -70,16 +71,86 @@ echo ""
 ACTUAL_USER=${SUDO_USER:-$USER}
 ACTUAL_HOME=$(eval echo ~$ACTUAL_USER)
 
+# Comprehensive cleanup of existing installations
+print_step "🔍 Detecting existing Q Geth installations"
+
+EXISTING_INSTALLATION=false
+
+# Check for systemd services
+if systemctl list-units --full -all | grep -E "(qgeth|geth)" | grep -v "grep"; then
+    print_warning "Found existing Q Geth systemd services"
+    EXISTING_INSTALLATION=true
+fi
+
+# Check for running geth processes
+if pgrep -f "geth" >/dev/null 2>&1; then
+    print_warning "Found running geth processes"
+    EXISTING_INSTALLATION=true
+fi
+
+# Check for existing installation directories
+if [ -d "/opt/qgeth" ] || [ -d "$ACTUAL_HOME/Qgeth3" ]; then
+    print_warning "Found existing Q Geth installation directories"
+    EXISTING_INSTALLATION=true
+fi
+
+# Check for Q Geth management command
+if command -v qgeth-service >/dev/null 2>&1; then
+    print_warning "Found existing qgeth-service command"
+    EXISTING_INSTALLATION=true
+fi
+
+if [ "$EXISTING_INSTALLATION" = true ]; then
+    print_step "🧹 Performing comprehensive cleanup of existing installations"
+    
+    # Stop all Q Geth related systemd services
+    print_step "Stopping Q Geth systemd services..."
+    systemctl stop qgeth-node.service 2>/dev/null || true
+    systemctl stop qgeth-github-monitor.service 2>/dev/null || true  
+    systemctl stop qgeth-updater.service 2>/dev/null || true
+    systemctl disable qgeth-node.service 2>/dev/null || true
+    systemctl disable qgeth-github-monitor.service 2>/dev/null || true
+    systemctl disable qgeth-updater.service 2>/dev/null || true
+    
+    # Remove systemd service files
+    rm -f /etc/systemd/system/qgeth-*.service
+    systemctl daemon-reload
+    print_success "✅ Systemd services cleaned up"
+    
+    # Kill any remaining geth processes
+    print_step "Terminating running geth processes..."
+    pkill -f "geth" 2>/dev/null || true
+    sleep 3
+    pkill -9 -f "geth" 2>/dev/null || true
+    print_success "✅ Geth processes terminated"
+    
+    # Remove installation directories
+    print_step "Removing installation directories..."
+    rm -rf /opt/qgeth 2>/dev/null || true
+    rm -f /usr/local/bin/qgeth-service 2>/dev/null || true
+    print_success "✅ Installation directories removed"
+    
+    # Clean up lock files
+    print_step "Cleaning up lock files and temp directories..."
+    rm -f /tmp/github-monitor.lock 2>/dev/null || true
+    rm -f /tmp/update-geth.lock 2>/dev/null || true
+    rm -rf /tmp/qgeth-build* 2>/dev/null || true
+    print_success "✅ Lock files and temp directories cleaned"
+    
+    print_success "🧹 Complete cleanup finished"
+    echo ""
+fi
+
 print_step "🔧 Installing basic dependencies"
 if command -v apt >/dev/null 2>&1; then
     DEBIAN_FRONTEND=noninteractive apt update -qq
-    DEBIAN_FRONTEND=noninteractive apt install -y git curl
+    DEBIAN_FRONTEND=noninteractive apt install -y git curl golang-go build-essential jq python3 python3-pip
 elif command -v yum >/dev/null 2>&1; then
-    yum install -y git curl
+    yum install -y git curl golang gcc jq python3 python3-pip
 elif command -v dnf >/dev/null 2>&1; then
-    dnf install -y git curl
+    dnf install -y git curl golang gcc jq python3 python3-pip
 else
-    print_warning "Unknown package manager. Please install 'git' and 'curl' manually."
+    print_warning "Unknown package manager. Please install dependencies manually."
 fi
 
 print_success "✅ Basic dependencies installed"
