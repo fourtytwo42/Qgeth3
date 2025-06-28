@@ -467,21 +467,15 @@ build_geth() {
         cd ../../../..
         echo "✅ Quantum-Geth built successfully: ./geth.bin (CGO_ENABLED=0)"
         
-        # Go to project root to create wrapper
-        cd ../..
-        
         # Create Q Coin geth wrapper that prevents Ethereum connections
         create_geth_wrapper
         
         # Show file info if ls is available
         if command -v ls >/dev/null 2>&1; then
-            ls -lh geth.bin geth 2>/dev/null || echo "Binaries created: geth.bin, geth"
+            ls -lh ../../geth.bin ../../geth 2>/dev/null || echo "Binaries created: ../../geth.bin, ../../geth"
         else
-            echo "Binaries created: geth.bin, geth"
+            echo "Binaries created: ../../geth.bin, ../../geth"
         fi
-        
-        # Return to scripts/linux directory
-        cd scripts/linux
     else
         cd ../../../..
         echo "🚨 Error: Failed to build quantum-geth after all retry attempts"
@@ -561,37 +555,31 @@ build_miner() {
     if [ -n "$BUILD_TAGS" ]; then
         BUILD_CMD="$BUILD_CMD -tags $BUILD_TAGS"
     fi
-    BUILD_CMD="$BUILD_CMD -o ../../../quantum-miner ."
+    BUILD_CMD="$BUILD_CMD -o ../../quantum-miner ."
     
     # Use automated retry with error recovery
-    if build_with_retry "quantum-miner" "$BUILD_CMD" "../../../quantum-miner"; then
-        cd ../../..
-        echo "✅ Quantum-Miner built successfully: ./quantum-miner ($GPU_TYPE)"
-        
-        # Go to project root 
+    if build_with_retry "quantum-miner" "$BUILD_CMD" "../../quantum-miner"; then
         cd ../..
+        echo "✅ Quantum-Miner built successfully: ./quantum-miner ($GPU_TYPE)"
         
         # Show file info if ls is available
         if command -v ls >/dev/null 2>&1; then
-            ls -lh quantum-miner 2>/dev/null || echo "Binary created: quantum-miner"
+            ls -lh ../../quantum-miner 2>/dev/null || echo "Binary created: ../../quantum-miner"
         else
-            echo "Binary created: quantum-miner"
+            echo "Binary created: ../../quantum-miner"
         fi
         
         # Test GPU support
         if [ "$GPU_TYPE" != "CPU" ]; then
             echo "🚀 Testing GPU support..."
-            if ./quantum-miner --help 2>/dev/null | grep -q "GPU" 2>/dev/null; then
+            if ../../quantum-miner --help 2>/dev/null | grep -q "GPU" 2>/dev/null; then
                 echo "✅ GPU support confirmed in binary"
             else
                 echo "🚨 GPU support may not be active (check dependencies)"
             fi
         fi
-        
-        # Return to scripts/linux directory
-        cd scripts/linux
     else
-        cd ../../..
+        cd ../..
         echo "🚨 Error: Failed to build quantum-miner after all retry attempts"
         echo "🔧 Manual troubleshooting steps:"
         echo "  1. Check Go version: go version"
@@ -695,17 +683,17 @@ create_geth_wrapper() {
         echo ''
         echo '# Execute the real geth with filtered arguments'
         echo 'exec "$REAL_GETH" "${FILTERED_ARGS[@]}"'
-    } > geth
+    } > ../../geth
     
     # Make executable using shell built-in if possible, fallback to chmod
     if command -v chmod >/dev/null 2>&1; then
-        chmod +x geth
+        chmod +x ../../geth
     else
         # Fallback: set executable bit manually
-        [ -f geth ] && exec 9<>geth && exec 9<&-
+        [ -f ../../geth ] && exec 9<>../../geth && exec 9<&-
     fi
     
-    echo "✅ Q Coin geth wrapper created: ./geth"
+    echo "✅ Q Coin geth wrapper created: ../../geth"
 }
 
 # Function to create quantum solver Python script
@@ -818,14 +806,14 @@ create_solver() {
         echo ''
         echo 'if __name__ == "__main__":'
         echo '    main()'
-    } > quantum_solver.py
+    } > ../../quantum_solver.py
     
     # Make executable if chmod is available
     if command -v chmod >/dev/null 2>&1; then
-        chmod +x quantum_solver.py
+        chmod +x ../../quantum_solver.py
     fi
     
-    echo "✅ Quantum solver script created: ./quantum_solver.py"
+    echo "✅ Quantum solver script created: ../../quantum_solver.py"
 }
 
 # Function to create Linux miner startup script
@@ -854,40 +842,31 @@ create_linux_miner_script() {
         echo 'fi'
         echo ''
         echo './quantum-miner -rpc-url "$RPC_URL" -address "$MINING_ADDRESS" -threads "$THREADS"'
-    } > start-linux-miner.sh
+    } > ../../start-linux-miner.sh
     
     if command -v chmod >/dev/null 2>&1; then
-        chmod +x start-linux-miner.sh
+        chmod +x ../../start-linux-miner.sh
     fi
     
-    echo "✅ Linux miner script created: ./start-linux-miner.sh"
+    echo "✅ Linux miner script created: ../../start-linux-miner.sh"
 }
 
 # Main build logic
 case $TARGET in
     "geth")
         build_geth
-        # Go to project root to create solver
-        cd ../..
         create_solver
-        cd scripts/linux
         ;;
     "miner")
         build_miner
-        # Go to project root to create solver and miner script
-        cd ../..
         create_solver
         create_linux_miner_script
-        cd scripts/linux
         ;;
     "both")
         build_geth
         build_miner
-        # Go to project root to create solver and miner script
-        cd ../..
         create_solver
         create_linux_miner_script
-        cd scripts/linux
         ;;
     *)
         echo "🚨 Error: Invalid target '$TARGET'"
