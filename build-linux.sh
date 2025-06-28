@@ -247,7 +247,7 @@ export CGO_ENABLED=0  # ALWAYS 0 for geth - this is crucial for quantum field co
 
 # Build info - handle missing utilities gracefully
 if command -v date >/dev/null 2>&1; then
-    BUILD_TIME=$(date "+%Y-%m-%d %H:%M:%S" 2>/dev/null || echo "unknown")
+    BUILD_TIME=$(date "+%Y-%m-%d_%H:%M:%S" 2>/dev/null || echo "unknown")
 else
     BUILD_TIME="unknown"
 fi
@@ -295,7 +295,7 @@ build_geth() {
     
     # Memory-efficient build command
     echo "🚀 Building with memory optimization..."
-    if CGO_ENABLED=0 go build -ldflags="$LDFLAGS" -trimpath -buildvcs=false -o ../../../geth.bin .; then
+    if CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -trimpath -buildvcs=false -o ../../../geth.bin .; then
         cd ../../..
         echo "✅ Quantum-Geth built successfully: ./geth.bin (CGO_ENABLED=0)"
         
@@ -371,7 +371,7 @@ build_miner() {
     cd quantum-miner
     
     # Build with appropriate tags and memory optimization
-    BUILD_CMD="go build -ldflags=\"$LDFLAGS\" -trimpath -buildvcs=false"
+    BUILD_CMD="go build -ldflags '$LDFLAGS' -trimpath -buildvcs=false"
     if [ -n "$BUILD_TAGS" ]; then
         BUILD_CMD="$BUILD_CMD -tags $BUILD_TAGS"
     fi
