@@ -106,6 +106,30 @@ export function WalletProvider({ children }: WalletProviderProps) {
   // Helper function to call backend API with proper error handling
   const callAPI = async (method: keyof typeof window.backend.WalletService, ...args: any[]): Promise<any> => {
     try {
+      // Try direct Wails runtime calls for testing
+      if (typeof window !== 'undefined' && (window as any).go) {
+        const go = (window as any).go;
+        console.log('Available Go methods:', Object.keys(go));
+        
+        // Try calling methods directly on the main app
+        if (go.main && go.main.App) {
+          console.log('App methods:', Object.keys(go.main.App));
+          
+          // Test the simple Greet method first
+          if (method === 'GetAccounts' && go.main.App.Greet) {
+            const greeting = await go.main.App.Greet('Test');
+            console.log('Greet test result:', greeting);
+          }
+          
+          // Try calling the actual method
+          const appMethod = go.main.App[method];
+          if (appMethod) {
+            console.log(`Calling ${method} with args:`, args);
+            return await appMethod(...args);
+          }
+        }
+      }
+      
       if (!window.backend?.WalletService) {
         // Fallback for development/testing - use mock data
         console.log(`Mock API call: ${method}`, args);
