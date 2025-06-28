@@ -569,7 +569,7 @@ EOF
 
 # Step 8: Create geth runner script with crash recovery
 print_step "🏃 Step 8: Creating geth runner script"
-cat > "$SCRIPTS_DIR/run-geth.sh" << 'EOF'
+cat > "$SCRIPTS_DIR/run-geth.sh" << 'SCRIPT_EOF'
 #!/bin/bash
 # Q Geth Runner with Crash Recovery
 
@@ -577,7 +577,7 @@ cat > "$SCRIPTS_DIR/run-geth.sh" << 'EOF'
 PROJECT_DIR="${PROJECT_DIR:-/opt/qgeth/Qgeth3}"
 LOGS_DIR="${LOGS_DIR:-/opt/qgeth/logs}"
 GETH_NETWORK="${GETH_NETWORK:-testnet}"
-GETH_ARGS="${GETH_ARGS:---http.corsdomain \"*\" --http.api \"eth,net,web3,personal,txpool\"}"
+GETH_ARGS="${GETH_ARGS:---http.corsdomain * --http.api eth,net,web3,personal,txpool}"
 CRASH_RETRY_DELAY="${CRASH_RETRY_DELAY:-300}"
 MAX_RETRIES="${MAX_RETRIES:-999999}"
 
@@ -614,7 +614,8 @@ while true; do
     
     # Start geth with specified arguments
     log "📋 Starting with: ./start-geth.sh $GETH_NETWORK $GETH_ARGS"
-    eval "./start-geth.sh $GETH_NETWORK $GETH_ARGS"
+    # Use argument array to properly handle arguments with spaces
+    ./start-geth.sh $GETH_NETWORK $GETH_ARGS
     EXIT_CODE=$?
     
     log "⚠️  Geth exited with code: $EXIT_CODE"
@@ -645,7 +646,7 @@ while true; do
     log "💤 Waiting $CRASH_RETRY_DELAY seconds before retry (attempt $((RETRY_COUNT + 1)))..."
     sleep $CRASH_RETRY_DELAY
 done
-EOF
+SCRIPT_EOF
 
 # Step 9: Make scripts executable
 print_step "🔧 Step 9: Setting permissions"
