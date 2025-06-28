@@ -168,13 +168,13 @@ export function Dashboard() {
                   <span className="text-white font-mono">{parseInt(networkInfo.gasPrice).toLocaleString()} wei</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-400">Mining</span>
+                  <span className="text-gray-400">Syncing</span>
                   <span className={`px-2 py-1 rounded text-xs ${
-                    networkInfo.mining 
-                      ? 'bg-green-900/20 text-green-400' 
-                      : 'bg-gray-900/20 text-gray-400'
+                    networkInfo.syncing 
+                      ? 'bg-yellow-900/20 text-yellow-400' 
+                      : 'bg-green-900/20 text-green-400'
                   }`}>
-                    {networkInfo.mining ? 'Active' : 'Inactive'}
+                    {networkInfo.syncing ? 'Syncing' : 'Synced'}
                   </span>
                 </div>
               </div>

@@ -4,7 +4,76 @@ import (
 	"fmt"
 )
 
-// API methods exposed to the frontend
+// API methods exposed to the frontend - these must match the frontend WalletContext expectations
+
+// CreateAccount creates a new wallet account
+func (a *App) CreateAccount(passphrase string) (string, error) {
+	account, err := a.walletService.CreateAccount(passphrase)
+	if err != nil {
+		return "", err
+	}
+	return account.Address, nil
+}
+
+// GetAccounts returns all wallet accounts
+func (a *App) GetAccounts() ([]*Account, error) {
+	return a.walletService.GetAccounts()
+}
+
+// GetBalance returns the balance for a specific account
+func (a *App) GetBalance(address string) (string, error) {
+	balance, err := a.walletService.GetBalance(address)
+	if err != nil {
+		return "0", err
+	}
+	return balance, nil
+}
+
+// SendTransaction sends a transaction
+func (a *App) SendTransaction(from, to, amount, passphrase string) (string, error) {
+	return a.walletService.SendTransaction(from, to, amount, passphrase)
+}
+
+// GetTransactions returns transaction history for an account
+func (a *App) GetTransactions(address string) ([]*Transaction, error) {
+	return a.walletService.GetTransactionHistory(address)
+}
+
+// StartMining starts mining process
+func (a *App) StartMining() error {
+	// Use first account as miner address if available
+	accounts, err := a.walletService.GetAccounts()
+	if err != nil || len(accounts) == 0 {
+		return fmt.Errorf("no accounts available for mining")
+	}
+	return a.walletService.StartMining(accounts[0].Address)
+}
+
+// StopMining stops mining process
+func (a *App) StopMining() error {
+	return a.walletService.StopMining()
+}
+
+// ConnectToNode connects to a Q Geth node
+func (a *App) ConnectToNode(endpoint string) error {
+	return a.walletService.ConnectToNode(endpoint)
+}
+
+// GetNetworkInfo returns current network information
+func (a *App) GetNetworkInfo() (*NetworkInfo, error) {
+	networkInfo := a.walletService.GetNetworkInfo()
+	if networkInfo == nil {
+		return nil, fmt.Errorf("not connected to network")
+	}
+	return networkInfo, nil
+}
+
+// ExecuteConsoleCommand executes a geth console command
+func (a *App) ExecuteConsoleCommand(command string) (string, error) {
+	return a.walletService.ExecuteConsoleCommand(command)
+}
+
+// Additional API methods for full wallet functionality
 
 // GetWalletInfo returns general wallet information
 func (a *App) GetWalletInfo() map[string]interface{} {
@@ -16,49 +85,9 @@ func (a *App) GetWalletInfo() map[string]interface{} {
 	}
 }
 
-// CreateAccount creates a new wallet account
-func (a *App) CreateAccount(passphrase string) (*Account, error) {
-	return a.walletService.CreateAccount(passphrase)
-}
-
-// GetAccounts returns all wallet accounts
-func (a *App) GetAccounts() ([]*Account, error) {
-	return a.walletService.GetAccounts()
-}
-
-// SendTransaction sends a transaction
-func (a *App) SendTransaction(from, to, value, passphrase string) (string, error) {
-	return a.walletService.SendTransaction(from, to, value, passphrase)
-}
-
-// GetTransactionHistory returns transaction history for an account
-func (a *App) GetTransactionHistory(address string) ([]*Transaction, error) {
-	return a.walletService.GetTransactionHistory(address)
-}
-
-// GetNetworkInfo returns current network information
-func (a *App) GetNetworkInfo() *NetworkInfo {
-	return a.walletService.GetNetworkInfo()
-}
-
-// StartMining starts mining process
-func (a *App) StartMining(minerAddress string) error {
-	return a.walletService.StartMining(minerAddress)
-}
-
-// StopMining stops mining process
-func (a *App) StopMining() error {
-	return a.walletService.StopMining()
-}
-
 // GetMiningInfo returns mining information
 func (a *App) GetMiningInfo() *MiningInfo {
 	return a.walletService.GetMiningInfo()
-}
-
-// ExecuteConsoleCommand executes a geth console command
-func (a *App) ExecuteConsoleCommand(command string) (string, error) {
-	return a.walletService.ExecuteConsoleCommand(command)
 }
 
 // GetMinerSetupInstructions returns instructions for external miner setup
