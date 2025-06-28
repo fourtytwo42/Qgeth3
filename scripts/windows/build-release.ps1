@@ -257,14 +257,17 @@ Write-Host "Mining with $Threads threads to $Coinbase" -ForegroundColor Cyan
 @echo off
 set THREADS=%1
 set NODE=%2
+set COINBASE=%3
 if "%THREADS%"=="" set THREADS=0
 if "%NODE%"=="" set NODE=http://localhost:8545
+if "%COINBASE%"=="" set COINBASE=0x0000000000000000000000000000000000000001
 
 echo Q Coin Quantum Miner Starting...
 echo Threads: %THREADS%
 echo Node: %NODE%
+echo Coinbase: %COINBASE%
 
-quantum-miner.exe -node %NODE% -threads %THREADS%
+quantum-miner.exe -node %NODE% -coinbase %COINBASE% -threads %THREADS%
 '@ | Out-File -FilePath (Join-Path $releaseDir "start-miner.bat") -Encoding ASCII
 
             # Create README
@@ -275,8 +278,12 @@ Built: $(Get-Date)
 Component: Quantum-Miner (Mining Software)
 
 ## Quick Start
-PowerShell: .\start-miner.ps1 [-threads 8] [-node http://localhost:8545]
-Batch: start-miner.bat [threads] [node_url]
+PowerShell: .\start-miner.ps1 [-threads 8] [-node http://localhost:8545] [-coinbase 0xYourAddress]
+Batch: start-miner.bat [threads] [node_url] [coinbase_address]
+
+## Examples
+start-miner.bat 8 http://localhost:8545 0x1234567890abcdef1234567890abcdef12345678
+start-miner.ps1 -threads 8 -coinbase 0x1234567890abcdef1234567890abcdef12345678
 
 ## Performance
 - CPU Mining: ~0.3-0.8 puzzles/sec
@@ -284,6 +291,7 @@ Batch: start-miner.bat [threads] [node_url]
 
 ## Requirements
 - Q Coin Geth node running
+- Valid Ethereum address for coinbase (mining rewards)
 - For GPU: Python with CuPy
 
 See project README for full documentation.
