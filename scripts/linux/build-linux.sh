@@ -461,7 +461,7 @@ build_geth() {
     
     # Build command for retry mechanism
     # Add -checklinkname=0 to allow memsize package to work with Go 1.23+
-    BUILD_CMD="CGO_ENABLED=0 go build -ldflags \"-checklinkname=0 $LDFLAGS\" -trimpath -buildvcs=false -o ../../../geth.bin ."
+    BUILD_CMD="CGO_ENABLED=0 go build -ldflags \"$LDFLAGS\" -checklinkname=0 -trimpath -buildvcs=false -o ../../../geth.bin ."
     
     # Use automated retry with error recovery
     if build_with_retry "quantum-geth" "$BUILD_CMD" "../../../geth.bin"; then
