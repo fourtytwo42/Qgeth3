@@ -383,12 +383,19 @@ fi
 # Ensure build script is executable before running
 chmod +x ./scripts/linux/build-linux.sh 2>/dev/null || true
 
+# Change to scripts/linux directory to run build script with correct context
+print_step "Changing to scripts/linux directory for build..."
+cd scripts/linux
+
 # Run build with environment variables
 if [ "$AUTO_CONFIRM" = true ]; then
-    sudo -u $ACTUAL_USER env QGETH_BUILD_TEMP="$QGETH_BUILD_TEMP" ./scripts/linux/build-linux.sh geth -y
+    sudo -u $ACTUAL_USER env QGETH_BUILD_TEMP="$QGETH_BUILD_TEMP" ./build-linux.sh geth -y
 else
-    sudo -u $ACTUAL_USER env QGETH_BUILD_TEMP="$QGETH_BUILD_TEMP" ./scripts/linux/build-linux.sh geth
+    sudo -u $ACTUAL_USER env QGETH_BUILD_TEMP="$QGETH_BUILD_TEMP" ./build-linux.sh geth
 fi
+
+# Return to project directory
+cd "$PROJECT_DIR"
 if [ $? -ne 0 ]; then
     print_error "Initial build failed"
     exit 1
@@ -566,7 +573,7 @@ if [ -d "./build-temp" ]; then
     TEMP_ENV="QGETH_BUILD_TEMP=./build-temp"
 fi
 
-if sudo -u "$ACTUAL_USER" env $TEMP_ENV ./scripts/linux/build-linux.sh geth; then
+cd scripts/linux && sudo -u "$ACTUAL_USER" env $TEMP_ENV ./build-linux.sh geth && cd "$PROJECT_DIR"; then
     log "✅ Build completed successfully"
 else
     log "❌ Build failed! Restoring backup..."
@@ -663,10 +670,10 @@ while true; do
         continue
     fi
     
-    # Start geth with specified arguments
-    log "📋 Starting with: ./scripts/linux/start-geth.sh $GETH_NETWORK $GETH_ARGS"
+    # Start geth with specified arguments (change to scripts/linux directory)
+    log "📋 Starting with: scripts/linux/start-geth.sh $GETH_NETWORK $GETH_ARGS"
     # Use eval to properly handle arguments with spaces and special characters
-    eval "./scripts/linux/start-geth.sh $GETH_NETWORK $GETH_ARGS"
+    cd scripts/linux && eval "./start-geth.sh $GETH_NETWORK $GETH_ARGS"
     EXIT_CODE=$?
     
     log "⚠️  Geth exited with code: $EXIT_CODE"
