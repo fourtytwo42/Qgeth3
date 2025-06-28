@@ -23,8 +23,7 @@ Qgeth3/
 ├── 📁 configs/            # Configuration files
 │   ├── genesis_quantum_mainnet.json  # Mainnet genesis
 │   ├── genesis_quantum_testnet.json  # Testnet genesis
-│   ├── genesis_quantum_dev.json      # Development genesis
-│   └── miner.json                    # Miner configuration
+│   └── genesis_quantum_dev.json      # Development genesis
 ├── 📁 docs/               # Documentation
 │   ├── quick-start.md         # Getting started guide
 │   ├── installation.md       # Installation instructions
@@ -32,9 +31,6 @@ Qgeth3/
 │   ├── mining.md             # Mining documentation
 │   ├── troubleshooting.md    # Troubleshooting guide
 │   ├── project-structure.md  # This file
-│   ├── build-system.md       # Build system details
-│   ├── advanced-configuration.md # Advanced usage
-│   ├── auto-service.md       # Auto-service documentation
 │   ├── contributing.md       # Contributing guidelines
 │   └── LINUX-GPU-MINING.md  # GPU mining specific guide
 ├── 📁 quantum-geth/       # Quantum-enhanced Ethereum client
@@ -203,29 +199,8 @@ quantum-miner/
 - **Initial Difficulty:** Very low for testing
 - **Allocations:** Development accounts
 
-### Miner Configuration (`configs/miner.json`)
-```json
-{
-  "default_threads": 4,
-  "gpu_batch_size": 128,
-  "cpu_batch_size": 32,
-  "quantum_circuits": {
-    "qubits": 16,
-    "t_gates": 20,
-    "puzzles_per_block": 128
-  },
-  "networks": {
-    "testnet": {
-      "chain_id": 73235,
-      "default_node": "http://localhost:8545"
-    },
-    "mainnet": {
-      "chain_id": 73236,
-      "default_node": "http://localhost:8545"
-    }
-  }
-}
-```
+### Script Configuration
+Configuration is handled via command-line arguments and environment variables rather than separate config files. See the individual scripts for available options.
 
 ## 🔧 Build System Architecture
 

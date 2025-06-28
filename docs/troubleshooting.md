@@ -394,9 +394,9 @@ sudo truncate -s 0 /opt/qgeth/logs/*.log
 rm -rf ~/.qcoin/testnet/geth/chaindata
 ./scripts/linux/start-geth.sh testnet
 
-# For VPS installations
+# For VPS installations (remove user data directories)
 sudo systemctl stop qgeth-node.service
-sudo rm -rf /opt/qgeth/Qgeth3/qdata
+sudo rm -rf /root/.qcoin/*/geth/chaindata  # Remove blockchain data for all networks
 sudo systemctl start qgeth-node.service
 ```
 
