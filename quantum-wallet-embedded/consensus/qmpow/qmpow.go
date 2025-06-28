@@ -28,9 +28,9 @@ import (
 
 // Quantum-Geth Constants
 const (
-	// Halving epoch parameters (Section 11)
-	EpochBlocks   = 100 // Epoch length in blocks
-	StartingQBits = 16  // Start n = 16 at epoch 0 (simplified security)
+	// Halving epoch parameters (Section 11) - FIXED to match params.go  
+	EpochBlocks   = 600000 // Epoch length in blocks (MUST match HalvingEpochLength from params.go)
+	StartingQBits = 16     // Start n = 16 at epoch 0 (simplified security)
 
 	// Dynamic circuit parameters (follow glide schedule from params.go)
 	// These are now calculated dynamically based on height
