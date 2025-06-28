@@ -64,13 +64,13 @@ if [ "$HELP" = true ]; then
 fi
 
 # Check for geth binary
-if [ ! -f "./geth" ]; then
+if [ ! -f "../../geth" ]; then
     echo -e "\033[1;33mðŸ"¨ Q Coin Geth binary not found. Building...\033[0m"
-    if [ ! -f "./scripts/linux/build-linux.sh" ]; then
+    if [ ! -f "./build-linux.sh" ]; then
         echo -e "\033[1;31mâŒ build-linux.sh not found! Are you in the correct directory?\033[0m"
         exit 1
     fi
-    ./scripts/linux/build-linux.sh geth
+    ./build-linux.sh geth
     if [ $? -ne 0 ]; then
         echo -e "\033[1;31mâŒ Build failed!\033[0m"
         exit 1
@@ -78,8 +78,8 @@ if [ ! -f "./geth" ]; then
 fi
 
 # Make sure geth is executable
-if [ ! -x "./geth" ]; then
-    chmod +x "./geth"
+if [ ! -x "../../geth" ]; then
+    chmod +x "../../geth"
     echo -e "\033[1;32mâœ… Made geth executable\033[0m"
 fi
 
@@ -88,7 +88,7 @@ case $NETWORK in
     mainnet)
         CHAINID=73236
         DATADIR="$HOME/.qcoin/mainnet"
-        GENESIS="configs/genesis_quantum_mainnet.json"
+        GENESIS="../../configs/genesis_quantum_mainnet.json"
         PORT=30303
         NAME="Q Coin Mainnet"
         BOOTNODE_PORT=30303
@@ -96,7 +96,7 @@ case $NETWORK in
     testnet)
         CHAINID=73235
         DATADIR="$HOME/.qcoin/testnet"
-        GENESIS="configs/genesis_quantum_testnet.json"
+        GENESIS="../../configs/genesis_quantum_testnet.json"
         PORT=30303
         NAME="Q Coin Testnet"
         BOOTNODE_PORT=30303
@@ -104,7 +104,7 @@ case $NETWORK in
     devnet)
         CHAINID=73234
         DATADIR="$HOME/.qcoin/devnet"
-        GENESIS="configs/genesis_quantum_dev.json"
+        GENESIS="../../configs/genesis_quantum_dev.json"
         PORT=30305
         NAME="Q Coin Dev Network"
         BOOTNODE_PORT=30305
@@ -140,18 +140,18 @@ if [ ! -d "$DATADIR/geth/chaindata" ]; then
     if [ ! -f "$GENESIS" ]; then
         echo -e "\033[1;31mâŒ Genesis file not found: $GENESIS\033[0m"
         echo -e "\033[1;33mðŸ"‹ Available genesis files:\033[0m"
-        ls -la configs/genesis_quantum_*.json 2>/dev/null || echo "No genesis files found!"
+        ls -la ../../configs/genesis_quantum_*.json 2>/dev/null || echo "No genesis files found!"
         exit 1
     fi
     
     # Initialize with correct argument order
-    ./geth --datadir "$DATADIR" init "$GENESIS"
+    ../../geth --datadir "$DATADIR" init "$GENESIS"
     if [ $? -ne 0 ]; then
         echo -e "\033[1;31mâŒ Genesis initialization failed!\033[0m"
         echo -e "\033[1;33mðŸ'¡ Debug info:\033[0m"
         echo "  Genesis file: $GENESIS"
         echo "  Data directory: $DATADIR"
-        echo "  Command: ./geth --datadir \"$DATADIR\" init \"$GENESIS\""
+        echo "  Command: ../../geth --datadir \"$DATADIR\" init \"$GENESIS\""
         exit 1
     fi
     echo -e "\033[1;32mâœ… Blockchain initialized successfully\033[0m"
@@ -209,7 +209,7 @@ echo -e "\033[1;33mðŸ'¡ Use Ctrl+C to stop the node\033[0m"
 echo ""
 
 # Start geth with error handling
-./geth "${GETH_ARGS[@]}"
+../../geth "${GETH_ARGS[@]}"
 EXIT_CODE=$?
 
 if [ $EXIT_CODE -ne 0 ]; then

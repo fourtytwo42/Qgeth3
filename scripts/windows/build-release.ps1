@@ -17,13 +17,13 @@ $timestamp = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
 if ($Component -eq "geth" -or $Component -eq "both") {
     Write-Host "Building quantum-geth..." -ForegroundColor Yellow
     
-    if (-not (Test-Path "quantum-geth")) {
+    if (-not (Test-Path "../../quantum-geth")) {
         Write-Host "quantum-geth directory not found!" -ForegroundColor Red
         exit 1
     }
     
     # Build to regular location first
-    Push-Location "quantum-geth"
+    Push-Location "../../quantum-geth"
     try {
         # CRITICAL: Always use CGO_ENABLED=0 for geth to ensure compatibility
         # This ensures Windows and Linux builds have identical quantum field handling
@@ -35,7 +35,7 @@ if ($Component -eq "geth" -or $Component -eq "both") {
             Write-Host "quantum-geth built successfully (CGO_ENABLED=0)" -ForegroundColor Green
             
             # Create timestamped release
-            $releaseDir = "../releases/quantum-geth-$timestamp"
+            $releaseDir = "../../releases/quantum-geth-$timestamp"
             New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
             Copy-Item "build/bin/geth.exe" "$releaseDir/geth.exe" -Force
             
@@ -62,13 +62,13 @@ Version: Latest
 if ($Component -eq "miner" -or $Component -eq "both") {
     Write-Host "Building quantum-miner..." -ForegroundColor Yellow
     
-    if (-not (Test-Path "quantum-miner")) {
+    if (-not (Test-Path "../../quantum-miner")) {
         Write-Host "quantum-miner directory not found!" -ForegroundColor Red
         exit 1
     }
     
     # Build to regular location first
-    Push-Location "quantum-miner"
+    Push-Location "../../quantum-miner"
     try {
         # Use CGO_ENABLED=0 for Windows miner (uses CuPy instead of native CUDA)
         $env:CGO_ENABLED = "0"
@@ -79,7 +79,7 @@ if ($Component -eq "miner" -or $Component -eq "both") {
             Write-Host "quantum-miner built successfully" -ForegroundColor Green
             
             # Create timestamped release
-            $releaseDir = "../releases/quantum-miner-$timestamp"
+            $releaseDir = "../../releases/quantum-miner-$timestamp"
             New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
             Copy-Item "quantum-miner.exe" "$releaseDir/quantum-miner.exe" -Force
             

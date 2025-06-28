@@ -38,7 +38,7 @@ if ($Help) {
 
 # Find latest geth release
 function Get-LatestGethRelease {
-    $gethReleases = Get-ChildItem "releases" -Directory | Where-Object { $_.Name -like "quantum-geth-*" } | Sort-Object Name -Descending
+    $gethReleases = Get-ChildItem "../../releases" -Directory | Where-Object { $_.Name -like "quantum-geth-*" } | Sort-Object Name -Descending
     if ($gethReleases.Count -eq 0) {
         return $null
     }
@@ -68,21 +68,21 @@ $configs = @{
     "mainnet" = @{
         chainid = 73236
         datadir = "$env:APPDATA\Qcoin\mainnet"
-        genesis = "genesis_quantum_mainnet.json"
+        genesis = "../../configs/genesis_quantum_mainnet.json"
         port = 30303
         name = "Q Coin Mainnet"
     }
     "testnet" = @{
         chainid = 73235
         datadir = "$env:APPDATA\Qcoin\testnet"
-        genesis = "genesis_quantum_testnet.json"
+        genesis = "../../configs/genesis_quantum_testnet.json"
         port = 30303
         name = "Q Coin Testnet"
     }
     "devnet" = @{
         chainid = 73234
         datadir = "$env:APPDATA\Qcoin\devnet"
-        genesis = "genesis_quantum_dev.json"
+        genesis = "../../configs/genesis_quantum_dev.json"
         port = 30305
         name = "Q Coin Dev Network"
     }

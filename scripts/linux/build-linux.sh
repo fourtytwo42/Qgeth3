@@ -231,15 +231,15 @@ if [ "$CLEAN" = "--clean" ] || [ "$2" = "--clean" ]; then
 fi
 
 # Check directories exist
-if [ ! -d "quantum-geth" ]; then
+if [ ! -d "../../quantum-geth" ]; then
     echo "🚨 Error: quantum-geth directory not found!"
-    echo "Please run this script from the root of the Qgeth3 project."
+    echo "Please run this script from scripts/linux/ directory."
     exit 1
 fi
 
-if [ ! -d "quantum-miner" ]; then
+if [ ! -d "../../quantum-miner" ]; then
     echo "🚨 Error: quantum-miner directory not found!"
-    echo "Please run this script from the root of the Qgeth3 project."
+    echo "Please run this script from scripts/linux/ directory."
     exit 1
 fi
 
@@ -280,7 +280,7 @@ build_geth() {
     echo "🚀 Building Quantum-Geth (Memory-Optimized)..."
     
     # Check if go.mod exists
-    if [ ! -f "quantum-geth/go.mod" ]; then
+    if [ ! -f "../../quantum-geth/go.mod" ]; then
         echo "🚨 Error: go.mod not found in quantum-geth directory!"
         exit 1
     fi
@@ -295,7 +295,7 @@ build_geth() {
     echo "    This ensures identical quantum field handling as Windows builds"
     echo "💾 Using temporary directory: $BUILD_TEMP_DIR"
     
-    cd quantum-geth/cmd/geth
+    cd ../../quantum-geth/cmd/geth
     
     # Ensure Go temp directories exist before build
     echo "🔧 Ensuring Go temp directories exist..."
@@ -303,8 +303,8 @@ build_geth() {
     
     # Memory-efficient build command
     echo "🚀 Building with memory optimization..."
-    if CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -trimpath -buildvcs=false -o ../../../geth.bin .; then
-        cd ../../..
+    if CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -trimpath -buildvcs=false -o ../../../../../geth.bin .; then
+        cd ../../../../..
         echo "✅ Quantum-Geth built successfully: ./geth.bin (CGO_ENABLED=0)"
         
         # Create Q Coin geth wrapper that prevents Ethereum connections
@@ -317,7 +317,7 @@ build_geth() {
             echo "Binaries created: geth.bin, geth"
         fi
     else
-        cd ../../..
+        cd ../../../../..
         echo "🚨 Error: Failed to build quantum-geth"
         exit 1
     fi
@@ -331,7 +331,7 @@ build_miner() {
     echo "🚀 Building Quantum-Miner (Memory-Optimized)..."
     
     # Check if go.mod exists
-    if [ ! -f "quantum-miner/go.mod" ]; then
+    if [ ! -f "../../quantum-miner/go.mod" ]; then
         echo "🚨 Error: go.mod not found in quantum-miner directory!"
         exit 1
     fi
@@ -376,7 +376,7 @@ build_miner() {
     echo "💾 Using temporary directory: $BUILD_TEMP_DIR"
     echo ""
     
-    cd quantum-miner
+    cd ../../quantum-miner
     
     # Ensure Go temp directories exist before build
     echo "🔧 Ensuring Go temp directories exist..."
@@ -387,11 +387,11 @@ build_miner() {
     if [ -n "$BUILD_TAGS" ]; then
         BUILD_CMD="$BUILD_CMD -tags $BUILD_TAGS"
     fi
-    BUILD_CMD="$BUILD_CMD -o ../quantum-miner ."
+    BUILD_CMD="$BUILD_CMD -o ../../../quantum-miner ."
     
     echo "🚀 Executing: $BUILD_CMD"
     if eval $BUILD_CMD; then
-        cd ..
+        cd ../../..
         echo "✅ Quantum-Miner built successfully: ./quantum-miner ($GPU_TYPE)"
         
         # Show file info if ls is available
@@ -411,7 +411,7 @@ build_miner() {
             fi
         fi
     else
-        cd ..
+        cd ../../..
         echo "🚨 Error: Failed to build quantum-miner"
         exit 1
     fi
