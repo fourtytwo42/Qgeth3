@@ -181,6 +181,8 @@ fi
 
 if [ -f "./scripts/linux/prepare-vps.sh" ]; then
     print_step "Running VPS preparation script..."
+    # Ensure the script is executable
+    chmod +x ./scripts/linux/prepare-vps.sh
     if [ "$AUTO_CONFIRM" = true ]; then
         ./scripts/linux/prepare-vps.sh -y
     else
@@ -545,7 +547,7 @@ if [ -d "./build-temp" ]; then
     TEMP_ENV="QGETH_BUILD_TEMP=./build-temp"
 fi
 
-if sudo -u "$ACTUAL_USER" env $TEMP_ENV ./build-linux.sh geth; then
+if sudo -u "$ACTUAL_USER" env $TEMP_ENV ./scripts/linux/build-linux.sh geth; then
     log "✅ Build completed successfully"
 else
     log "❌ Build failed! Restoring backup..."
@@ -643,9 +645,9 @@ while true; do
     fi
     
     # Start geth with specified arguments
-    log "📋 Starting with: ./start-geth.sh $GETH_NETWORK $GETH_ARGS"
+    log "📋 Starting with: ./scripts/linux/start-geth.sh $GETH_NETWORK $GETH_ARGS"
     # Use eval to properly handle arguments with spaces and special characters
-    eval "./start-geth.sh $GETH_NETWORK $GETH_ARGS"
+    eval "./scripts/linux/start-geth.sh $GETH_NETWORK $GETH_ARGS"
     EXIT_CODE=$?
     
     log "⚠️  Geth exited with code: $EXIT_CODE"
