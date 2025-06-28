@@ -68,16 +68,13 @@ fi
 
 # Check for geth binary
 if [ ! -f "../../geth" ]; then
-    echo -e "\033[1;33m[BUILD] Q Coin Geth binary not found. Building...\033[0m"
-    if [ ! -f "./build-linux.sh" ]; then
-        echo -e "\033[1;31m[ERROR] build-linux.sh not found! Are you in the correct directory?\033[0m"
-        exit 1
-    fi
-    ./build-linux.sh geth
-    if [ $? -ne 0 ]; then
-        echo -e "\033[1;31m[ERROR] Build failed!\033[0m"
-        exit 1
-    fi
+    echo -e "\033[1;31m[ERROR] Q Coin Geth binary not found!\033[0m"
+    echo -e "\033[1;33m[INFO] Please build geth first using:\033[0m"
+    echo "  ./build-linux.sh geth"
+    echo ""
+    echo -e "\033[1;33m[INFO] Or use the bootstrap script for complete setup:\033[0m"
+    echo "  curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qgeth.sh | sudo bash -s -- -y"
+    exit 1
 fi
 
 # Make sure geth is executable
