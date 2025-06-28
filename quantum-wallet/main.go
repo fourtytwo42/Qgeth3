@@ -44,6 +44,11 @@ func (a *App) OnShutdown(ctx context.Context) {
 	}
 }
 
+// Greet returns a greeting for the given name
+func (a *App) Greet(name string) string {
+	return fmt.Sprintf("Hello %s, It's show time!", name)
+}
+
 func main() {
 	// Create an instance of the app structure
 	app := NewApp()
@@ -55,15 +60,14 @@ func main() {
 		Height:        800,
 		MinWidth:      800,
 		MinHeight:     600,
+		Fullscreen:    false,
+		StartHidden:   false,
+		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
-		OnStartup:   app.OnStartup,
-		OnShutdown:  app.OnShutdown,
-		Fullscreen:  false,
-		StartHidden: false,
-		HideWindowOnClose: false,
-		AlwaysOnTop: false,
+		OnStartup:  app.OnStartup,
+		OnShutdown: app.OnShutdown,
 	})
 
 	if err != nil {
