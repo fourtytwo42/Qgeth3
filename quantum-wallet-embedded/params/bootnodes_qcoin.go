@@ -9,8 +9,8 @@ var QCoinMainnetBootnodes = []string{
 // QCoinTestnetBootnodes are the enode URLs of the P2P bootstrap nodes running on
 // the Q Coin testnet network.
 var QCoinTestnetBootnodes = []string{
-	"enode://6300bb04bd88484b7c30ea47036c2bf3b2b544a3ef106817432a83cc99e6f806592aff0f49cc33b99440e837aea3b02dba7b051f89c1b7bf9a85d55c9906b079@134.199.202.42:30303", // Q Coin Testnet VPS 1 (updated)
-	"enode://42e18390fa52923947e7ad009a84a35ef8ff71a166171af3b72ee6fb201601c461066f2c17944430e2b8ab6d043b60aa499d8d51766f4fb7563183e44df3c12a@128.199.6.197:30303",   // Q Coin Testnet VPS 2 (updated)
+	"enode://dde79dc6c2894dd543f52b2490bfc33d330c01bb9433376d7d8860c26e3081b71f66135430402863460414bef945bdb9bc7536fa727af0d641e39f09c28ac25b@134.199.202.42:30303", // Q Coin Testnet VPS 1 (updated)
+	"enode://fe17dd35ad0b6a4acb7074bd3a3d0c619f2f2d286c13eae6492b90382af02fa0eae9ee9b11ae639fd11ac54770e1d1de949f52160170498c7aaeda3dfbcc5089@128.199.6.197:30303",   // Q Coin Testnet VPS 2 (updated)
 }
 
 // QCoinDevBootnodes are the enode URLs of the P2P bootstrap nodes running on
