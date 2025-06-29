@@ -66,20 +66,65 @@ if [ "$HELP" = true ]; then
     exit 0
 fi
 
-# Check for geth binary
-if [ ! -f "../../geth" ]; then
-    echo -e "\033[1;31m[ERROR] Q Coin Geth binary not found!\033[0m"
-    echo -e "\033[1;33m[INFO] Please build geth first using:\033[0m"
-    echo "  ./build-linux.sh geth"
+# Check for geth binary with enhanced diagnostics
+GETH_BINARY="../../geth"
+GETH_BIN_BINARY="../../geth.bin"
+
+echo -e "\033[1;36m[DEBUG] Checking for Q Geth binary...\033[0m"
+echo -e "\033[1;37m[DEBUG] Current working directory: $(pwd)\033[0m"
+echo -e "\033[1;37m[DEBUG] Current user: $(whoami)\033[0m"
+echo -e "\033[1;37m[DEBUG] Looking for geth at: $GETH_BINARY\033[0m"
+
+# Check if geth wrapper exists
+if [ ! -f "$GETH_BINARY" ]; then
+    echo -e "\033[1;31m[ERROR] Q Coin Geth wrapper not found at: $GETH_BINARY\033[0m"
+    
+    # Enhanced diagnostics
+    echo -e "\033[1;33m[DEBUG] File system diagnostics:\033[0m"
+    echo "  Project directory contents:"
+    ls -la ../../ 2>/dev/null | head -10
     echo ""
-    echo -e "\033[1;33m[INFO] Or use the bootstrap script for complete setup:\033[0m"
-    echo "  curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qgeth.sh | sudo bash -s -- -y"
-    exit 1
+    
+    # Check if geth.bin exists
+    if [ -f "$GETH_BIN_BINARY" ]; then
+        echo -e "\033[1;33m[INFO] Found geth.bin but missing geth wrapper\033[0m"
+        echo -e "\033[1;33m[INFO] Attempting to create wrapper...\033[0m"
+        
+        # Try to create wrapper if geth.bin exists
+        cat > "$GETH_BINARY" << 'EOF'
+#!/bin/bash
+# Q Coin Geth Wrapper - Auto-generated
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REAL_GETH="$SCRIPT_DIR/geth.bin"
+exec "$REAL_GETH" "$@"
+EOF
+        
+        if command -v chmod >/dev/null 2>&1; then
+            chmod +x "$GETH_BINARY"
+            echo -e "\033[1;32m[SUCCESS] Created geth wrapper\033[0m"
+        else
+            echo -e "\033[1;31m[ERROR] Could not make wrapper executable\033[0m"
+        fi
+    else
+        echo -e "\033[1;31m[ERROR] Neither geth nor geth.bin found!\033[0m"
+        echo -e "\033[1;33m[INFO] Available files in project root:\033[0m"
+        find ../../ -maxdepth 1 -name "*geth*" 2>/dev/null || echo "  No geth files found"
+    fi
+    
+    # Still missing after attempt to create
+    if [ ! -f "$GETH_BINARY" ]; then
+        echo -e "\033[1;33m[INFO] Please build geth first using:\033[0m"
+        echo "  ./build-linux.sh geth"
+        echo ""
+        echo -e "\033[1;33m[INFO] Or use the bootstrap script for complete setup:\033[0m"
+        echo "  curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qgeth.sh | sudo bash -s -- -y"
+        exit 1
+    fi
 fi
 
 # Make sure geth is executable
-if [ ! -x "../../geth" ]; then
-    chmod +x "../../geth"
+if [ ! -x "$GETH_BINARY" ]; then
+    chmod +x "$GETH_BINARY"
     echo -e "\033[1;32m[SUCCESS] Made geth executable\033[0m"
 fi
 
@@ -140,13 +185,20 @@ if [ ! -f "$GENESIS" ]; then
 fi
 
 # Always initialize to trigger auto-reset when genesis changes
-../../geth.bin --datadir "$DATADIR" init "$GENESIS"
+if [ -f "$GETH_BIN_BINARY" ]; then
+    # Use geth.bin directly for initialization (more reliable)
+    $GETH_BIN_BINARY --datadir "$DATADIR" init "$GENESIS"
+else
+    # Fallback to wrapper if geth.bin not found
+    $GETH_BINARY --datadir "$DATADIR" init "$GENESIS"
+fi
+
 if [ $? -ne 0 ]; then
     echo -e "\033[1;31m[ERROR] Genesis initialization failed!\033[0m"
     echo -e "\033[1;33m[DEBUG] Debug info:\033[0m"
     echo "  Genesis file: $GENESIS"
     echo "  Data directory: $DATADIR"
-    echo "  Command: ../../geth.bin --datadir \"$DATADIR\" init \"$GENESIS\""
+    echo "  Binary used: $([ -f "$GETH_BIN_BINARY" ] && echo "$GETH_BIN_BINARY" || echo "$GETH_BINARY")"
     exit 1
 fi
 echo -e "\033[1;32m[SUCCESS] Genesis initialization successful\033[0m"
@@ -203,7 +255,7 @@ echo -e "\033[1;33m[INFO] Use Ctrl+C to stop the node\033[0m"
 echo ""
 
 # Start geth with error handling
-../../geth "${GETH_ARGS[@]}"
+$GETH_BINARY "${GETH_ARGS[@]}"
 EXIT_CODE=$?
 
 if [ $EXIT_CODE -ne 0 ]; then
