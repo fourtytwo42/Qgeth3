@@ -152,6 +152,32 @@ case $NETWORK in
         ;;
 esac
 
+# Check if default data directory location is writable, use fallback if not
+check_datadir_writable() {
+    local test_dir="$(dirname "$DATADIR")"
+    
+    # Check if parent directory is writable
+    if [ ! -w "$test_dir" ] || ! touch "$test_dir/.qcoin_test_$$" 2>/dev/null; then
+        echo -e "\033[1;33m[WARNING] Default data directory location not writable: $DATADIR\033[0m"
+        
+        # Try user-specific directory in /tmp
+        DATADIR="/tmp/.qcoin-$(whoami)/$NETWORK"
+        echo -e "\033[1;33m[INFO] Using alternative data directory: $DATADIR\033[0m"
+        
+        # If /tmp is not writable, try /var/lib (for system services)
+        if [ ! -w "/tmp" ]; then
+            DATADIR="/var/lib/qcoin/$NETWORK"
+            echo -e "\033[1;33m[INFO] Using system data directory: $DATADIR\033[0m"
+        fi
+    else
+        # Cleanup test file
+        rm -f "$test_dir/.qcoin_test_$$" 2>/dev/null
+    fi
+}
+
+# Apply fallback data directory if needed
+check_datadir_writable
+
 # Detect external IP for proper enode advertising
 EXTERNAL_IP=$(curl -s https://ipinfo.io/ip 2>/dev/null || curl -s https://api.ipify.org 2>/dev/null || curl -s https://checkip.amazonaws.com 2>/dev/null)
 if [ -z "$EXTERNAL_IP" ]; then
@@ -167,10 +193,66 @@ fi
 
 echo -e "\033[1;36m[START] Starting $NAME (Chain ID: $CHAINID)\033[0m"
 
-# Create data directory if it doesn't exist
-if [ ! -d "$DATADIR" ]; then
-    mkdir -p "$DATADIR"
-    echo -e "\033[1;32m[CREATED] Data directory: $DATADIR\033[0m"
+# Enhanced data directory setup with permission validation
+setup_data_directory() {
+    echo -e "\033[1;36m[DEBUG] Setting up data directory: $DATADIR\033[0m"
+    
+    # Check if directory exists and create with proper permissions
+    if [ ! -d "$DATADIR" ]; then
+        echo -e "\033[1;33m[INFO] Creating data directory: $DATADIR\033[0m"
+        mkdir -p "$DATADIR" 2>/dev/null || {
+            echo -e "\033[1;31m[ERROR] Failed to create data directory with regular permissions\033[0m"
+            echo -e "\033[1;33m[INFO] Trying with sudo...\033[0m"
+            sudo mkdir -p "$DATADIR" || {
+                echo -e "\033[1;31m[ERROR] Failed to create data directory even with sudo\033[0m"
+                return 1
+            }
+        }
+    fi
+    
+    # Validate directory permissions
+    echo -e "\033[1;36m[DEBUG] Validating data directory permissions...\033[0m"
+    local dir_owner=$(stat -c %U "$DATADIR" 2>/dev/null || echo "unknown")
+    local current_user=$(whoami)
+    
+    echo -e "\033[1;37m[DEBUG] Data directory owner: $dir_owner\033[0m"
+    echo -e "\033[1;37m[DEBUG] Current user: $current_user\033[0m"
+    
+    # Test write permissions
+    local test_file="$DATADIR/.write_test_$$"
+    if ! touch "$test_file" 2>/dev/null; then
+        echo -e "\033[1;31m[ERROR] Cannot write to data directory: $DATADIR\033[0m"
+        
+        # Try to fix ownership
+        if [ "$dir_owner" != "$current_user" ] && [ "$current_user" != "root" ]; then
+            echo -e "\033[1;33m[INFO] Fixing directory ownership...\033[0m"
+            sudo chown -R "$current_user:$current_user" "$DATADIR" 2>/dev/null || {
+                echo -e "\033[1;31m[ERROR] Failed to fix directory ownership\033[0m"
+                return 1
+            }
+        fi
+        
+        # Test again after ownership fix
+        if ! touch "$test_file" 2>/dev/null; then
+            echo -e "\033[1;31m[ERROR] Still cannot write to data directory after ownership fix\033[0m"
+            echo -e "\033[1;33m[DEBUG] Filesystem info:\033[0m"
+            df -h "$DATADIR" 2>/dev/null || echo "Cannot get filesystem info"
+            mount | grep "$(df "$DATADIR" | tail -1 | awk '{print $1}')" 2>/dev/null || echo "Cannot get mount info"
+            return 1
+        fi
+    fi
+    
+    # Cleanup test file
+    rm -f "$test_file" 2>/dev/null
+    
+    echo -e "\033[1;32m[SUCCESS] Data directory validated: $DATADIR\033[0m"
+    return 0
+}
+
+# Check if data directory is set up correctly
+if ! setup_data_directory; then
+    echo -e "\033[1;31m[ERROR] Data directory setup failed\033[0m"
+    exit 1
 fi
 
 # CRITICAL: Always initialize with genesis file for auto-reset functionality  
