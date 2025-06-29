@@ -370,28 +370,35 @@ setup_swap_if_needed() {
         # Check if we need more memory
         if [ $combined_mb -lt $required_mb ]; then
             local needed_swap=$((required_mb - combined_mb))
-            log_warning "Insufficient memory for building Q Geth!"
-            log_info "Need additional ${needed_swap}MB of swap space"
             
-            # Only create swap if running as root/sudo
-            if [ "$EUID" -eq 0 ] || [ -n "$SUDO_USER" ]; then
-                log_info "Creating swap file automatically..."
-                create_swap_file $needed_swap
+            # Ignore small differences under 10MB (threshold check)
+            if [ $needed_swap -lt 10 ]; then
+                log_success "✅ Memory difference is only ${needed_swap}MB (under 10MB threshold)"
+                log_success "✅ Sufficient memory available (${combined_mb}MB total)"
             else
-                log_warning "Cannot create swap (not running as root/sudo)"
-                log_info "Manual swap creation needed:"
-                log_info "  sudo fallocate -l ${needed_swap}M /swapfile"
-                log_info "  sudo chmod 600 /swapfile"
-                log_info "  sudo mkswap /swapfile"
-                log_info "  sudo swapon /swapfile"
-                log_info "  echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab"
+                log_warning "Insufficient memory for building Q Geth!"
+                log_info "Need additional ${needed_swap}MB of swap space"
                 
-                if [ "$AUTO_CONFIRM" != true ]; then
-                    echo -n "Continue without creating swap? Build may fail (y/N): "
-                    read -r RESPONSE
-                    if [[ ! "$RESPONSE" =~ ^([yY][eE][sS]|[yY])$ ]]; then
-                        log_info "Bootstrap cancelled. Please create swap manually or run with sudo."
-                        exit 1
+                # Only create swap if running as root/sudo
+                if [ "$EUID" -eq 0 ] || [ -n "$SUDO_USER" ]; then
+                    log_info "Creating swap file automatically..."
+                    create_swap_file $needed_swap $swap_mb
+                else
+                    log_warning "Cannot create swap (not running as root/sudo)"
+                    log_info "Manual swap creation needed:"
+                    log_info "  sudo fallocate -l ${needed_swap}M /swapfile"
+                    log_info "  sudo chmod 600 /swapfile"
+                    log_info "  sudo mkswap /swapfile"
+                    log_info "  sudo swapon /swapfile"
+                    log_info "  echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab"
+                    
+                    if [ "$AUTO_CONFIRM" != true ]; then
+                        echo -n "Continue without creating swap? Build may fail (y/N): "
+                        read -r RESPONSE
+                        if [[ ! "$RESPONSE" =~ ^([yY][eE][sS]|[yY])$ ]]; then
+                            log_info "Bootstrap cancelled. Please create swap manually or run with sudo."
+                            exit 1
+                        fi
                     fi
                 fi
             fi
@@ -406,9 +413,16 @@ setup_swap_if_needed() {
 # Create swap file
 create_swap_file() {
     local needed_mb=$1
-    local swap_size_mb=$((needed_mb + 512))  # Add 512MB buffer
+    local existing_swap_mb=${2:-0}  # Second parameter for existing swap size, default to 0
+    
+    # Calculate new swap size: existing swap + needed swap + 512MB buffer
+    local swap_size_mb=$((existing_swap_mb + needed_mb + 512))
     
     log_info "Creating ${swap_size_mb}MB swap file..."
+    log_info "  Existing swap: ${existing_swap_mb}MB"
+    log_info "  Additional needed: ${needed_mb}MB"
+    log_info "  Buffer: 512MB"
+    log_info "  Total new swap: ${swap_size_mb}MB"
     
     # Check available disk space
     local available_mb=$(df / | awk 'NR==2 {print int($4/1024)}')
@@ -419,7 +433,7 @@ create_swap_file() {
         return 1
     fi
     
-    # Remove any existing swapfile
+    # Remove any existing swapfile (we'll replace it with larger one)
     if [ -f /swapfile ]; then
         log_info "Removing existing swap file..."
         swapoff /swapfile 2>/dev/null || true
@@ -1639,61 +1653,6 @@ EOF
         echo "  Restart: $INSTALL_DIR/restart-qgeth.sh"
         echo "  Status:  $INSTALL_DIR/status-qgeth.sh"
         echo "  Logs:    $INSTALL_DIR/logs-qgeth.sh [-f] [-n 100]"
-    fi
-    echo ""
-    if [ "$DOCKER_MODE" = true ]; then
-        echo -e "${BLUE}🎯 Docker Features:${NC}"
-        echo "  ✅ Cross-platform compatibility (Linux, Windows, macOS)"
-        echo "  ✅ Isolated environment with no system dependencies"
-        echo "  ✅ Persistent data volumes (survives container restarts)"
-        echo "  ✅ Health checks and automatic restart on failure"
-        echo "  ✅ Easy scaling and management"
-        echo "  ✅ Perfect for Fedora (bypasses systemd issues)"
-        echo ""
-        echo -e "${BLUE}🎯 Next Steps:${NC}"
-        echo "  1. Container started automatically"
-        echo "  2. Check status: $INSTALL_DIR/status-qgeth-docker.sh"
-        echo "  3. View logs: $INSTALL_DIR/logs-qgeth-docker.sh -f"
-        echo "  4. Start mining: $INSTALL_DIR/mining-qgeth-docker.sh"
-        echo "  5. RPC API: http://localhost:8545"
-        echo "  6. WebSocket: ws://localhost:8546"
-        echo ""
-        echo -e "${BLUE}🔗 MetaMask Connection:${NC}"
-        echo "  Network: Custom RPC"
-        echo "  RPC URL: http://localhost:8545"
-        echo "  Chain ID: 73235"
-        echo "  Currency: QGC"
-        echo ""
-        echo -e "${YELLOW}💡 Troubleshooting:${NC}"
-        echo "  If container fails to start:"
-        echo "  1. Check Docker status: docker info"
-        echo "  2. Check container logs: docker-compose logs qgeth-testnet"
-        echo "  3. Restart container: docker-compose restart qgeth-testnet"
-        echo "  4. Rebuild if needed: docker-compose build --no-cache"
-        echo ""
-        echo -e "${GREEN}Q Geth is now running as a Docker container! 🐳${NC}"
-    else
-        echo -e "${BLUE}🎯 Service Features:${NC}"
-        echo "  ✅ Persistent service (survives reboots)"
-        echo "  ✅ Automatic restart on failure"
-        echo "  ✅ Proper logging and monitoring"
-        echo "  ✅ Secure execution as user: $ACTUAL_USER"
-        echo "  ✅ System integration with $INIT_SYSTEM"
-        echo ""
-        echo -e "${BLUE}🎯 Next Steps:${NC}"
-        echo "  1. Service started automatically"
-        echo "  2. Check status: $INSTALL_DIR/status-qgeth.sh"
-        echo "  3. View logs: $INSTALL_DIR/logs-qgeth.sh -f"
-        echo "  4. Start mining: cd $PROJECT_DIR/scripts/linux && ./start-miner.sh"
-        echo "  5. RPC API: http://localhost:8545"
-        echo ""
-        echo -e "${YELLOW}💡 Troubleshooting:${NC}"
-        echo "  If service fails to start with 'datadir already used by another process':"
-        echo "  1. Kill existing processes: pkill -f geth"
-        echo "  2. Restart service: sudo systemctl restart qgeth.service"
-        echo "  3. Or run manually: cd $PROJECT_DIR/scripts/linux && ./start-geth.sh testnet"
-        echo ""
-        echo -e "${GREEN}Q Geth is now running as a persistent system service! 🚀${NC}"
     fi
 }
 
