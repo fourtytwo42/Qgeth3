@@ -365,12 +365,13 @@ TimeoutStopSec=30s
 
 # Security settings  
 NoNewPrivileges=true
-PrivateTmp=true
-ProtectSystem=strict
-ProtectHome=read-only
+PrivateTmp=false
+ProtectSystem=false
+ProtectHome=false
 ReadWritePaths=$INSTALL_DIR
 ReadWritePaths=/tmp
 ReadWritePaths=/var/lib/qcoin
+ReadWritePaths=/root
 
 # Resource limits
 LimitNOFILE=65536
