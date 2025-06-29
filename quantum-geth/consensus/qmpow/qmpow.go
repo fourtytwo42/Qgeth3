@@ -192,7 +192,7 @@ func New(config Config) *QMPoW {
 
 	qmpow := &QMPoW{
 		config:     config,
-		threads:    1,
+		threads:    -1, // Default to disabled - will be set by SetThreads() based on --miner.threads flag
 		update:     make(chan struct{}),
 		rlpManager: NewQuantumRLPManager(),
 	}
@@ -605,13 +605,14 @@ func (q *QMPoW) Seal(chain consensus.ChainHeaderReader, block *types.Block, resu
 	threads := q.threads
 	q.lock.RUnlock()
 
-	// Only start local mining if threads > 0 or threads == 0 (default)
-	// When threads == -1, local mining is explicitly disabled for external miners only
-	if threads != -1 {
+	// Only start local mining if threads > 0
+	// When threads == -1, local mining is disabled (for VPS nodes serving external miners only)
+	// When threads == 0, mining is also disabled (converted to -1 by backend)
+	if threads > 0 {
 		// Start local mining in a separate goroutine
 		go q.seal(chain, block, results, stop)
 	} else {
-		log.Info("🚫 Local mining disabled (threads=-1), only serving external miners")
+		log.Info("🚫 Local mining disabled", "threads", threads, "mode", "external miners only")
 	}
 
 	return nil
