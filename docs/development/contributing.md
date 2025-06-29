@@ -22,6 +22,26 @@ sudo apt install golang-go python3 python3-pip git build-essential  # Linux
 ./quick-start.sh start-mining
 ```
 
+### Quantum Wallet Development
+For developing the quantum wallet UI:
+```bash
+# IMPORTANT: Must run from quantum-wallet directory
+cd quantum-wallet
+wails dev
+
+# NOT from root directory (will fail):
+# wails dev  # ❌ ERROR: wails.json not found
+```
+
+**PowerShell (Windows):**
+```powershell
+# Use semicolon for command chaining in PowerShell
+cd quantum-wallet; wails dev
+
+# NOT && (doesn't work in PowerShell):
+# cd quantum-wallet && wails dev  # ❌ ERROR
+```
+
 ### Testing Your Changes
 ```bash
 # Run unit tests
