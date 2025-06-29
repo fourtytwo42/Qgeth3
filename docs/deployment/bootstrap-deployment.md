@@ -29,6 +29,12 @@ apt install -y wget ca-certificates
 
 **Note**: Most standard Ubuntu installations already include these packages, but minimal Debian containers/installations may not have `curl` and `sudo` by default.
 
+**Go Version Handling**: The bootstrap script automatically handles Go version conflicts that can occur on Debian systems. If the package manager provides an outdated Go version (< 1.21), the script will:
+- Remove conflicting package manager Go installations
+- Install the latest Go manually to `/usr/local/go/`
+- Configure PATH priorities to ensure the correct version is used
+- Clean module caches to prevent version conflicts
+
 ### One-Command Installation
 ```bash
 # Non-interactive installation (recommended for automation)

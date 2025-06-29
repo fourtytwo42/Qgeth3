@@ -56,6 +56,43 @@ wget https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qgeth.s
 bash bootstrap-qgeth.sh -y
 ```
 
+### Go Version Conflicts (Debian/Ubuntu)
+```bash
+# Symptoms: Build failures with "missing go.sum entry" or "package slices is not in GOROOT"
+# This usually indicates Go version conflicts between package manager and manual installations
+
+# The bootstrap script now handles this automatically, but for manual fixes:
+
+# 1. Check current Go version and location
+go version
+which go
+
+# 2. If using old version (< 1.21), remove package manager Go
+sudo apt remove --purge golang-go golang-1.* -y
+sudo apt autoremove -y
+
+# 3. Install latest Go manually
+sudo rm -rf /usr/local/go
+wget https://go.dev/dl/go1.21.6.linux-amd64.tar.gz
+sudo tar -C /usr/local -xzf go1.21.6.linux-amd64.tar.gz
+
+# 4. Fix PATH priorities
+export PATH="/usr/local/go/bin:$PATH"
+echo 'export PATH="/usr/local/go/bin:$PATH"' >> ~/.bashrc
+sudo bash -c 'echo "PATH=/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" >> /etc/environment'
+
+# 5. Clean module cache
+go clean -cache -modcache -testcache
+rm -rf ~/.cache/go-build
+
+# 6. Verify correct version is active
+go version  # Should show go1.21.6 or later
+which go    # Should show /usr/local/go/bin/go
+
+# 7. Retry bootstrap
+curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qgeth.sh | sudo bash -s -- -y
+```
+
 ### Download/Access Issues
 ```bash
 # Symptoms: "bash: line 1: 404: command not found"

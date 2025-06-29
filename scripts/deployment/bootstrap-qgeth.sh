@@ -239,7 +239,15 @@ if command -v apt >/dev/null 2>&1; then
         if [ "$NEED_MANUAL_GO" = true ]; then
             print_step "Installing latest Go manually..."
             
-            # Remove old Go installations
+            # CRITICAL: Remove conflicting package manager Go installations to prevent PATH conflicts
+            print_step "Removing conflicting package manager Go installations..."
+            DEBIAN_FRONTEND=noninteractive apt remove --purge -y golang-go golang-1.* 2>/dev/null || true
+            DEBIAN_FRONTEND=noninteractive apt autoremove -y 2>/dev/null || true
+            
+            # Clean up any Go-related environment variables from package manager
+            sed -i '/golang/d' /etc/environment 2>/dev/null || true
+            
+            # Remove old manual Go installations
             rm -rf /usr/local/go
             
             # Download and install latest Go
@@ -255,13 +263,49 @@ if command -v apt >/dev/null 2>&1; then
             if wget "https://go.dev/dl/${GO_TARBALL}"; then
                 tar -C /usr/local -xzf "$GO_TARBALL"
                 
-                # Add Go to PATH
-                echo 'export PATH=$PATH:/usr/local/go/bin' >> /etc/profile
-                export PATH=$PATH:/usr/local/go/bin
+                # CRITICAL: Set up PATH properly for both current session and persistence
+                # 1. Set for current session immediately
+                export PATH="/usr/local/go/bin:$PATH"
                 
-                # Verify installation
+                # 2. Set for all future sessions (multiple locations for compatibility)
+                echo 'export PATH="/usr/local/go/bin:$PATH"' >> /etc/profile
+                echo 'export PATH="/usr/local/go/bin:$PATH"' >> /etc/bash.bashrc
+                
+                # 3. Set for systemd services
+                echo 'PATH="/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"' >> /etc/environment
+                
+                # 4. Clean Go module cache to prevent conflicts
+                export GOCACHE="/tmp/go-cache-clean"
+                export GOMODCACHE="/tmp/go-mod-cache-clean"
+                rm -rf ~/.cache/go-build 2>/dev/null || true
+                rm -rf /root/.cache/go-build 2>/dev/null || true
+                
+                # 5. Verify installation with explicit path
+                print_step "Verifying manual Go installation..."
                 if /usr/local/go/bin/go version; then
-                    print_success "✅ Go $GO_LATEST_VERSION installed manually"
+                    # Double-check that the correct Go is now in PATH
+                    which go
+                    go version
+                    
+                    # Verify no old Go is interfering
+                    CURRENT_GO_PATH=$(which go 2>/dev/null || echo "none")
+                    if [[ "$CURRENT_GO_PATH" == "/usr/local/go/bin/go" ]]; then
+                        print_success "✅ Go $GO_LATEST_VERSION installed manually and active in PATH"
+                    else
+                        print_warning "⚠️ Go installed but PATH may have conflicts. Current go: $CURRENT_GO_PATH"
+                        print_step "Forcing PATH priority for manual Go..."
+                        export PATH="/usr/local/go/bin:$PATH"
+                        hash -r  # Clear command cache
+                        
+                        # Verify again
+                        NEW_GO_PATH=$(which go 2>/dev/null || echo "none")
+                        if [[ "$NEW_GO_PATH" == "/usr/local/go/bin/go" ]]; then
+                            print_success "✅ PATH fixed - manual Go now active"
+                        else
+                            print_error "Failed to prioritize manual Go in PATH"
+                            exit 1
+                        fi
+                    fi
                 else
                     print_error "Failed to install Go manually"
                     exit 1
@@ -288,16 +332,54 @@ else
     exit 1
 fi
 
-# Final Go verification
+# Final Go verification with conflict detection
 print_step "Verifying Go installation..."
 if command -v go >/dev/null 2>&1; then
     GO_FINAL_VERSION=$(go version)
+    GO_FINAL_PATH=$(which go)
     print_success "✅ Go verified: $GO_FINAL_VERSION"
+    print_step "Go location: $GO_FINAL_PATH"
     
-    # Set up Go environment
+    # CRITICAL: Ensure we're using the correct Go version (1.21+)
+    FINAL_GO_VER=$(echo "$GO_FINAL_VERSION" | grep -o 'go[0-9]*\.[0-9]*' | head -1 | sed 's/go//')
+    FINAL_GO_MAJOR=$(echo "$FINAL_GO_VER" | cut -d. -f1)
+    FINAL_GO_MINOR=$(echo "$FINAL_GO_VER" | cut -d. -f2)
+    
+    if [ "$FINAL_GO_MAJOR" -lt 1 ] || ([ "$FINAL_GO_MAJOR" -eq 1 ] && [ "$FINAL_GO_MINOR" -lt 21 ]); then
+        print_error "CRITICAL: Final Go version $FINAL_GO_VER is still too old (< 1.21)"
+        print_error "This indicates PATH conflicts. Current go path: $GO_FINAL_PATH"
+        
+        # Emergency fix: Force manual Go path
+        if [ -f "/usr/local/go/bin/go" ]; then
+            print_step "Emergency fix: Forcing manual Go..."
+            export PATH="/usr/local/go/bin:$PATH"
+            hash -r
+            
+            NEW_GO_VERSION=$(go version 2>/dev/null || echo "failed")
+            if [[ "$NEW_GO_VERSION" =~ go1\.2[1-9] ]] || [[ "$NEW_GO_VERSION" =~ go1\.[3-9][0-9] ]]; then
+                print_success "✅ Emergency fix successful: $NEW_GO_VERSION"
+            else
+                print_error "Emergency fix failed. Manual intervention required."
+                exit 1
+            fi
+        else
+            print_error "Manual Go not found at /usr/local/go/bin/go"
+            exit 1
+        fi
+    fi
+    
+    # Set up Go environment with clean cache
     export GOPATH=/tmp/go-build-bootstrap
-    export GOCACHE=/tmp/go-cache-bootstrap  
-    mkdir -p "$GOPATH" "$GOCACHE"
+    export GOCACHE=/tmp/go-cache-bootstrap
+    export GOMODCACHE=/tmp/go-mod-cache-bootstrap
+    
+    # Clean any existing cache to prevent version conflicts
+    rm -rf ~/.cache/go-build 2>/dev/null || true
+    rm -rf /root/.cache/go-build 2>/dev/null || true
+    go clean -cache -modcache -testcache 2>/dev/null || true
+    
+    mkdir -p "$GOPATH" "$GOCACHE" "$GOMODCACHE"
+    print_step "Go environment set up with clean cache"
 else
     print_error "Go installation failed - please install Go >= 1.21 manually"
     exit 1
@@ -424,6 +506,27 @@ print_step "Building with automated error recovery..."
 # Ensure proper ownership before build
 chown -R "$ACTUAL_USER:$ACTUAL_USER" "$PROJECT_DIR"
 
+# CRITICAL: Final verification that build will use correct Go version
+print_step "Pre-build Go verification..."
+BUILD_GO_VERSION=$(sudo -u "$ACTUAL_USER" env PATH="/usr/local/go/bin:$PATH" go version 2>/dev/null || echo "failed")
+if [[ "$BUILD_GO_VERSION" =~ go1\.2[1-9] ]] || [[ "$BUILD_GO_VERSION" =~ go1\.[3-9][0-9] ]]; then
+    print_success "✅ Build will use: $BUILD_GO_VERSION"
+else
+    print_error "CRITICAL: Build would use wrong Go version: $BUILD_GO_VERSION"
+    
+    # Last resort: ensure build environment has correct PATH
+    export PATH="/usr/local/go/bin:$PATH"
+    
+    # Verify one more time
+    FINAL_BUILD_GO=$(sudo -u "$ACTUAL_USER" env PATH="/usr/local/go/bin:$PATH" go version 2>/dev/null || echo "failed")
+    if [[ "$FINAL_BUILD_GO" =~ go1\.2[1-9] ]] || [[ "$FINAL_BUILD_GO" =~ go1\.[3-9][0-9] ]]; then
+        print_success "✅ PATH corrected, build will use: $FINAL_BUILD_GO"
+    else
+        print_error "Cannot ensure correct Go version for build. Aborting."
+        exit 1
+    fi
+fi
+
 BUILD_SUCCESS=false
 BUILD_ATTEMPTS=0
 MAX_BUILD_ATTEMPTS=3
@@ -433,11 +536,11 @@ while [ $BUILD_ATTEMPTS -lt $MAX_BUILD_ATTEMPTS ] && [ "$BUILD_SUCCESS" = false 
     print_step "🚀 Build attempt $BUILD_ATTEMPTS/$MAX_BUILD_ATTEMPTS"
     
     if [ "$AUTO_CONFIRM" = true ]; then
-        if sudo -u "$ACTUAL_USER" env QGETH_BUILD_TEMP="$QGETH_BUILD_TEMP" ./build-linux.sh geth -y; then
+        if sudo -u "$ACTUAL_USER" env PATH="/usr/local/go/bin:$PATH" QGETH_BUILD_TEMP="$QGETH_BUILD_TEMP" GOCACHE="/tmp/go-cache-build" GOMODCACHE="/tmp/go-mod-cache-build" ./build-linux.sh geth -y; then
             BUILD_SUCCESS=true
         fi
     else
-        if sudo -u "$ACTUAL_USER" env QGETH_BUILD_TEMP="$QGETH_BUILD_TEMP" ./build-linux.sh geth; then
+        if sudo -u "$ACTUAL_USER" env PATH="/usr/local/go/bin:$PATH" QGETH_BUILD_TEMP="$QGETH_BUILD_TEMP" GOCACHE="/tmp/go-cache-build" GOMODCACHE="/tmp/go-mod-cache-build" ./build-linux.sh geth; then
             BUILD_SUCCESS=true
         fi
     fi
@@ -445,15 +548,15 @@ while [ $BUILD_ATTEMPTS -lt $MAX_BUILD_ATTEMPTS ] && [ "$BUILD_SUCCESS" = false 
     if [ "$BUILD_SUCCESS" = false ] && [ $BUILD_ATTEMPTS -lt $MAX_BUILD_ATTEMPTS ]; then
         print_warning "Build attempt $BUILD_ATTEMPTS failed, applying recovery..."
         
-        # Clean and retry with proper ownership
+        # Clean and retry with proper ownership and environment
         cd "$PROJECT_DIR"
         rm -f geth geth.bin quantum_solver.py 2>/dev/null || true
         chown -R "$ACTUAL_USER:$ACTUAL_USER" "$PROJECT_DIR"
-        sudo -u "$ACTUAL_USER" go clean -cache -modcache -testcache 2>/dev/null || true
+        sudo -u "$ACTUAL_USER" env PATH="/usr/local/go/bin:$PATH" go clean -cache -modcache -testcache 2>/dev/null || true
         
         cd "$PROJECT_DIR/quantum-geth"
-        sudo -u "$ACTUAL_USER" go mod tidy 2>/dev/null || true
-        sudo -u "$ACTUAL_USER" go mod download 2>/dev/null || true
+        sudo -u "$ACTUAL_USER" env PATH="/usr/local/go/bin:$PATH" go mod tidy 2>/dev/null || true
+        sudo -u "$ACTUAL_USER" env PATH="/usr/local/go/bin:$PATH" go mod download 2>/dev/null || true
         
         cd "$PROJECT_DIR/scripts/linux"
         sleep 5
@@ -503,7 +606,7 @@ Type=exec
 User=$ACTUAL_USER
 Group=$ACTUAL_USER
 WorkingDirectory=$PROJECT_DIR/scripts/linux
-Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/go/bin
+Environment=PATH=/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ExecStart=$PROJECT_DIR/scripts/linux/start-geth.sh testnet
 ExecReload=/bin/kill -HUP \$MAINPID
 KillMode=mixed
