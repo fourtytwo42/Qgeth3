@@ -336,6 +336,14 @@ create_system_service() {
 create_systemd_service() {
     log_info "Creating systemd service..."
     
+    # Ensure start script is executable 
+    if [ -f "$PROJECT_DIR/scripts/linux/start-geth.sh" ]; then
+        chmod +x "$PROJECT_DIR/scripts/linux/start-geth.sh"
+    else
+        log_error "Start script not found: $PROJECT_DIR/scripts/linux/start-geth.sh"
+        return 1
+    fi
+    
     $SUDO_CMD tee /etc/systemd/system/qgeth.service > /dev/null << EOF
 [Unit]
 Description=Q Geth Quantum Blockchain Node
@@ -355,13 +363,14 @@ Restart=on-failure
 RestartSec=10s
 TimeoutStopSec=30s
 
-# Security settings
+# Security settings  
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=read-only
 ReadWritePaths=$INSTALL_DIR
 ReadWritePaths=/tmp
+ReadWritePaths=/var/lib/qcoin
 
 # Resource limits
 LimitNOFILE=65536
@@ -374,6 +383,28 @@ Environment=PATH=/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr
 [Install]
 WantedBy=multi-user.target
 EOF
+
+    # Validate service file was created correctly
+    if [ ! -f "/etc/systemd/system/qgeth.service" ]; then
+        log_error "Failed to create systemd service file"
+        return 1
+    fi
+    
+    # Check if ExecStart path exists and is executable
+    local exec_start_script="$PROJECT_DIR/scripts/linux/start-geth.sh"
+    if [ ! -f "$exec_start_script" ]; then
+        log_error "ExecStart script missing: $exec_start_script"
+        return 1
+    fi
+    
+    if [ ! -x "$exec_start_script" ]; then
+        log_warning "ExecStart script not executable, fixing..."
+        chmod +x "$exec_start_script"
+        if [ ! -x "$exec_start_script" ]; then
+            log_error "Cannot make ExecStart script executable: $exec_start_script"
+            return 1
+        fi
+    fi
     
     # Reload systemd and enable service
     if ! $SUDO_CMD systemctl daemon-reload; then
