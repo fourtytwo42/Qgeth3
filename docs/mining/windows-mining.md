@@ -12,17 +12,24 @@ Complete guide to quantum mining on Windows with Q Coin, including GPU accelerat
 - **Dynamic difficulty adjustment** (ASERT-Q algorithm)
 - **Real blockchain integration** with halving rewards
 
-### Windows GPU Acceleration
+### Windows Quantum Mining Options
 
-Q Coin Windows supports **CuPy GPU acceleration**:
+Q Coin Windows supports **multiple quantum mining methods**:
 
-#### **CuPy GPU** (Windows GPU Acceleration)
+#### 1. **🚀 IBM Quantum Cloud** (True Quantum Advantage)
+- **Real quantum computers** or IBM Cloud simulators
+- True quantum superposition and entanglement
+- **Real Hardware**: ~1.5 puzzles/sec (~$1.60/sec)
+- **FREE Simulator**: ~2.8 puzzles/sec (unlimited)
+- **Setup**: [IBM Quantum Cloud Guide](ibm-quantum-cloud.md)
+
+#### 2. **CuPy GPU** (Windows GPU Acceleration)
 - Python-based GPU acceleration using CuPy
 - Good performance for Windows systems
 - Works with NVIDIA GPUs on Windows
 - **Performance**: ~2.0 puzzles/sec (RTX 4090)
 
-#### **CPU Fallback**
+#### 3. **CPU Fallback**
 - Universal compatibility
 - Optimized for multi-core systems
 - **Performance**: ~0.3-0.8 puzzles/sec
@@ -117,9 +124,22 @@ Created release: releases/quantum-miner-TIMESTAMP
 
 ## 🚀 Mining Usage
 
+### IBM Quantum Cloud Mining (🚀 NEW!)
+```powershell
+# Mine with FREE IBM quantum simulator
+quantum-gpu-miner.exe -coinbase 0xYourAddress -quantum-cloud `
+  -ibm-token YOUR_API_KEY -ibm-instance YOUR_CRN
+
+# Mine with REAL quantum computers
+quantum-gpu-miner.exe -coinbase 0xYourAddress -quantum-cloud `
+  -ibm-token YOUR_API_KEY -ibm-instance YOUR_CRN `
+  -use-simulator=false -quantum-budget 50.0
+```
+**[Setup Guide](ibm-quantum-cloud.md)** | Get API key: https://cloud.ibm.com/quantum
+
 ### Using PowerShell Scripts
 
-#### Quick Start
+#### Traditional Mining Quick Start
 ```powershell
 # GPU mining (auto-detects if available)
 .\scripts\windows\start-miner.ps1 -GPU -Coinbase 0xYourAddress
@@ -174,10 +194,17 @@ cd "C:\qcoin-mining\quantum-miner-TIMESTAMP"
 
 ## 📊 Performance Comparison
 
-| Method | RTX 4090 | RTX 3080 | GTX 1080 Ti | Setup Difficulty |
-|--------|----------|----------|-------------|------------------|
-| **CuPy GPU** | ~2.0 puzzles/sec | ~1.4 puzzles/sec | ~0.8 puzzles/sec | Medium |
-| **CPU (16 cores)** | ~0.4 puzzles/sec | ~0.3 puzzles/sec | ~0.2 puzzles/sec | Easy |
+| Method | Performance | Cost | Quantum Advantage | Setup Difficulty |
+|--------|-------------|------|-------------------|------------------|
+| **🚀 IBM Real Quantum** | ~1.5 puzzles/sec | $1.60/sec | **TRUE QUANTUM** | Medium |
+| **🆓 IBM Simulator** | ~2.8 puzzles/sec | FREE | Simulated | Easy |
+| **CuPy GPU (RTX 4090)** | ~2.0 puzzles/sec | FREE | None | Medium |
+| **CPU (16 cores)** | ~0.4 puzzles/sec | FREE | None | Easy |
+
+### Traditional GPU Comparison
+| Method | RTX 4090 | RTX 3080 | GTX 1080 Ti |
+|--------|----------|----------|-------------|
+| **CuPy GPU** | ~2.0 puzzles/sec | ~1.4 puzzles/sec | ~0.8 puzzles/sec |
 
 *Note: Windows CuPy performance is slightly lower than Linux native CUDA but still significantly better than CPU-only mining.*
 

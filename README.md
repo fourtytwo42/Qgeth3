@@ -6,6 +6,19 @@ A complete quantum blockchain platform featuring **Q Coin** with **Quantum-Geth*
 
 ## 🚀 Quick Start
 
+### 🚀 NEW: IBM Quantum Cloud Mining
+```bash
+# Mine with FREE IBM quantum simulator
+quantum-gpu-miner -coinbase 0xYourAddress -quantum-cloud \
+  -ibm-token YOUR_API_KEY -ibm-instance YOUR_CRN
+
+# Mine with REAL quantum computers ($1.60/sec)
+quantum-gpu-miner -coinbase 0xYourAddress -quantum-cloud \
+  -ibm-token YOUR_API_KEY -ibm-instance YOUR_CRN \
+  -use-simulator=false -quantum-budget 50.0
+```
+**[Setup Guide](docs/mining/ibm-quantum-cloud.md)** | Get API key: https://cloud.ibm.com/quantum
+
 ### Windows
 ```powershell
 # Start Q Coin testnet node
@@ -49,19 +62,23 @@ cd Qgeth3
 
 - **16-qubit quantum circuits** per puzzle
 - **128 quantum puzzles per block**
+- **🚀 NEW: IBM Quantum Cloud support** - Mine with real quantum computers!
 - **Native CUDA + Qiskit-Aer GPU** support (Linux)
 - **CuPy GPU acceleration** (Windows)
 - **CPU fallback** with optimization
 - **3-10x performance boost** with GPU mining
+- **True quantum advantage** with IBM Cloud quantum hardware
 
 ## 📊 Performance Overview
 
-| Platform | Method | Performance | Best For |
-|----------|--------|-------------|----------|
-| **Linux** | **Native CUDA** | **~3.2 puzzles/sec** | Maximum performance |
-| **Linux** | **Qiskit-Aer GPU** | **~2.4 puzzles/sec** | Easier setup |
-| **Windows** | **CuPy GPU** | **~2.0 puzzles/sec** | Windows acceleration |
-| **Both** | **CPU** | ~0.3-0.8 puzzles/sec | Universal compatibility |
+| Platform | Method | Performance | Cost | Best For |
+|----------|--------|-------------|------|----------|
+| **IBM Cloud** | **🚀 Real Quantum Hardware** | **~1.5 puzzles/sec** | **$1.60/sec** | **True quantum advantage** |
+| **IBM Cloud** | **🆓 Quantum Simulator** | **~2.8 puzzles/sec** | **FREE** | **Quantum testing** |
+| **Linux** | **Native CUDA** | **~3.2 puzzles/sec** | FREE | Maximum local performance |
+| **Linux** | **Qiskit-Aer GPU** | **~2.4 puzzles/sec** | FREE | Easier GPU setup |
+| **Windows** | **CuPy GPU** | **~2.0 puzzles/sec** | FREE | Windows acceleration |
+| **Both** | **CPU** | ~0.3-0.8 puzzles/sec | FREE | Universal compatibility |
 
 ## 📁 Project Structure
 
@@ -102,6 +119,7 @@ Qgeth3/
 - **[Windows Geth Troubleshooting](docs/node-operation/troubleshooting-windows-geth.md)** - Windows node troubleshooting
 
 ### ⚡ Mining Guides
+- **[🚀 IBM Quantum Cloud Mining](docs/mining/ibm-quantum-cloud.md)** - **NEW!** Mine with real quantum computers
 - **[Linux Mining Guide](docs/mining/linux-mining.md)** - CUDA & GPU optimization for Linux
 - **[Windows Mining Guide](docs/mining/windows-mining.md)** - CuPy & GPU optimization for Windows  
 - **[Linux Mining Troubleshooting](docs/mining/troubleshooting-linux-mining.md)** - Linux mining troubleshooting

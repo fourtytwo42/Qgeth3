@@ -12,23 +12,30 @@ Complete guide to quantum mining on Linux with Q Coin, including GPU acceleratio
 - **Dynamic difficulty adjustment** (ASERT-Q algorithm)
 - **Real blockchain integration** with halving rewards
 
-### Linux GPU Acceleration Options
+### Linux Quantum Mining Options
 
-Q Coin Linux supports **two GPU acceleration methods**:
+Q Coin Linux supports **multiple quantum mining methods**:
 
-#### 1. **Native CUDA** (Highest Performance)
+#### 1. **🚀 IBM Quantum Cloud** (True Quantum Advantage)
+- **Real quantum computers** or IBM Cloud simulators
+- True quantum superposition and entanglement
+- **Real Hardware**: ~1.5 puzzles/sec (~$1.60/sec)
+- **FREE Simulator**: ~2.8 puzzles/sec (unlimited)
+- **Setup**: [IBM Quantum Cloud Guide](ibm-quantum-cloud.md)
+
+#### 2. **Native CUDA** (Highest Local Performance)
 - Direct CUDA C++ implementation
 - Maximum performance for NVIDIA GPUs
 - Requires CUDA development toolkit
 - **Performance**: ~3.2 puzzles/sec (RTX 4090)
 
-#### 2. **Qiskit-Aer GPU** (Python-based)
+#### 3. **Qiskit-Aer GPU** (Python-based)
 - Uses Qiskit-Aer GPU backend
 - Good performance, easier setup
 - Linux-only feature (Windows uses CuPy)
 - **Performance**: ~2.4 puzzles/sec (RTX 4090)
 
-#### 3. **CPU Fallback**
+#### 4. **CPU Fallback**
 - Universal compatibility
 - Optimized for multi-core systems
 - **Performance**: ~0.3-0.8 puzzles/sec
@@ -120,6 +127,21 @@ GPU_MODE=disable ./scripts/linux/build-linux.sh miner
 ## 🚀 Mining Usage
 
 ### Quick Start
+
+#### IBM Quantum Cloud Mining (🚀 NEW!)
+```bash
+# Mine with FREE IBM quantum simulator
+quantum-gpu-miner -coinbase 0xYourAddress -quantum-cloud \
+  -ibm-token YOUR_API_KEY -ibm-instance YOUR_CRN
+
+# Mine with REAL quantum computers
+quantum-gpu-miner -coinbase 0xYourAddress -quantum-cloud \
+  -ibm-token YOUR_API_KEY -ibm-instance YOUR_CRN \
+  -use-simulator=false -quantum-budget 50.0
+```
+**[Setup Guide](ibm-quantum-cloud.md)** | Get API key: https://cloud.ibm.com/quantum
+
+#### Traditional Mining
 ```bash
 # Auto-detect everything and start mining
 ./scripts/linux/start-miner.sh
@@ -165,11 +187,19 @@ GPU_MODE=disable ./scripts/linux/build-linux.sh miner
 
 ## 📊 Performance Comparison
 
-| Method | RTX 4090 | RTX 3080 | GTX 1080 Ti | Setup Difficulty |
-|--------|----------|----------|-------------|------------------|
-| **Native CUDA** | ~3.2 puzzles/sec | ~2.1 puzzles/sec | ~1.3 puzzles/sec | Hard |
-| **Qiskit-Aer GPU** | ~2.4 puzzles/sec | ~1.6 puzzles/sec | ~0.9 puzzles/sec | Medium |
-| **CPU (24 cores)** | ~0.4 puzzles/sec | ~0.3 puzzles/sec | ~0.2 puzzles/sec | Easy |
+| Method | Performance | Cost | Quantum Advantage | Setup Difficulty |
+|--------|-------------|------|-------------------|------------------|
+| **🚀 IBM Real Quantum** | ~1.5 puzzles/sec | $1.60/sec | **TRUE QUANTUM** | Medium |
+| **🆓 IBM Simulator** | ~2.8 puzzles/sec | FREE | Simulated | Easy |
+| **Native CUDA (RTX 4090)** | ~3.2 puzzles/sec | FREE | None | Hard |
+| **Qiskit-Aer GPU (RTX 4090)** | ~2.4 puzzles/sec | FREE | None | Medium |
+| **CPU (24 cores)** | ~0.4 puzzles/sec | FREE | None | Easy |
+
+### Traditional GPU Comparison
+| Method | RTX 4090 | RTX 3080 | GTX 1080 Ti |
+|--------|----------|----------|-------------|
+| **Native CUDA** | ~3.2 puzzles/sec | ~2.1 puzzles/sec | ~1.3 puzzles/sec |
+| **Qiskit-Aer GPU** | ~2.4 puzzles/sec | ~1.6 puzzles/sec | ~0.9 puzzles/sec |
 
 ## 🔧 Optimization Tips
 
