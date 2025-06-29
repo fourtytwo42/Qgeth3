@@ -333,13 +333,43 @@ fix_go_module_conflicts() {
     local module_dir="$1"
     log_info "🔧 Checking Go module dependencies in $module_dir..."
     
+    # Save current directory
+    local original_dir=$(pwd)
     cd "$module_dir"
     
+    # Show module information for debugging
+    log_info "Module Information:"
+    log_info "  Module Directory: $(pwd)"
+    log_info "  Go Modules Enabled: $(go env GOMOD 2>/dev/null || echo 'unknown')"
+    
+    if [ -f "go.mod" ]; then
+        log_info "  go.mod exists: ✅"
+        log_debug "go.mod contents:"
+        [ "$DEBUG" = true ] && cat go.mod | head -20
+    else
+        log_warning "  go.mod missing: ❌"
+    fi
+    
+    if [ -f "go.sum" ]; then
+        log_info "  go.sum exists: ✅ ($(wc -l < go.sum) lines)"
+    else
+        log_info "  go.sum missing (will be created): ℹ️"
+    fi
+    
+    # Check for problematic dependencies
     if grep -q "github.com/fjl/memsize" go.mod 2>/dev/null; then
-        log_info "🚨 Detected problematic memsize dependency"
+        log_warning "🚨 Detected problematic memsize dependency"
         log_info "🔧 Light module cleanup (avoiding full cache wipe)..."
         
+        # Show current module cache status
+        local cache_dir=$(go env GOCACHE 2>/dev/null)
+        if [ -n "$cache_dir" ] && [ -d "$cache_dir" ]; then
+            local cache_size=$(du -sh "$cache_dir" 2>/dev/null | cut -f1 || echo "unknown")
+            log_info "Module cache: $cache_dir ($cache_size)"
+        fi
+        
         # Less aggressive cleanup - don't wipe entire cache
+        log_info "Removing go.sum for fresh resolution..."
         rm -f go.sum
         
         log_info "🚀 Updating dependencies with timeout protection..."
@@ -347,40 +377,65 @@ fix_go_module_conflicts() {
         # Check if timeout command is available
         if command -v timeout >/dev/null 2>&1; then
             # Try with standard proxy first (faster and more reliable)
+            log_info "Attempting standard module resolution (60s timeout)..."
             if timeout 60s go mod tidy 2>&1; then
                 log_success "✅ Module dependencies updated successfully"
             else
-                log_warning "⚠️ Standard module update timed out, trying alternative..."
+                local tidy_exit=$?
+                log_warning "⚠️ Standard module update failed/timed out (exit: $tidy_exit)"
+                
+                if [ $tidy_exit -eq 124 ]; then
+                    log_info "Command timed out, trying alternative approach..."
+                else
+                    log_info "Command failed, trying alternative approach..."
+                fi
                 
                 # Fallback: use direct proxy with shorter timeout
+                log_info "Attempting fallback with direct proxy (30s timeout)..."
                 if timeout 30s env GOPROXY=https://proxy.golang.org,direct go mod tidy 2>&1; then
                     log_success "✅ Module dependencies updated with fallback method"
                 else
-                    log_warning "⚠️ Module update timed out, proceeding with existing dependencies..."
-                    log_info "💡 Build may still work with cached dependencies"
+                    local fallback_exit=$?
+                    log_warning "⚠️ Fallback module update failed/timed out (exit: $fallback_exit)"
+                    log_info "💡 Proceeding with existing dependencies - build may still work with cached modules"
                 fi
             fi
             
             # Quick verification without hanging
+            log_info "Verifying module integrity (10s timeout)..."
             if timeout 10s go mod verify >/dev/null 2>&1; then
                 log_success "✅ Module dependencies verified"
             else
-                log_info "ℹ️ Module verification skipped (proceeding with build)"
+                log_info "ℹ️ Module verification skipped/failed (proceeding with build)"
             fi
         else
             # No timeout available - use simpler approach
-            log_info "⚠️ No timeout command available, using basic module update..."
+            log_warning "⚠️ No timeout command available, using basic module update..."
+            log_info "Running go mod tidy..."
             if go mod tidy 2>&1; then
                 log_success "✅ Module dependencies updated"
             else
                 log_warning "⚠️ Module update failed, proceeding anyway..."
+                log_info "💡 Build may still work with cached dependencies"
             fi
         fi
+        
+        # Show final module status
+        if [ -f "go.sum" ]; then
+            local sum_lines=$(wc -l < go.sum 2>/dev/null || echo "0")
+            log_info "Final go.sum: $sum_lines lines"
+        else
+            log_warning "go.sum still missing after module resolution"
+        fi
+        
     else
         log_success "✅ No problematic dependencies detected"
+        log_info "Skipping module resolution (not needed)"
     fi
     
-    cd - >/dev/null
+    # Return to original directory
+    cd "$original_dir"
+    log_debug "Returned to directory: $(pwd)"
 }
 
 # Build with retry mechanism
@@ -395,14 +450,24 @@ build_with_retry() {
         log_info "🚀 Build attempt $((retry_count + 1))/$max_retries for $build_type..."
         log_debug "Build command: $build_cmd"
         
-        # Capture both stdout and stderr for debugging
-        if eval "$build_cmd" 2>&1; then
+        # Create temporary file for capturing build output
+        local build_output_file=$(mktemp)
+        
+        # Execute build command and capture output
+        if eval "$build_cmd" > "$build_output_file" 2>&1; then
             log_success "✅ $build_type built successfully"
+            rm -f "$build_output_file"
             return 0
         else
             local exit_code=$?
             retry_count=$((retry_count + 1))
-            log_warning "🚨 Build attempt $retry_count failed for $build_type (exit code: $exit_code)"
+            log_error "🚨 Build attempt $retry_count failed for $build_type (exit code: $exit_code)"
+            
+            # Show the actual build error output
+            log_error "Build Error Output:"
+            echo "----------------------------------------"
+            cat "$build_output_file"
+            echo "----------------------------------------"
             
             if [ $retry_count -lt $max_retries ]; then
                 log_info "🔧 Attempting automated recovery..."
@@ -411,6 +476,7 @@ build_with_retry() {
                 # Show which Go version is being used
                 log_info "Current Go version: $(go version 2>/dev/null || echo 'Go not found')"
                 log_info "Current PATH: $PATH"
+                log_info "Working directory: $(pwd)"
                 
                 go clean -cache -testcache 2>/dev/null || true
                 go mod tidy 2>/dev/null || true
@@ -418,11 +484,15 @@ build_with_retry() {
                 sleep 2
             else
                 log_error "🚨 All build attempts failed for $build_type"
-                log_error "💡 Try running the build manually to see detailed error output:"
+                log_error "💡 Try running the build manually to investigate:"
                 log_error "   cd $(pwd)"
                 log_error "   $build_cmd"
-                return 1
+                log_error ""
+                log_error "🔍 Final error output:"
+                cat "$build_output_file"
             fi
+            
+            rm -f "$build_output_file"
         fi
     done
     
@@ -882,6 +952,14 @@ main() {
         CURRENT_GO_VERSION=$(go version 2>/dev/null)
         log_info "Active Go version: $CURRENT_GO_VERSION"
         
+        # Show detailed Go environment info for debugging
+        log_info "Go Environment Details:"
+        log_info "  GOROOT: $(go env GOROOT 2>/dev/null || echo 'unknown')"
+        log_info "  GOPATH: $(go env GOPATH 2>/dev/null || echo 'unknown')"
+        log_info "  GOCACHE: $(go env GOCACHE 2>/dev/null || echo 'unknown')"
+        log_info "  GOPROXY: $(go env GOPROXY 2>/dev/null || echo 'unknown')"
+        log_info "  GOSUMDB: $(go env GOSUMDB 2>/dev/null || echo 'unknown')"
+        
         if ! echo "$CURRENT_GO_VERSION" | grep -q "go1.24"; then
             log_warning "⚠️ Go 1.24.x not active! Current: $CURRENT_GO_VERSION"
             log_info "Checking for Go 1.24.4 installation..."
@@ -894,13 +972,39 @@ main() {
             else
                 log_error "Go 1.24.4 not found at /usr/local/go/bin/go"
                 log_error "Please run bootstrap script first to install Go 1.24.4"
+                log_error ""
+                log_error "Available Go installations:"
+                which -a go 2>/dev/null || echo "  No Go found in PATH"
+                log_error ""
+                log_error "Current PATH: $PATH"
                 exit 1
             fi
         else
             log_success "✅ Go 1.24.x is active and ready"
         fi
+        
+        # Test basic Go functionality
+        log_info "🧪 Testing Go functionality..."
+        if go version >/dev/null 2>&1; then
+            log_success "✅ Go version command works"
+        else
+            log_error "❌ Go version command failed"
+            exit 1
+        fi
+        
+        if go env GOROOT >/dev/null 2>&1; then
+            log_success "✅ Go environment accessible"
+        else
+            log_error "❌ Go environment command failed"
+            exit 1
+        fi
+        
     else
         log_error "Go not found in PATH"
+        log_error ""
+        log_error "Current PATH: $PATH"
+        log_error "Available Go installations:"
+        find /usr/local /usr /opt -name "go" -type f -executable 2>/dev/null | head -10 || echo "  No Go installations found"
         exit 1
     fi
     
@@ -973,4 +1077,4 @@ main() {
 }
 
 # Run main function
-main "$@" 
+main "$@"
