@@ -465,7 +465,7 @@ build_geth() {
     
     # Use automated retry with error recovery
     if build_with_retry "quantum-geth" "$BUILD_CMD" "../../../geth.bin"; then
-        cd ../../../..
+        cd ../../..
         echo "✅ Quantum-Geth built successfully: ./geth.bin (CGO_ENABLED=0)"
         
         # Create Q Coin geth wrapper that prevents Ethereum connections
@@ -473,12 +473,12 @@ build_geth() {
         
         # Show file info if ls is available
         if command -v ls >/dev/null 2>&1; then
-            ls -lh ../../geth.bin ../../geth 2>/dev/null || echo "Binaries created: ../../geth.bin, ../../geth"
+            ls -lh ./geth.bin ./geth 2>/dev/null || echo "Binaries created: ./geth.bin, ./geth"
         else
-            echo "Binaries created: ../../geth.bin, ../../geth"
+            echo "Binaries created: ./geth.bin, ./geth"
         fi
     else
-        cd ../../../..
+        cd ../../..
         echo "🚨 Error: Failed to build quantum-geth after all retry attempts"
         echo "🔧 Manual troubleshooting steps:"
         echo "  1. Check Go version: go version"
@@ -556,31 +556,31 @@ build_miner() {
     if [ -n "$BUILD_TAGS" ]; then
         BUILD_CMD="$BUILD_CMD -tags $BUILD_TAGS"
     fi
-    BUILD_CMD="$BUILD_CMD -o ../../quantum-miner ."
+    BUILD_CMD="$BUILD_CMD -o ../quantum-miner ."
     
     # Use automated retry with error recovery
-    if build_with_retry "quantum-miner" "$BUILD_CMD" "../../quantum-miner"; then
-        cd ../..
+    if build_with_retry "quantum-miner" "$BUILD_CMD" "../quantum-miner"; then
+        cd ..
         echo "✅ Quantum-Miner built successfully: ./quantum-miner ($GPU_TYPE)"
         
         # Show file info if ls is available
         if command -v ls >/dev/null 2>&1; then
-            ls -lh ../../quantum-miner 2>/dev/null || echo "Binary created: ../../quantum-miner"
+            ls -lh ./quantum-miner 2>/dev/null || echo "Binary created: ./quantum-miner"
         else
-            echo "Binary created: ../../quantum-miner"
+            echo "Binary created: ./quantum-miner"
         fi
         
         # Test GPU support
         if [ "$GPU_TYPE" != "CPU" ]; then
             echo "🚀 Testing GPU support..."
-            if ../../quantum-miner --help 2>/dev/null | grep -q "GPU" 2>/dev/null; then
+            if ./quantum-miner --help 2>/dev/null | grep -q "GPU" 2>/dev/null; then
                 echo "✅ GPU support confirmed in binary"
             else
                 echo "🚨 GPU support may not be active (check dependencies)"
             fi
         fi
     else
-        cd ../..
+        cd ..
         echo "🚨 Error: Failed to build quantum-miner after all retry attempts"
         echo "🔧 Manual troubleshooting steps:"
         echo "  1. Check Go version: go version"
@@ -595,8 +595,8 @@ build_miner() {
 create_geth_wrapper() {
     echo "🚀 Creating Q Coin geth wrapper (prevents Ethereum connections)..."
     
-    # Use absolute path to avoid directory context issues
-    WRAPPER_PATH="../../geth"
+    # Create wrapper in project root (current directory after build)
+    WRAPPER_PATH="./geth"
     
     # Create wrapper with fixed path resolution
     cat > "$WRAPPER_PATH" << 'EOF'
@@ -697,10 +697,10 @@ EOF
     
     # Make wrapper executable with proper error handling
     if chmod +x "$WRAPPER_PATH" 2>/dev/null; then
-        echo "✅ Q Coin geth wrapper created: ../../geth"
+        echo "✅ Q Coin geth wrapper created: ./geth"
     else
         echo "⚠️ Q Coin geth wrapper created but chmod failed (may need manual chmod +x)"
-        echo "✅ Wrapper created at: ../../geth"
+        echo "✅ Wrapper created at: ./geth"
     fi
 }
 
@@ -814,14 +814,14 @@ create_solver() {
         echo ''
         echo 'if __name__ == "__main__":'
         echo '    main()'
-    } > ../../quantum_solver.py
+    } > ./quantum_solver.py
     
     # Make executable if chmod is available
     if command -v chmod >/dev/null 2>&1; then
-        chmod +x ../../quantum_solver.py
+        chmod +x ./quantum_solver.py
     fi
     
-    echo "✅ Quantum solver script created: ../../quantum_solver.py"
+    echo "✅ Quantum solver script created: ./quantum_solver.py"
 }
 
 # Function to create Linux miner startup script
@@ -850,13 +850,13 @@ create_linux_miner_script() {
         echo 'fi'
         echo ''
         echo './quantum-miner -rpc-url "$RPC_URL" -address "$MINING_ADDRESS" -threads "$THREADS"'
-    } > ../../start-linux-miner.sh
+    } > ./start-linux-miner.sh
     
     if command -v chmod >/dev/null 2>&1; then
-        chmod +x ../../start-linux-miner.sh
+        chmod +x ./start-linux-miner.sh
     fi
     
-    echo "✅ Linux miner script created: ../../start-linux-miner.sh"
+    echo "✅ Linux miner script created: ./start-linux-miner.sh"
 }
 
 # Main build logic
@@ -888,14 +888,14 @@ echo "✅ Build Complete!"
 echo ""
 echo "🚀 Binaries created in project root directory:"
 if [ "$TARGET" = "geth" ] || [ "$TARGET" = "both" ]; then
-    echo "  ../../geth                 - Q Coin Geth wrapper (prevents Ethereum connections)"
-    echo "  ../../geth.bin             - Quantum-Geth binary"
+    echo "  ./geth                 - Q Coin Geth wrapper (prevents Ethereum connections)"
+    echo "  ./geth.bin             - Quantum-Geth binary"
 fi
 if [ "$TARGET" = "miner" ] || [ "$TARGET" = "both" ]; then
-    echo "  ../../quantum-miner        - Quantum Miner"
-    echo "  ../../start-linux-miner.sh - Easy miner startup"
+    echo "  ./quantum-miner        - Quantum Miner"
+    echo "  ./start-linux-miner.sh - Easy miner startup"
 fi
-echo "  ../../quantum_solver.py    - Python quantum solver helper"
+echo "  ./quantum_solver.py    - Python quantum solver helper"
 echo ""
 echo "🚀 Quick Start (Easy Method):"
 if [ "$TARGET" = "geth" ] || [ "$TARGET" = "both" ]; then
@@ -904,23 +904,23 @@ if [ "$TARGET" = "geth" ] || [ "$TARGET" = "both" ]; then
 fi
 if [ "$TARGET" = "miner" ] || [ "$TARGET" = "both" ]; then
     echo "  # Start mining (in another terminal):"
-    echo "  ../../start-linux-miner.sh"
+    echo "  ./start-linux-miner.sh"
 fi
 echo ""
 echo "💾 Manual Method:"
 if [ "$TARGET" = "geth" ] || [ "$TARGET" = "both" ]; then
     echo "  # Initialize blockchain:"
-    echo "  ../../geth --datadir \$HOME/.qcoin init ../../configs/genesis_quantum_testnet.json"
+    echo "  ./geth --datadir \$HOME/.qcoin init ./configs/genesis_quantum_testnet.json"
     echo ""
     echo "  # Start node (testnet, external mining):"
-    echo "  ../../geth --datadir \$HOME/.qcoin --networkid 73235 --mine --miner.threads 0 \\"
+    echo "  ./geth --datadir \$HOME/.qcoin --networkid 73235 --mine --miner.threads 0 \\"
     echo "         --http --http.api eth,net,web3,personal,admin,miner \\"
     echo "         --miner.etherbase 0x742d35C6C4e6d8de6f10E7FF75DD98dd25b02C3A"
 fi
 if [ "$TARGET" = "miner" ] || [ "$TARGET" = "both" ]; then
     echo ""
     echo "  # Start mining (in another terminal):"
-    echo "  ../../quantum-miner -rpc-url http://127.0.0.1:8545 \\"
+    echo "  ./quantum-miner -rpc-url http://127.0.0.1:8545 \\"
     echo "                  -address 0x742d35C6C4e6d8de6f10E7FF75DD98dd25b02C3A"
 fi
 echo ""
