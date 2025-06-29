@@ -13,6 +13,7 @@ export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/l
 AUTO_CONFIRM=false
 TARGET="both"
 CLEAN="false"
+USE_SUDO_FOR_FILES=false
 
 for arg in "$@"; do
     case $arg in
@@ -37,6 +38,121 @@ if [ "$AUTO_CONFIRM" = true ]; then
     echo "Mode: Non-interactive (auto-confirm enabled)"
 fi
 echo ""
+
+# CRITICAL FIX: Ensure Go 1.24.4 is active and prioritized
+validate_go_version() {
+    echo "🔧 Validating Go installation and PATH..."
+    
+    # Force PATH to prioritize /usr/local/go/bin (where bootstrap installs Go 1.24.4)
+    export PATH="/usr/local/go/bin:$PATH"
+    
+    # Check if Go is available
+    if ! command -v go >/dev/null 2>&1; then
+        echo "🚨 Error: Go not found in PATH"
+        echo "Current PATH: $PATH"
+        echo "Please run bootstrap script first to install Go 1.24.4"
+        exit 1
+    fi
+    
+    # Get Go version
+    local go_version=$(go version 2>/dev/null)
+    echo "Active Go version: $go_version"
+    echo "Go location: $(which go)"
+    echo "GOROOT: $(go env GOROOT 2>/dev/null)"
+    
+    # Verify it's Go 1.24.x
+    if ! echo "$go_version" | grep -q "go1\.24"; then
+        echo "🚨 Error: Wrong Go version detected!"
+        echo "Expected: Go 1.24.x"
+        echo "Found: $go_version"
+        echo ""
+        echo "Available Go installations:"
+        find /usr/local /usr /opt -name "go" -type f -executable 2>/dev/null | head -5
+        echo ""
+        
+        # Try to fix PATH automatically
+        if [ -x "/usr/local/go/bin/go" ]; then
+            echo "🔧 Auto-fix: Found Go 1.24.4 at /usr/local/go/bin/go"
+            export PATH="/usr/local/go/bin:$PATH"
+            go_version=$(go version 2>/dev/null)
+            echo "Updated Go version: $go_version"
+            
+            if echo "$go_version" | grep -q "go1\.24"; then
+                echo "✅ Go 1.24.x now active"
+            else
+                echo "🚨 Auto-fix failed. Please run bootstrap script first."
+                exit 1
+            fi
+        else
+            echo "🚨 Go 1.24.4 not found. Please run bootstrap script first."
+            exit 1
+        fi
+    else
+        echo "✅ Go 1.24.x is active and ready"
+    fi
+    echo ""
+}
+
+# CRITICAL FIX: Enhanced permission validation and repair
+enhanced_permission_check() {
+    echo "🔒 Enhanced permission validation..."
+    
+    local output_dir=$(pwd)
+    local project_root="$(cd ../.. && pwd)"
+    local current_user=$(whoami)
+    local dir_owner=""
+    local project_owner=""
+    
+    # Get directory owners
+    if command -v stat >/dev/null 2>&1; then
+        dir_owner=$(stat -c '%U' "$output_dir" 2>/dev/null || echo "unknown")
+        project_owner=$(stat -c '%U' "$project_root" 2>/dev/null || echo "unknown")
+    fi
+    
+    echo "  Script directory: $output_dir (owner: $dir_owner)"
+    echo "  Project root: $project_root (owner: $project_owner)"
+    echo "  Current user: $current_user"
+    
+    # Check if we can write to project root (where binaries are created)
+    if [ ! -w "$project_root" ]; then
+        echo "🚨 Permission issue: Cannot write to project root directory"
+        echo "🔧 Auto-fix: Attempting to fix project root ownership..."
+        
+        if [ "$current_user" = "root" ] && [ "$project_owner" != "root" ]; then
+            echo "Running as root - changing ownership to root..."
+            chown -R root:root "$project_root" 2>/dev/null || true
+        elif [ "$current_user" != "root" ] && [ "$project_owner" = "root" ]; then
+            echo "Running as user but project owned by root - fixing with sudo..."
+            if command -v sudo >/dev/null 2>&1; then
+                if sudo chown -R "$current_user:$current_user" "$project_root" 2>/dev/null; then
+                    echo "✅ Project ownership fixed with sudo"
+                else
+                    echo "🚨 Failed to fix ownership. Manual fix needed:"
+                    echo "   sudo chown -R $current_user:$current_user $project_root"
+                    
+                    if [ "$AUTO_CONFIRM" != true ]; then
+                        echo -n "Continue anyway and try alternative approach? (y/N): "
+                        read -r RESPONSE
+                        if [[ ! "$RESPONSE" =~ ^([yY][eE][sS]|[yY])$ ]]; then
+                            echo "Build aborted."
+                            exit 1
+                        fi
+                    fi
+                    
+                    # Alternative: use sudo for the entire build
+                    echo "🔧 Alternative: Will use sudo for file operations"
+                    USE_SUDO_FOR_FILES=true
+                fi
+            else
+                echo "🚨 sudo not available and cannot write to project directory"
+                exit 1
+            fi
+        fi
+    else
+        echo "✅ Project root permissions OK"
+    fi
+    echo ""
+}
 
 # AUTOMATED FIX 1: Directory ownership detection and correction
 check_and_fix_permissions() {
@@ -335,6 +451,14 @@ get_build_flags() {
 
 # EXECUTE AUTOMATED FIXES
 echo "🔧 Running automated pre-build checks and fixes..."
+
+# Step 1: Validate Go version and PATH
+validate_go_version
+
+# Step 2: Enhanced permission checking
+enhanced_permission_check
+
+# Step 3: Original permission checking (for script directory)
 check_and_fix_permissions
 
 # Run memory check
@@ -459,9 +583,36 @@ build_geth() {
     echo "🔧 Ensuring Go temp directories exist..."
     mkdir -p "$GOCACHE" "$GOTMPDIR" "$TMPDIR"
     
-    # Build command for retry mechanism
-    # Add -checklinkname=0 to allow memsize package to work with Go 1.23+
-    BUILD_CMD="CGO_ENABLED=0 go build -ldflags \"-checklinkname=0 $LDFLAGS\" -trimpath -buildvcs=false -o ../../../geth.bin ."
+    # Detect Go version for memsize compatibility
+    local go_version=$(go version 2>/dev/null | grep -oE 'go[0-9]+\.[0-9]+' | head -1)
+    local use_checklinkname=false
+    
+    if [ -n "$go_version" ]; then
+        # Extract major and minor version numbers
+        local major=$(echo "$go_version" | cut -d'.' -f1 | sed 's/go//')
+        local minor=$(echo "$go_version" | cut -d'.' -f2)
+        
+        # Check if version is 1.23 or higher (needs -checklinkname=0)
+        if [ "$major" -gt 1 ] || ([ "$major" -eq 1 ] && [ "$minor" -ge 23 ]); then
+            echo "🔧 Go $go_version requires -checklinkname=0 for memsize compatibility"
+            use_checklinkname=true
+        else
+            echo "🔧 Go $go_version uses standard build flags"
+        fi
+    fi
+    
+    # Build command for retry mechanism with conditional checklinkname flag
+    if [ "$use_checklinkname" = true ]; then
+        BUILD_CMD="CGO_ENABLED=0 go build -ldflags \"-checklinkname=0 $LDFLAGS\" -trimpath -buildvcs=false -o ../../../geth.bin ."
+    else
+        BUILD_CMD="CGO_ENABLED=0 go build -ldflags \"$LDFLAGS\" -trimpath -buildvcs=false -o ../../../geth.bin ."
+    fi
+    
+    # Use sudo for file operations if needed
+    if [ "$USE_SUDO_FOR_FILES" = true ]; then
+        echo "🔧 Using sudo for file operations due to permission issues..."
+        BUILD_CMD="CGO_ENABLED=0 go build -ldflags \"$LDFLAGS\" -trimpath -buildvcs=false -o /tmp/geth.bin.tmp . && sudo mv /tmp/geth.bin.tmp ../../../geth.bin"
+    fi
     
     # Use automated retry with error recovery
     if build_with_retry "quantum-geth" "$BUILD_CMD" "../../../geth.bin"; then
@@ -551,36 +702,72 @@ build_miner() {
     echo "🔧 Ensuring Go temp directories exist..."
     mkdir -p "$GOCACHE" "$GOTMPDIR" "$TMPDIR"
     
-    # Build command for retry mechanism
-    BUILD_CMD="go build -ldflags \"$LDFLAGS\" -trimpath -buildvcs=false"
+    # Detect Go version for memsize compatibility
+    local go_version=$(go version 2>/dev/null | grep -oE 'go[0-9]+\.[0-9]+' | head -1)
+    local use_checklinkname=false
+    
+    if [ -n "$go_version" ]; then
+        # Extract major and minor version numbers
+        local major=$(echo "$go_version" | cut -d'.' -f1 | sed 's/go//')
+        local minor=$(echo "$go_version" | cut -d'.' -f2)
+        
+        # Check if version is 1.23 or higher (needs -checklinkname=0)
+        if [ "$major" -gt 1 ] || ([ "$major" -eq 1 ] && [ "$minor" -ge 23 ]); then
+            echo "🔧 Go $go_version requires -checklinkname=0 for memsize compatibility"
+            use_checklinkname=true
+        else
+            echo "🔧 Go $go_version uses standard build flags"
+        fi
+    fi
+    
+    # Build command for retry mechanism with conditional flags
+    if [ "$use_checklinkname" = true ]; then
+        BUILD_CMD="go build -ldflags \"-checklinkname=0 $LDFLAGS\" -trimpath -buildvcs=false"
+    else
+        BUILD_CMD="go build -ldflags \"$LDFLAGS\" -trimpath -buildvcs=false"
+    fi
     if [ -n "$BUILD_TAGS" ]; then
         BUILD_CMD="$BUILD_CMD -tags $BUILD_TAGS"
     fi
-    BUILD_CMD="$BUILD_CMD -o ../../quantum-miner ."
+    BUILD_CMD="$BUILD_CMD -o ../quantum-miner ."
+    
+    # Use sudo for file operations if needed
+    if [ "$USE_SUDO_FOR_FILES" = true ]; then
+        echo "🔧 Using sudo for miner file operations due to permission issues..."
+        # Replace the output part with temp file + sudo move
+        BUILD_CMD=$(echo "$BUILD_CMD" | sed 's|-o ../quantum-miner|-o /tmp/quantum-miner.tmp|')
+        BUILD_CMD="$BUILD_CMD && sudo mv /tmp/quantum-miner.tmp ../quantum-miner"
+    fi
     
     # Use automated retry with error recovery
-    if build_with_retry "quantum-miner" "$BUILD_CMD" "../../quantum-miner"; then
-        cd ../..
+    if build_with_retry "quantum-miner" "$BUILD_CMD" "../quantum-miner"; then
+        cd ..
         echo "✅ Quantum-Miner built successfully: ./quantum-miner ($GPU_TYPE)"
+        
+        # Go to project root 
+        cd ..
         
         # Show file info if ls is available
         if command -v ls >/dev/null 2>&1; then
-            ls -lh ../../quantum-miner 2>/dev/null || echo "Binary created: ../../quantum-miner"
+            ls -lh quantum-miner 2>/dev/null || echo "Binary created: quantum-miner"
         else
-            echo "Binary created: ../../quantum-miner"
+            echo "Binary created: quantum-miner"
         fi
         
         # Test GPU support
         if [ "$GPU_TYPE" != "CPU" ]; then
             echo "🚀 Testing GPU support..."
-            if ../../quantum-miner --help 2>/dev/null | grep -q "GPU" 2>/dev/null; then
+            if ./quantum-miner --help 2>/dev/null | grep -q "GPU" 2>/dev/null; then
                 echo "✅ GPU support confirmed in binary"
             else
                 echo "🚨 GPU support may not be active (check dependencies)"
             fi
         fi
+        
+        # Return to scripts/linux directory
+        cd scripts/linux
     else
-        cd ../..
+        cd ..
         echo "🚨 Error: Failed to build quantum-miner after all retry attempts"
         echo "🔧 Manual troubleshooting steps:"
         echo "  1. Check Go version: go version"
