@@ -291,7 +291,7 @@ sudo systemctl start qgeth.service
 sudo systemctl status qgeth.service
 ```
 
-### Update Automation Script
+### Manual Update Script
 ```bash
 # Create update script
 sudo tee /opt/qgeth/update-qgeth.sh > /dev/null << 'EOF'

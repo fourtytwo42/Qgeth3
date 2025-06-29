@@ -39,8 +39,8 @@ curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/scripts/depl
 # ✅ Installs all dependencies (git, curl, golang, build tools)
 # ✅ Downloads the Q Geth repository automatically
 # ✅ Prepares VPS (memory checks, swap creation, firewall)
-# ✅ Builds and configures Q Geth with auto-updating service
-# ✅ Sets up crash recovery and GitHub monitoring
+# ✅ Builds and configures Q Geth with production service setup
+# ✅ Sets up crash recovery and service monitoring
 # ✅ Safe to run multiple times - detects existing installations gracefully
 ```
 

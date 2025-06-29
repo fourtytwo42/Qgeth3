@@ -19,7 +19,7 @@ Qgeth3/
 │   │   └── start-geth-sync.ps1 # Sync-only mode
 │   └── 📁 deployment/     # Deployment & setup scripts
 │       ├── bootstrap-qgeth.sh # One-command VPS setup
-│       └── auto-geth-service.sh # Auto-updating service
+│       └── auto-geth-service.sh # Production service setup
 ├── 📁 configs/            # Configuration files
 │   ├── genesis_quantum_mainnet.json  # Mainnet genesis
 │   ├── genesis_quantum_testnet.json  # Testnet genesis
@@ -106,10 +106,10 @@ Qgeth3/
 
 - **`auto-geth-service.sh`** - Production service setup
   - Systemd service creation
-  - GitHub monitoring
-  - Auto-update system
+  - Service management
   - Crash recovery
   - Log management
+  - Manual update support
 
 ### Root-Level Scripts
 
@@ -282,7 +282,7 @@ releases/
        └── Creates systemd services
        └── Sets up monitoring
 2. Services start automatically
-3. GitHub monitoring handles updates
+3. Manual updates via documented procedures
 4. Crash recovery ensures uptime
 ```
 
@@ -388,11 +388,13 @@ QISKIT_IN_PARALLEL="TRUE"
 
 ## 🔄 Update & Maintenance
 
-### Auto-Update System
-- **GitHub monitoring**: Checks for new commits
-- **Backup system**: Keeps last 5 versions
-- **Rollback capability**: Automatic on build failure
-- **Service continuity**: Minimal downtime updates
+### Manual Update System
+**Important**: Q Geth does not auto-update. All updates must be performed manually for security and stability.
+
+- **Manual monitoring**: Check GitHub for new releases
+- **Backup system**: Keep backups before updates
+- **Rollback capability**: Manual rollback on build failure
+- **Service continuity**: Follow documented update procedures
 
 ### Manual Maintenance
 ```bash

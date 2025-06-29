@@ -1,45 +1,287 @@
-#!/bin/bash
-# Q Geth Bootstrap Script Redirect
-# This script redirects to the new simplified bootstrap
-# Usage: curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qgeth.sh | sudo bash
+#!/usr/bin/env bash
+# Q Geth Simple Bootstrap Script
+# Installs Q Geth to ~/qgeth/Qgeth3
+# Usage: curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qgeth.sh | bash
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+set -e
 
-print_step() {
-    echo -e "${BLUE}[BOOTSTRAP]${NC} $1"
-}
+# Configuration
+GITHUB_REPO="fourtytwo42/Qgeth3"
+INSTALL_DIR="$HOME/qgeth"
+PROJECT_DIR="$INSTALL_DIR/Qgeth3"
+AUTO_CONFIRM=false
 
-print_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
+# Parse simple flags
+for arg in "$@"; do
+    case $arg in
+        -y|--yes)
+            AUTO_CONFIRM=true
+            ;;
+        --help|-h)
+            echo "Q Geth Simple Bootstrap Script"
+            echo ""
+            echo "Installs Q Geth to ~/qgeth/Qgeth3"
+            echo ""
+            echo "Usage:"
+            echo "  curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qgeth.sh | bash"
+            echo "  curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qgeth.sh | bash -s -- -y"
+            echo ""
+            echo "Options:"
+            echo "  -y, --yes    Auto-confirm all prompts"
+            echo "  --help       Show this help"
+            echo ""
+            exit 0
+            ;;
+    esac
+done
 
-# Check if running with sudo
-if [ "$EUID" -ne 0 ]; then
-    print_error "Please run this script with sudo"
-    echo ""
-    echo "Usage:"
-    echo "  curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qgeth.sh | sudo bash"
-    echo ""
-    echo "For non-interactive mode:"
-    echo "  curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qgeth.sh | sudo bash -s -- -y"
-    exit 1
+# Colors
+if [ -t 1 ]; then
+    RED='\033[0;31m'
+    GREEN='\033[0;32m'
+    YELLOW='\033[1;33m'
+    BLUE='\033[0;34m'
+    CYAN='\033[0;36m'
+    NC='\033[0m'
+else
+    RED='' GREEN='' YELLOW='' BLUE='' CYAN='' NC=''
 fi
 
-print_step "🚀 Q Geth Bootstrap (Simplified Version)"
-echo ""
-echo "Redirecting to the new simplified bootstrap script..."
-echo ""
+# Logging
+log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
+log_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
+log_warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
+log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
-# Download and execute the new simplified bootstrap
-if command -v curl >/dev/null 2>&1; then
-    curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/scripts/deployment/bootstrap-qgeth.sh | bash -s -- "$@"
-elif command -v wget >/dev/null 2>&1; then
-    wget -qO- https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/scripts/deployment/bootstrap-qgeth.sh | bash -s -- "$@"
+# Detect system and package manager
+detect_system() {
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        OS=$ID
+        VERSION=$VERSION_ID
+    else
+        log_error "Cannot detect operating system"
+        exit 1
+    fi
+    
+    # Detect package manager
+    if command -v apt >/dev/null 2>&1; then
+        PKG_MANAGER="apt"
+        PKG_UPDATE="apt update"
+        PKG_INSTALL="apt install -y"
+    elif command -v dnf >/dev/null 2>&1; then
+        PKG_MANAGER="dnf"
+        PKG_UPDATE="dnf check-update || true"
+        PKG_INSTALL="dnf install -y"
+    elif command -v yum >/dev/null 2>&1; then
+        PKG_MANAGER="yum"
+        PKG_UPDATE="yum check-update || true"
+        PKG_INSTALL="yum install -y"
+    elif command -v pacman >/dev/null 2>&1; then
+        PKG_MANAGER="pacman"
+        PKG_UPDATE="pacman -Sy"
+        PKG_INSTALL="pacman -S --noconfirm"
+    else
+        log_error "No supported package manager found (apt/dnf/yum/pacman)"
+        exit 1
+    fi
+    
+    log_info "Detected: $OS (using $PKG_MANAGER)"
+}
+
+# Install dependencies
+install_dependencies() {
+    log_info "Installing dependencies..."
+    
+    # Check if running as root for package installation
+    if [ "$EUID" -ne 0 ]; then
+        log_info "Installing dependencies (may require sudo password)..."
+        SUDO="sudo"
+    else
+        SUDO=""
+    fi
+    
+    # Update package lists
+    $SUDO $PKG_UPDATE
+    
+    # Install base dependencies
+    case $PKG_MANAGER in
+        apt)
+            $SUDO $PKG_INSTALL git curl build-essential wget
+            ;;
+        dnf|yum)
+            $SUDO $PKG_INSTALL git curl gcc gcc-c++ make wget
+            ;;
+        pacman)
+            $SUDO $PKG_INSTALL git curl base-devel wget
+            ;;
+    esac
+    
+    # Install Go if not present
+    if ! command -v go >/dev/null 2>&1; then
+        log_info "Installing Go..."
+        case $PKG_MANAGER in
+            apt)
+                $SUDO $PKG_INSTALL golang-go
+                ;;
+            dnf|yum)
+                $SUDO $PKG_INSTALL golang
+                ;;
+            pacman)
+                $SUDO $PKG_INSTALL go
+                ;;
+        esac
+    else
+        GO_VERSION=$(go version 2>/dev/null | grep -o 'go[0-9]*\.[0-9]*' | head -1)
+        log_info "Go already installed: $GO_VERSION"
+    fi
+    
+    log_success "Dependencies installed"
+}
+
+# Main installation
+main() {
+    echo ""
+    echo -e "${CYAN}🚀 Q Geth Simple Bootstrap${NC}"
+    echo ""
+    echo "This will install Q Geth to: $PROJECT_DIR"
+    echo ""
+    
+    # Confirm installation
+    if [ "$AUTO_CONFIRM" != true ]; then
+        echo -n "Continue? (y/N): "
+        read -r RESPONSE
+        if [[ ! "$RESPONSE" =~ ^([yY][eE][sS]|[yY])$ ]]; then
+            echo "Installation cancelled."
+            exit 0
+        fi
+    fi
+    
+    # Check for existing installation
+    if [ -d "$PROJECT_DIR" ]; then
+        log_warning "Existing installation found"
+        if [ "$AUTO_CONFIRM" != true ]; then
+            echo -n "Remove and reinstall? (y/N): "
+            read -r RESPONSE
+            if [[ "$RESPONSE" =~ ^([yY][eE][sS]|[yY])$ ]]; then
+                rm -rf "$PROJECT_DIR"
+                log_info "Removed existing installation"
+            else
+                log_error "Installation cancelled"
+                exit 1
+            fi
+        else
+            rm -rf "$PROJECT_DIR"
+            log_info "Auto-removed existing installation"
+        fi
+    fi
+    
+    # Detect system
+    detect_system
+    
+    # Install dependencies
+    install_dependencies
+    
+    # Create directories
+    log_info "Creating directories..."
+    mkdir -p "$INSTALL_DIR"
+    
+    # Clone repository
+    log_info "Cloning Q Geth repository..."
+    cd "$INSTALL_DIR"
+    git clone "https://github.com/$GITHUB_REPO.git"
+    
+    # Make scripts executable
+    cd "$PROJECT_DIR"
+    find . -name "*.sh" -type f -exec chmod +x {} \; 2>/dev/null || true
+    
+    # Build Q Geth
+    log_info "Building Q Geth..."
+    cd "$PROJECT_DIR/scripts/linux"
+    
+    # Use enhanced build script if available, otherwise standard
+    if [ -f "build-linux-enhanced.sh" ]; then
+        ./build-linux-enhanced.sh geth ${AUTO_CONFIRM:+-y}
+    else
+        ./build-linux.sh geth ${AUTO_CONFIRM:+-y}
+    fi
+    
+    # Create simple service management scripts
+    log_info "Creating management scripts..."
+    
+    cat > "$INSTALL_DIR/start-qgeth.sh" << 'EOF'
+#!/bin/bash
+# Start Q Geth Node
+cd ~/qgeth/Qgeth3/scripts/linux
+nohup ./start-geth.sh testnet > ~/qgeth/geth.log 2>&1 &
+echo $! > ~/qgeth/qgeth.pid
+echo "Q Geth started in background"
+echo "PID: $(cat ~/qgeth/qgeth.pid)"
+echo "Logs: tail -f ~/qgeth/geth.log"
+EOF
+    
+    cat > "$INSTALL_DIR/stop-qgeth.sh" << 'EOF'
+#!/bin/bash
+# Stop Q Geth Node
+if [ -f ~/qgeth/qgeth.pid ]; then
+    PID=$(cat ~/qgeth/qgeth.pid)
+    if kill -0 $PID 2>/dev/null; then
+        kill $PID
+        echo "Q Geth stopped (PID: $PID)"
+        rm -f ~/qgeth/qgeth.pid
+    else
+        echo "Q Geth not running"
+        rm -f ~/qgeth/qgeth.pid
+    fi
 else
-    print_error "Neither curl nor wget is available. Please install one of them."
-    exit 1
-fi 
+    echo "Q Geth PID file not found"
+fi
+EOF
+    
+    cat > "$INSTALL_DIR/status-qgeth.sh" << 'EOF'
+#!/bin/bash
+# Check Q Geth Status
+if [ -f ~/qgeth/qgeth.pid ]; then
+    PID=$(cat ~/qgeth/qgeth.pid)
+    if kill -0 $PID 2>/dev/null; then
+        echo "Q Geth is running (PID: $PID)"
+        echo "Logs: tail -f ~/qgeth/geth.log"
+    else
+        echo "Q Geth not running (stale PID file)"
+        rm -f ~/qgeth/qgeth.pid
+    fi
+else
+    echo "Q Geth is not running"
+fi
+EOF
+    
+    chmod +x "$INSTALL_DIR"/*.sh
+    
+    # Success message
+    echo ""
+    echo "========================================"
+    echo -e "${GREEN}🎉 Q Geth Installation Complete!${NC}"
+    echo "========================================"
+    echo ""
+    echo -e "${BLUE}📋 Installation Summary:${NC}"
+    echo "  Directory: $PROJECT_DIR"
+    echo "  User: $USER"
+    echo "  Management: $INSTALL_DIR/*.sh"
+    echo ""
+    echo -e "${BLUE}🔧 Quick Commands:${NC}"
+    echo "  Start:  ~/qgeth/start-qgeth.sh"
+    echo "  Stop:   ~/qgeth/stop-qgeth.sh"
+    echo "  Status: ~/qgeth/status-qgeth.sh"
+    echo "  Logs:   tail -f ~/qgeth/geth.log"
+    echo ""
+    echo -e "${BLUE}🎯 Next Steps:${NC}"
+    echo "  1. Start Q Geth: ~/qgeth/start-qgeth.sh"
+    echo "  2. Check status: ~/qgeth/status-qgeth.sh"
+    echo "  3. Start mining: cd ~/qgeth/Qgeth3/scripts/linux && ./start-miner.sh"
+    echo "  4. RPC API: http://localhost:8545"
+    echo ""
+    echo -e "${GREEN}Ready to go! 🚀${NC}"
+}
+
+# Run main function
+main "$@" 
