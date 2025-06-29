@@ -206,3 +206,11 @@ qiskit-aer/
 !scripts/
 !scripts/*.sh
 !scripts/*.md
+
+# Deployment tracking (instance-specific progress)
+deployment-roadmap.md
+
+# Private development components (local development only)
+quantum-wallet/
+quantum-wallet-embedded/
+tests/
