@@ -13,6 +13,22 @@ After running the bootstrap script, your VPS has:
 
 ## 🚀 Bootstrap Installation
 
+### Prerequisites
+
+**For Debian/Ubuntu minimal installations**, you may need to install basic packages first:
+```bash
+# Update package list
+apt update
+
+# Install required packages for bootstrap script
+apt install -y curl sudo
+
+# For minimal Debian installations, you may also need:
+apt install -y wget ca-certificates
+```
+
+**Note**: Most standard Ubuntu installations already include these packages, but minimal Debian containers/installations may not have `curl` and `sudo` by default.
+
 ### One-Command Installation
 ```bash
 # Non-interactive installation (recommended for automation)

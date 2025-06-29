@@ -36,6 +36,26 @@ sudo ufw status verbose
 
 ## 🚀 Bootstrap Script Issues
 
+### Missing Prerequisites (Debian/Ubuntu)
+```bash
+# Symptoms: "curl: command not found" or "sudo: command not found"
+# Solution: Install basic packages first
+
+# For Debian/Ubuntu minimal installations
+apt update
+apt install -y curl sudo
+
+# For very minimal installations, you may also need:
+apt install -y wget ca-certificates
+
+# Then run the bootstrap script
+curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qgeth.sh | sudo bash -s -- -y
+
+# Alternative: Download and run manually
+wget https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qgeth.sh
+bash bootstrap-qgeth.sh -y
+```
+
 ### Download/Access Issues
 ```bash
 # Symptoms: "bash: line 1: 404: command not found"
