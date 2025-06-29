@@ -117,25 +117,28 @@ install_dependencies() {
             ;;
     esac
     
-    # Install Go 1.24 specifically (required for quantum consensus compatibility)
+    # Install Go 1.24.4 specifically (required for quantum consensus compatibility)
     install_go_1_24
     
     log_success "Dependencies installed"
 }
 
-# Install Go 1.24 specifically for quantum blockchain consensus
+# Install Go 1.24.4 specifically for quantum blockchain consensus
 install_go_1_24() {
-    log_info "Installing Go 1.24 for quantum consensus compatibility..."
+    log_info "Installing Go 1.24.4 for quantum consensus compatibility..."
     
-    # Check if Go 1.24 is already installed
+    # Check if Go 1.24.4 is already installed
     if command -v go >/dev/null 2>&1; then
-        GO_VERSION=$(go version 2>/dev/null | grep -o 'go1\.[0-9]*' | head -1)
-        if [ "$GO_VERSION" = "go1.24" ]; then
-            log_info "Go 1.24 already installed: $(go version)"
+        GO_VERSION_FULL=$(go version 2>/dev/null)
+        GO_VERSION_EXACT=$(echo "$GO_VERSION_FULL" | grep -o 'go1\.24\.[0-9]*' | head -1)
+        
+        if [ "$GO_VERSION_EXACT" = "go1.24.4" ]; then
+            log_info "Go 1.24.4 already installed: $GO_VERSION_FULL"
             return 0
         else
-            log_warning "Found $GO_VERSION, but quantum blockchain requires Go 1.24"
-            log_info "Installing Go 1.24 for consensus compatibility..."
+            log_warning "Found Go version: $GO_VERSION_FULL"
+            log_info "Need Go 1.24.4 for quantum consensus compatibility..."
+            log_info "Upgrading to Go 1.24.4..."
         fi
     fi
     
@@ -196,7 +199,7 @@ install_go_1_24() {
     if [ ! -f /etc/profile.d/go.sh ]; then
         $SUDO tee /etc/profile.d/go.sh > /dev/null << 'EOF'
 #!/bin/bash
-# Go 1.24 for Quantum Blockchain Consensus
+# Go 1.24.4 for Quantum Blockchain Consensus
 export PATH="/usr/local/go/bin:$PATH"
 export GOPATH="$HOME/go"
 export GOROOT="/usr/local/go"
@@ -209,18 +212,18 @@ EOF
         GO_INSTALLED_VERSION=$(go version 2>/dev/null)
         log_success "✅ Go installed successfully: $GO_INSTALLED_VERSION"
         
-        # Verify it's Go 1.24
-        if echo "$GO_INSTALLED_VERSION" | grep -q "go1.24"; then
-            log_success "✅ Go 1.24 confirmed for quantum consensus compatibility"
+        # Verify it's Go 1.24.4
+        if echo "$GO_INSTALLED_VERSION" | grep -q "go1.24.4"; then
+            log_success "✅ Go 1.24.4 confirmed for quantum consensus compatibility"
         else
-            log_warning "⚠️ Go version verification failed"
+            log_warning "⚠️ Go version verification: got $GO_INSTALLED_VERSION, expected go1.24.4"
         fi
     else
         log_error "Go installation verification failed"
         exit 1
     fi
     
-    log_info "Go 1.24 installation complete"
+    log_info "Go 1.24.4 installation complete"
 }
 
 # Main installation
@@ -283,12 +286,8 @@ main() {
     log_info "Building Q Geth..."
     cd "$PROJECT_DIR/scripts/linux"
     
-    # Use enhanced build script if available, otherwise standard
-    if [ -f "build-linux-enhanced.sh" ]; then
-        ./build-linux-enhanced.sh geth ${AUTO_CONFIRM:+-y}
-    else
-        ./build-linux.sh geth ${AUTO_CONFIRM:+-y}
-    fi
+    # Use consolidated build script
+    ./build-linux.sh geth ${AUTO_CONFIRM:+-y}
     
     # Create simple service management scripts
     log_info "Creating management scripts..."

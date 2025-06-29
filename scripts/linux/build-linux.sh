@@ -1,18 +1,21 @@
 #!/bin/bash
-# Build script for Q Coin Linux Binaries
-# Ensures complete compatibility between Windows and Linux builds
-# Handles minimal Linux environments with missing utilities
-# Optimized for low-memory VPS environments (requires minimum 3GB RAM)
-# AUTOMATED ERROR RECOVERY: Handles permission issues and module conflicts
+# Q Coin Enhanced Linux Build System
+# Consolidated script combining best features from build-linux.sh and build-linux-enhanced.sh
+# Can be run standalone or integrated with bootstrap
+# Cross-distribution compatibility with automated error recovery
 # Usage: ./build-linux.sh [geth|miner|both] [--clean] [-y|--yes]
 
-# Set robust PATH for minimal Linux environments
-export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/go/bin:$PATH"
+set -e
 
-# Parse command line arguments
+# Configuration
+VERSION="1.0.0"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Parse arguments
 AUTO_CONFIRM=false
 TARGET="both"
-CLEAN="false"
+CLEAN=false
+DEBUG=false
 
 for arg in "$@"; do
     case $arg in
@@ -20,27 +23,89 @@ for arg in "$@"; do
             AUTO_CONFIRM=true
             ;;
         --clean)
-            CLEAN="--clean"
+            CLEAN=true
+            ;;
+        --debug)
+            DEBUG=true
             ;;
         geth|miner|both)
             TARGET="$arg"
             ;;
+        --help|-h)
+            echo "Q Coin Enhanced Linux Build System"
+            echo ""
+            echo "Usage: $0 [target] [options]"
+            echo ""
+            echo "Targets:"
+            echo "  geth    Build quantum-geth only"
+            echo "  miner   Build quantum-miner only"
+            echo "  both    Build both (default)"
+            echo ""
+            echo "Options:"
+            echo "  -y, --yes     Auto-confirm all prompts"
+            echo "  --clean       Clean previous builds"
+            echo "  --debug       Enable debug output"
+            echo "  --help        Show this help"
+            echo ""
+            exit 0
+            ;;
     esac
 done
 
-VERSION="1.0.0"
-
-echo "🚀 Building Q Coin Linux Binaries (Memory-Optimized + Auto-Recovery)..."
-echo "Target: $TARGET"
-echo "Version: $VERSION"
-if [ "$AUTO_CONFIRM" = true ]; then
-    echo "Mode: Non-interactive (auto-confirm enabled)"
+# Colors and logging
+if [ -t 1 ]; then
+    RED='\033[0;31m'
+    GREEN='\033[0;32m'
+    YELLOW='\033[1;33m'
+    BLUE='\033[0;34m'
+    CYAN='\033[0;36m'
+    NC='\033[0m'
+else
+    RED='' GREEN='' YELLOW='' BLUE='' CYAN='' NC=''
 fi
-echo ""
 
-# AUTOMATED FIX 1: Directory ownership detection and correction
+log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
+log_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
+log_warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
+log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
+log_debug() { [ "$DEBUG" = true ] && echo -e "${CYAN}[DEBUG]${NC} $1"; }
+
+# Detect system information
+detect_system() {
+    # OS Detection
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        QGETH_OS="$ID"
+        QGETH_DISTRO="$ID"
+        QGETH_DISTRO_VERSION="$VERSION_ID"
+        QGETH_DISTRO_NAME="$NAME"
+    else
+        QGETH_OS="unknown"
+        QGETH_DISTRO="unknown"
+        QGETH_DISTRO_VERSION="unknown"
+        QGETH_DISTRO_NAME="Unknown Linux"
+    fi
+    
+    # Architecture Detection
+    QGETH_ARCH=$(uname -m)
+    case $QGETH_ARCH in
+        x86_64) QGETH_GO_ARCH="amd64" ;;
+        aarch64|arm64) QGETH_GO_ARCH="arm64" ;;
+        armv7l) QGETH_GO_ARCH="arm" ;;
+        i686) QGETH_GO_ARCH="386" ;;
+        *) QGETH_GO_ARCH="amd64" ;;
+    esac
+    
+    # Shell Detection
+    QGETH_SHELL="${SHELL:-/bin/bash}"
+    
+    log_debug "System detected: $QGETH_OS ($QGETH_DISTRO $QGETH_DISTRO_VERSION)"
+    log_debug "Architecture: $QGETH_ARCH (Go: $QGETH_GO_ARCH)"
+}
+
+# Check and fix permissions
 check_and_fix_permissions() {
-    echo "🔒 Checking directory permissions..."
+    log_info "🔒 Checking directory permissions..."
     
     local output_dir=$(pwd)
     local current_user=$(whoami)
@@ -51,94 +116,227 @@ check_and_fix_permissions() {
         dir_owner=$(stat -c '%U' "$output_dir" 2>/dev/null || echo "unknown")
     fi
     
-    echo "  Current directory: $output_dir"
-    echo "  Current user: $current_user"
-    echo "  Directory owner: $dir_owner"
+    log_debug "Current directory: $output_dir"
+    log_debug "Current user: $current_user"
+    log_debug "Directory owner: $dir_owner"
     
     # Check if we can write to current directory
     if [ ! -w "$output_dir" ]; then
-        echo "🚨 Permission issue detected: Cannot write to output directory"
+        log_warning "Permission issue detected: Cannot write to output directory"
         
         # If running as root, fix ownership
         if [ "$current_user" = "root" ] && [ "$dir_owner" != "root" ]; then
-            echo "🔧 Auto-fix: Changing directory ownership to root..."
+            log_info "🔧 Auto-fix: Changing directory ownership to root..."
             chown -R root:root "$output_dir" 2>/dev/null || true
-        # If non-root user and directory owned by root, try to fix with sudo
         elif [ "$current_user" != "root" ] && [ "$dir_owner" = "root" ]; then
-            echo "🔧 Auto-fix: Attempting to change ownership to $current_user..."
+            log_info "🔧 Auto-fix: Attempting to change ownership to $current_user..."
             if command -v sudo >/dev/null 2>&1; then
                 if sudo chown -R "$current_user:$current_user" "$output_dir" 2>/dev/null; then
-                    echo "✅ Directory ownership fixed with sudo"
+                    log_success "Directory ownership fixed with sudo"
                 else
-                    echo "🚨 Failed to fix directory ownership - you may need to run:"
-                    echo "   sudo chown -R $current_user:$current_user $output_dir"
-                    
-                    if [ "$AUTO_CONFIRM" != true ]; then
-                        echo -n "Continue anyway? (y/N): "
-                        read -r RESPONSE
-                        if [[ ! "$RESPONSE" =~ ^([yY][eE][sS]|[yY])$ ]]; then
-                            echo "Build aborted."
-                            exit 1
-                        fi
-                    else
-                        echo "⚠️ Auto-continuing in non-interactive mode"
-                    fi
+                    log_error "Failed to fix directory ownership"
+                    exit 1
                 fi
             else
-                echo "🚨 sudo not available and cannot write to directory"
-                echo "   Manual fix needed: chown -R $current_user:$current_user $output_dir"
+                log_error "sudo not available and cannot write to directory"
                 exit 1
             fi
         fi
     else
-        echo "✅ Directory permissions OK"
+        log_success "✅ Directory permissions OK"
     fi
-    echo ""
 }
 
-# AUTOMATED FIX 2: Go module dependency conflict resolution
+# Memory check
+check_memory() {
+    local required_mb=4096
+    local total_mb=0
+    local swap_mb=0
+    
+    if [ -f /proc/meminfo ]; then
+        local mem_total=$(grep MemTotal /proc/meminfo | awk '{print $2}')
+        total_mb=$((mem_total / 1024))
+        
+        if [ -f /proc/swaps ]; then
+            local swap_total=$(awk 'NR>1 {sum+=$3} END {print sum+0}' /proc/swaps)
+            swap_mb=$((swap_total / 1024))
+        fi
+        
+        local combined_mb=$((total_mb + swap_mb))
+        
+        log_info "💾 Memory check..."
+        log_info "RAM: ${total_mb}MB, Swap: ${swap_mb}MB, Total: ${combined_mb}MB"
+        log_info "Required: ${required_mb}MB"
+        
+        if [ $combined_mb -lt $required_mb ]; then
+            local deficit=$((required_mb - combined_mb))
+            log_warning "Insufficient memory: need ${deficit}MB more"
+            
+            if [ "$AUTO_CONFIRM" != true ]; then
+                echo -n "Continue anyway? (y/N): "
+                read -r RESPONSE
+                if [[ ! "$RESPONSE" =~ ^([yY][eE][sS]|[yY])$ ]]; then
+                    log_error "Build aborted due to insufficient memory"
+                    exit 1
+                fi
+            fi
+        else
+            log_success "✅ Memory check passed (${combined_mb}MB total)"
+        fi
+    fi
+}
+
+# Setup temporary build environment
+setup_temp_build() {
+    log_info "📁 Setting up temporary build environment..."
+    
+    # Use existing temp dir if available
+    if [ -n "$QGETH_BUILD_TEMP" ]; then
+        BUILD_TEMP_DIR="$QGETH_BUILD_TEMP"
+        mkdir -p "$BUILD_TEMP_DIR"
+        log_info "Using VPS-prepared temp directory: $BUILD_TEMP_DIR"
+    else
+        # Create new temp directory
+        if command -v df >/dev/null 2>&1; then
+            tmp_space=$(df /tmp 2>/dev/null | awk 'NR==2 {print $4}' || echo "0")
+            if [ "$tmp_space" -lt 1048576 ]; then
+                BUILD_TEMP_DIR="./build-temp-$$"
+            else
+                BUILD_TEMP_DIR="/tmp/qgeth-build-$$"
+            fi
+        else
+            BUILD_TEMP_DIR="./build-temp-$$"
+        fi
+        mkdir -p "$BUILD_TEMP_DIR"
+        log_info "Selected temp directory: $BUILD_TEMP_DIR ($(df -h "$BUILD_TEMP_DIR" 2>/dev/null | awk 'NR==2 {print $4}' || echo 'unknown')MB available)"
+    fi
+    
+    # Convert to absolute path
+    if [ "${BUILD_TEMP_DIR#/}" = "$BUILD_TEMP_DIR" ]; then
+        BUILD_TEMP_DIR="$(pwd)/$BUILD_TEMP_DIR"
+    fi
+    
+    # Set Go environment variables
+    export GOCACHE="$BUILD_TEMP_DIR/gocache"
+    export GOTMPDIR="$BUILD_TEMP_DIR/gotmp"
+    export TMPDIR="$BUILD_TEMP_DIR/tmp"
+    
+    mkdir -p "$GOCACHE" "$GOTMPDIR" "$TMPDIR"
+    
+    log_info "Build environment:"
+    log_info "  Build Temp Dir: $BUILD_TEMP_DIR"
+    log_info "  Go Cache: $GOCACHE"
+    log_info "  Go Temp: $GOTMPDIR"
+    log_info "  System Temp: $TMPDIR"
+    
+    # Cleanup function
+    cleanup_temp() {
+        if [ -z "$QGETH_BUILD_TEMP" ]; then
+            log_info "🧹 Cleaning up temporary build directory..."
+            rm -rf "$BUILD_TEMP_DIR" 2>/dev/null || true
+            log_success "✅ Temporary files cleaned up"
+        else
+            log_info "🧹 Preserving VPS-prepared temp directory: $BUILD_TEMP_DIR"
+        fi
+    }
+    
+    trap cleanup_temp EXIT
+}
+
+# Get build flags
+get_build_flags() {
+    # Build info
+    if command -v date >/dev/null 2>&1; then
+        BUILD_TIME=$(date "+%Y-%m-%d_%H:%M:%S" 2>/dev/null || echo "unknown")
+    else
+        BUILD_TIME="unknown"
+    fi
+    
+    if command -v git >/dev/null 2>&1; then
+        GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+    else
+        GIT_COMMIT="unknown"
+    fi
+    
+    # Memory-efficient linker flags
+    LDFLAGS="-s -w"
+    LDFLAGS="$LDFLAGS -X main.VERSION=$VERSION"
+    LDFLAGS="$LDFLAGS -X main.BUILD_TIME=$BUILD_TIME"
+    LDFLAGS="$LDFLAGS -X main.GIT_COMMIT=$GIT_COMMIT"
+    
+    log_info "💾 Configuring build flags..."
+    log_info "Build flags:"
+    log_info "  Linker: $LDFLAGS"
+    log_info "  Trimpath: enabled"
+    log_info "  VCS info: disabled"
+    log_info "  Cache: $GOCACHE"
+}
+
+# Check Go version and determine appropriate flags
+check_go_version_for_memsize() {
+    local go_version go_version_full major minor
+    if command -v go >/dev/null 2>&1; then
+        go_version_full=$(go version 2>/dev/null)
+        go_version=$(echo "$go_version_full" | grep -oE 'go[0-9]+\.[0-9]+' | head -1)
+        log_info "Detected Go version: ${go_version:-unknown}"
+        
+        if [ -n "$go_version" ]; then
+            # Extract major and minor version numbers
+            major=$(echo "$go_version" | cut -d'.' -f1 | sed 's/go//')
+            minor=$(echo "$go_version" | cut -d'.' -f2)
+            
+            # Check if version is 1.23 or higher (needs -checklinkname=0)
+            if [ "$major" -gt 1 ] || ([ "$major" -eq 1 ] && [ "$minor" -ge 23 ]); then
+                log_success "✅ Go $go_version supports -checklinkname flag (memsize compatibility)"
+                USE_CHECKLINKNAME=true
+            else
+                log_info "ℹ️ Go $go_version uses standard build flags"
+                USE_CHECKLINKNAME=false
+            fi
+        else
+            log_warning "⚠️ Could not parse Go version, using standard build flags"
+            USE_CHECKLINKNAME=false
+        fi
+    else
+        log_error "Go not found - please install Go via bootstrap-qgeth.sh"
+        exit 1
+    fi
+}
+
+# Fix Go module conflicts
 fix_go_module_conflicts() {
     local module_dir="$1"
-    echo "🔧 Checking and fixing Go module dependencies in $module_dir..."
+    log_info "🔧 Checking Go module dependencies in $module_dir..."
     
     cd "$module_dir"
     
-    # Check for known problematic dependencies
     if grep -q "github.com/fjl/memsize" go.mod 2>/dev/null; then
-        echo "🚨 Detected problematic memsize dependency"
-        echo "🔧 Auto-fix: Cleaning Go module cache and dependencies..."
+        log_info "🚨 Detected problematic memsize dependency"
+        log_info "🔧 Auto-fix: Cleaning Go module cache and dependencies..."
         
-        # Clean everything
         go clean -cache -modcache -testcache 2>/dev/null || true
-        go clean -r -cache 2>/dev/null || true
-        
-        # Remove go.sum to force fresh resolution
         rm -f go.sum
         
-        # Download with explicit module proxy
-        echo "🚀 Re-downloading dependencies with fresh resolution..."
+        log_info "🚀 Re-downloading dependencies with fresh resolution..."
         GOPROXY=direct go mod download 2>/dev/null || true
         go mod tidy 2>/dev/null || true
         
-        # Verify dependencies
         if go mod verify 2>/dev/null; then
-            echo "✅ Module dependencies verified and fixed"
+            log_success "✅ Module dependencies verified and fixed"
         else
-            echo "🚨 Module verification failed, trying alternative approach..."
-            
-            # Try with different Go version/tags if available
+            log_warning "Module verification failed, trying alternative approach..."
             go clean -cache -modcache 2>/dev/null || true
             GOPROXY=https://proxy.golang.org go mod download 2>/dev/null || true
             go mod tidy 2>/dev/null || true
         fi
     else
-        echo "✅ No known problematic dependencies detected"
+        log_success "✅ No problematic dependencies detected"
     fi
     
     cd - >/dev/null
 }
 
-# AUTOMATED FIX 3: Build retry with error recovery
+# Build with retry mechanism
 build_with_retry() {
     local build_type="$1"
     local build_cmd="$2"
@@ -147,33 +345,24 @@ build_with_retry() {
     local retry_count=0
     
     while [ $retry_count -lt $max_retries ]; do
-        echo "🚀 Build attempt $((retry_count + 1))/$max_retries for $build_type..."
+        log_info "🚀 Build attempt $((retry_count + 1))/$max_retries for $build_type..."
         
-        # Try the build
         if eval "$build_cmd"; then
-            echo "✅ $build_type built successfully"
+            log_success "✅ $build_type built successfully"
             return 0
         else
             retry_count=$((retry_count + 1))
-            echo "🚨 Build attempt $retry_count failed for $build_type"
+            log_warning "🚨 Build attempt $retry_count failed for $build_type"
             
             if [ $retry_count -lt $max_retries ]; then
-                echo "🔧 Attempting automated recovery..."
-                
-                # Clean build artifacts
+                log_info "🔧 Attempting automated recovery..."
                 rm -f "$output_binary" 2>/dev/null || true
-                
-                # Clean Go cache and modules
                 go clean -cache -testcache 2>/dev/null || true
-                
-                # Fix module dependencies
                 go mod tidy 2>/dev/null || true
                 go mod download 2>/dev/null || true
-                
-                # Wait a moment before retry
                 sleep 2
             else
-                echo "🚨 All build attempts failed for $build_type"
+                log_error "🚨 All build attempts failed for $build_type"
                 return 1
             fi
         fi
@@ -182,483 +371,203 @@ build_with_retry() {
     return 1
 }
 
-# Memory check function
-check_memory() {
-    local required_mb=4096  # 4GB minimum total (RAM + swap)
-    local total_mb=0
-    local swap_mb=0
-    local combined_mb=0
-    
-    if [ -f /proc/meminfo ]; then
-        # Get RAM and swap in MB
-        local mem_total=$(grep MemTotal /proc/meminfo | awk '{print $2}')
-        total_mb=$((mem_total / 1024))
-        
-        # Check swap
-        if [ -f /proc/swaps ]; then
-            local swap_total=$(awk 'NR>1 {sum+=$3} END {print sum+0}' /proc/swaps)
-            swap_mb=$((swap_total / 1024))
-        fi
-        
-        combined_mb=$((total_mb + swap_mb))
-        
-        echo "💾 Memory Check:"
-        echo "  RAM: ${total_mb}MB"
-        echo "  Swap: ${swap_mb}MB"
-        echo "  Total Available: ${combined_mb}MB"
-        echo "  Required Total: ${required_mb}MB (4GB)"
-        
-        # Add tolerance margin - 50MB difference is acceptable (same as prepare-vps.sh)
-        local tolerance_mb=50
-        local effective_required=$((required_mb - tolerance_mb))
-        
-        if [ $combined_mb -lt $effective_required ]; then
-            local deficit=$((required_mb - combined_mb))
-            echo "⚠️  WARNING: Insufficient total memory!"
-            echo "   Current total: ${combined_mb}MB"
-            echo "   Required total: ${required_mb}MB"
-            echo "   Deficit: ${deficit}MB"
-            echo ""
-            echo "🔧 Recommendations:"
-            echo "  1. Run ./prepare-vps.sh to set up swap automatically"
-            echo "  2. Close unnecessary programs"
-            echo "  3. Use a VPS with more RAM"
-            echo ""
-            
-            # Auto-continue if non-interactive mode and deficit is small (< 100MB)
-            if [ "$AUTO_CONFIRM" = true ] && [ $deficit -lt 100 ]; then
-                echo "💡 Auto-continuing: Memory deficit is small (${deficit}MB < 100MB) and non-interactive mode is enabled"
-            else
-                echo -n "Continue anyway? (y/N): "
-                read -r RESPONSE
-                if [[ ! "$RESPONSE" =~ ^([yY][eE][sS]|[yY])$ ]]; then
-                    echo "Build aborted."
-                    exit 1
-                fi
-            fi
-        elif [ $combined_mb -lt $required_mb ]; then
-            local deficit=$((required_mb - combined_mb))
-            echo "💡 Memory within tolerance range"
-            echo "   Current total: ${combined_mb}MB"
-            echo "   Required total: ${required_mb}MB"
-            echo "   Deficit: ${deficit}MB (within ${tolerance_mb}MB tolerance)"
-            echo "   ✅ Proceeding with build - memory difference is acceptable"
-        else
-            echo "✅ Memory check passed (${combined_mb}MB total)"
-        fi
-    else
-        echo "⚠️  Cannot check memory - /proc/meminfo not found"
-    fi
-    echo ""
-}
-
-# Setup temporary build directory
-setup_temp_build() {
-    # Use temp directory from prepare-vps.sh if available
-    if [ -n "$QGETH_BUILD_TEMP" ]; then
-        BUILD_TEMP_DIR="$QGETH_BUILD_TEMP"
-        # Create the directory if it doesn't exist
-        mkdir -p "$BUILD_TEMP_DIR"
-        echo "📁 Using VPS-prepared temp directory: $BUILD_TEMP_DIR"
-    else
-        # Check /tmp space availability
-        if command -v df >/dev/null 2>&1; then
-            tmp_space=$(df /tmp 2>/dev/null | awk 'NR==2 {print $4}' || echo "0")
-            if [ "$tmp_space" -lt 1048576 ]; then  # Less than 1GB in KB
-                echo "⚠️  Low /tmp space detected, using local temp directory"
-                BUILD_TEMP_DIR="./build-temp-$$"
-            else
-                BUILD_TEMP_DIR="/tmp/qgeth-build-$$"
-            fi
-        else
-            # Default to local if df not available
-            BUILD_TEMP_DIR="./build-temp-$$"
-        fi
-        mkdir -p "$BUILD_TEMP_DIR"
-        echo "📁 Created temporary build directory: $BUILD_TEMP_DIR"
-    fi
-    
-    # Convert to absolute path (required by Go)
-    if [ "${BUILD_TEMP_DIR#/}" = "$BUILD_TEMP_DIR" ]; then
-        # Relative path, convert to absolute
-        BUILD_TEMP_DIR="$(pwd)/$BUILD_TEMP_DIR"
-    fi
-    
-    # Set Go build cache and temp directories (Go requires absolute paths)
-    export GOCACHE="$BUILD_TEMP_DIR/gocache"
-    export GOTMPDIR="$BUILD_TEMP_DIR/gotmp"
-    export TMPDIR="$BUILD_TEMP_DIR/tmp"
-    
-    # Create directories
-    mkdir -p "$GOCACHE" "$GOTMPDIR" "$TMPDIR"
-    
-    echo "🗂️  Temporary Build Setup:"
-    echo "  Build Temp Dir: $BUILD_TEMP_DIR"
-    echo "  Go Cache: $GOCACHE"
-    echo "  Go Temp: $GOTMPDIR"
-    echo "  System Temp: $TMPDIR"
-    echo ""
-    
-    # Cleanup function (only if we created the temp dir)
-    cleanup_temp() {
-        if [ -z "$QGETH_BUILD_TEMP" ]; then
-            echo "🧹 Cleaning up temporary build directory..."
-            rm -rf "$BUILD_TEMP_DIR" 2>/dev/null || true
-            echo "✅ Temporary files cleaned up"
-        else
-            echo "🧹 Preserving VPS-prepared temp directory: $BUILD_TEMP_DIR"
-        fi
-    }
-    
-    # Set trap for cleanup on exit
-    trap cleanup_temp EXIT
-}
-
-# Memory-efficient build flags
-get_build_flags() {
-    # Memory-efficient linker flags
-    local ldflags="-s -w"
-    ldflags="$ldflags -X main.VERSION=$VERSION"
-    ldflags="$ldflags -X main.BUILD_TIME=$BUILD_TIME"
-    ldflags="$ldflags -X main.GIT_COMMIT=$GIT_COMMIT"
-    
-    # Store ldflags for use in build commands
-    LDFLAGS="$ldflags"
-    
-    echo "💾 Memory-Optimized Build Flags:"
-    echo "  Linker: $ldflags"
-    echo "  Trimpath: enabled"
-    echo "  VCS info: disabled"
-    echo "  Cache: $GOCACHE"
-    echo ""
-}
-
-# Check Go version and determine if checklinkname flag is supported
-check_go_version_for_memsize() {
-    local go_version
-    if command -v go >/dev/null 2>&1; then
-        go_version=$(go version 2>/dev/null | grep -oE 'go[0-9]+\.[0-9]+' | head -1)
-        if [ -n "$go_version" ]; then
-            # Extract major and minor version numbers
-            local major=$(echo "$go_version" | cut -d'.' -f1 | sed 's/go//')
-            local minor=$(echo "$go_version" | cut -d'.' -f2)
-            
-            echo "🔍 Detected Go version: $go_version"
-            
-            # Check if version is 1.23 or higher
-            if [ "$major" -gt 1 ] || ([ "$major" -eq 1 ] && [ "$minor" -ge 23 ]); then
-                echo "✅ Go $go_version supports -checklinkname flag (memsize compatibility)"
-                USE_CHECKLINKNAME=true
-            else
-                echo "ℹ️  Go $go_version does not support -checklinkname flag (not needed)"
-                USE_CHECKLINKNAME=false
-            fi
-        else
-            echo "⚠️  Could not parse Go version, assuming older version"
-            USE_CHECKLINKNAME=false
-        fi
-    else
-        echo "⚠️  Go command not found, assuming older version"
-        USE_CHECKLINKNAME=false
-    fi
-}
-
-# EXECUTE AUTOMATED FIXES
-echo "🔧 Running automated pre-build checks and fixes..."
-check_and_fix_permissions
-
-# Run memory check
-check_memory
-
-# Setup temporary build environment
-setup_temp_build
-
-# Check for interrupted/partial builds and clean if needed
-if [ -f "geth.bin" ] && [ ! -f "geth" ]; then
-    echo "🔍 Detected partial build (geth.bin without geth wrapper)"
-    echo "🧹 Cleaning partial build state..."
-    rm -f geth.bin geth quantum-miner quantum_solver.py
-    echo "  Partial build artifacts removed"
-fi
-
-# Check for stale build artifacts in case of interruption
-if [ -n "$BUILD_TEMP_DIR" ] && [ -d "$BUILD_TEMP_DIR" ]; then
-    # Check if temp directory has stale content
-    if [ "$(find "$BUILD_TEMP_DIR" -type f 2>/dev/null | wc -l)" -gt 0 ]; then
-        echo "🔍 Found stale build temp directory: $BUILD_TEMP_DIR"
-        echo "🧹 Cleaning stale build artifacts..."
-        rm -rf "$BUILD_TEMP_DIR"
-        mkdir -p "$BUILD_TEMP_DIR"
-        # Recreate the required subdirectories
-        mkdir -p "$GOCACHE" "$GOTMPDIR" "$TMPDIR"
-        echo "  Stale temp directory cleaned and subdirectories recreated"
-    fi
-fi
-
-# Clean previous builds if requested
-if [ "$CLEAN" = "--clean" ] || [ "$2" = "--clean" ]; then
-    echo "🧹 Cleaning previous builds..."
-    rm -f geth geth.bin quantum-miner quantum_solver.py
-    echo "  Previous binaries removed"
-    
-    # Clean Go cache
-    go clean -cache 2>/dev/null || true
-    echo "  Go cache cleaned"
-    
-    # Clean build temp directory
-    if [ -n "$BUILD_TEMP_DIR" ] && [ -d "$BUILD_TEMP_DIR" ]; then
-        rm -rf "$BUILD_TEMP_DIR"
-        mkdir -p "$BUILD_TEMP_DIR"
-        # Recreate the required subdirectories
-        mkdir -p "$GOCACHE" "$GOTMPDIR" "$TMPDIR"
-        echo "  Build temp directory cleaned and subdirectories recreated"
-    fi
-fi
-
-# Check directories exist
-if [ ! -d "../../quantum-geth" ]; then
-    echo "🚨 Error: quantum-geth directory not found!"
-    echo "Please run this script from scripts/linux/ directory."
-    exit 1
-fi
-
-if [ ! -d "../../quantum-miner" ]; then
-    echo "🚨 Error: quantum-miner directory not found!"
-    echo "Please run this script from scripts/linux/ directory."
-    exit 1
-fi
-
-# CRITICAL: Set consistent build environment
-# These settings MUST match Windows builds for quantum field compatibility
-export GOOS=linux
-export GOARCH=amd64
-export CGO_ENABLED=0  # ALWAYS 0 for geth - this is crucial for quantum field compatibility
-
-# Build info - handle missing utilities gracefully
-if command -v date >/dev/null 2>&1; then
-    BUILD_TIME=$(date "+%Y-%m-%d_%H:%M:%S" 2>/dev/null || echo "unknown")
-else
-    BUILD_TIME="unknown"
-fi
-
-if command -v git >/dev/null 2>&1; then
-    GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
-else
-    GIT_COMMIT="unknown"
-fi
-
-CURRENT_DIR=$(pwd)
-
-# Get memory-efficient build flags
-get_build_flags
-
-# Check Go version for memsize compatibility
-check_go_version_for_memsize
-
-echo "🚀 Build Environment:"
-echo "  Target OS: linux/amd64"
-echo "  Build Time: $BUILD_TIME"
-echo "  Git Commit: $GIT_COMMIT"
-echo "  Output Directory: $CURRENT_DIR"
-echo "  PATH: $PATH"
-echo ""
-
-# Function to build quantum-geth with automated error recovery
+# Build quantum-geth
 build_geth() {
-    echo "🚀 Building Quantum-Geth (Memory-Optimized + Auto-Recovery)..."
+    log_info "🚀 Building Quantum-Geth with cross-distribution compatibility..."
     
-    # Check if go.mod exists
     if [ ! -f "../../quantum-geth/go.mod" ]; then
-        echo "🚨 Error: go.mod not found in quantum-geth directory!"
+        log_error "go.mod not found in quantum-geth directory!"
         exit 1
     fi
     
-    # AUTOMATED FIX: Pre-build module dependency resolution
+    # Fix module conflicts
     fix_go_module_conflicts "../../quantum-geth"
     
-    # CRITICAL: ALWAYS enforce CGO_ENABLED=0 for geth
-    # This ensures 100% compatibility with Windows builds for quantum fields
-    # Store original value to restore after miner build (if needed)
+    # Set build environment
     ORIGINAL_CGO=$CGO_ENABLED
     export CGO_ENABLED=0
     
-    echo "🚀 Enforcing CGO_ENABLED=0 for geth build (quantum field compatibility)"
-    echo "    This ensures identical quantum field handling as Windows builds"
-    echo "💾 Using temporary directory: $BUILD_TEMP_DIR"
+    log_info "Build environment:"
+    log_info "  GOOS: $GOOS"
+    log_info "  GOARCH: $GOARCH"
+    log_info "  CGO_ENABLED: $CGO_ENABLED"
+    log_info "  Temp directory: $BUILD_TEMP_DIR"
     
     cd ../../quantum-geth/cmd/geth
     
-    # Ensure Go temp directories exist before build
-    echo "🔧 Ensuring Go temp directories exist..."
+    # Ensure temp directories exist
     mkdir -p "$GOCACHE" "$GOTMPDIR" "$TMPDIR"
     
-    # Build command for retry mechanism
-    # Conditionally add -checklinkname=0 based on Go version
+    # Build command with appropriate flags based on Go version
     if [ "$USE_CHECKLINKNAME" = true ]; then
-        echo "🔧 Using -checklinkname=0 flag for Go 1.23+ memsize compatibility"
+        log_info "🔧 Using -checklinkname=0 flag for Go 1.23+ memsize compatibility"
         BUILD_CMD="CGO_ENABLED=0 go build -ldflags \"-checklinkname=0 $LDFLAGS\" -trimpath -buildvcs=false -o ../../../geth.bin ."
     else
-        echo "🔧 Using standard build flags for Go version compatibility"
+        log_info "🔧 Using standard build flags for Go version compatibility"
         BUILD_CMD="CGO_ENABLED=0 go build -ldflags \"$LDFLAGS\" -trimpath -buildvcs=false -o ../../../geth.bin ."
     fi
     
-    # Use automated retry with error recovery
     if build_with_retry "quantum-geth" "$BUILD_CMD" "../../../geth.bin"; then
         cd ../../..
-        echo "✅ Quantum-Geth built successfully: ./geth.bin (CGO_ENABLED=0)"
+        log_success "✅ Quantum-Geth built successfully: ./geth.bin"
         
-        # Create Q Coin geth wrapper that prevents Ethereum connections
+        # Create geth wrapper
         create_geth_wrapper
         
-        # Show file info if ls is available
         if command -v ls >/dev/null 2>&1; then
-            ls -lh ./geth.bin ./geth 2>/dev/null || echo "Binaries created: ./geth.bin, ./geth"
+            ls -lh ./geth.bin ./geth 2>/dev/null || log_info "Binaries created: ./geth.bin, ./geth"
         else
-            echo "Binaries created: ./geth.bin, ./geth"
+            log_info "Binaries created: ./geth.bin, ./geth"
         fi
     else
         cd ../../..
-        echo "🚨 Error: Failed to build quantum-geth after all retry attempts"
-        echo "🔧 Manual troubleshooting steps:"
-        echo "  1. Check Go version: go version"
-        echo "  2. Clean everything: go clean -cache -modcache -testcache"
-        echo "  3. Verify network: ping proxy.golang.org"
-        echo "  4. Check disk space: df -h"
-        exit 1
+        log_error "Failed to build quantum-geth after all retry attempts"
+        return 1
     fi
     
-    # Restore original CGO setting for any subsequent builds
     export CGO_ENABLED=$ORIGINAL_CGO
 }
 
-# Function to build quantum-miner with automated error recovery
+# Build quantum-miner
 build_miner() {
-    echo "🚀 Building Quantum-Miner (Memory-Optimized + Auto-Recovery)..."
+    log_info "🚀 Building Quantum-Miner with enhanced GPU detection..."
     
-    # Check if go.mod exists
     if [ ! -f "../../quantum-miner/go.mod" ]; then
-        echo "🚨 Error: go.mod not found in quantum-miner directory!"
+        log_error "go.mod not found in quantum-miner directory!"
         exit 1
     fi
     
-    # AUTOMATED FIX: Pre-build module dependency resolution
+    # Fix module conflicts
     fix_go_module_conflicts "../../quantum-miner"
     
-    # Detect GPU capabilities and build accordingly
+    # Detect GPU capabilities
     BUILD_TAGS=""
     GPU_TYPE="CPU"
     
-    # Check for NVIDIA GPU and CUDA
     if command -v nvidia-smi >/dev/null 2>&1; then
-        echo "🚀 NVIDIA GPU detected, checking CUDA availability..."
+        log_info "🎮 NVIDIA GPU detected, checking CUDA availability..."
         
         # Check for CUDA development libraries
-        if command -v pkg-config >/dev/null 2>&1 && (pkg-config --exists cuda-12.0 2>/dev/null || pkg-config --exists cuda-11.0 2>/dev/null) || [ -d "/usr/local/cuda" ]; then
-            echo "✅ CUDA development environment found"
+        local cuda_found=false
+        
+        if command -v pkg-config >/dev/null 2>&1; then
+            if pkg-config --exists cuda-12.0 2>/dev/null || pkg-config --exists cuda-11.0 2>/dev/null; then
+                cuda_found=true
+            fi
+        fi
+        
+        if [ "$cuda_found" = false ]; then
+            for cuda_path in /usr/local/cuda /opt/cuda /usr/cuda; do
+                if [ -d "$cuda_path/include" ] && [ -d "$cuda_path/lib64" ]; then
+                    cuda_found=true
+                    break
+                fi
+            done
+        fi
+        
+        if [ "$cuda_found" = false ] && command -v nvcc >/dev/null 2>&1; then
+            cuda_found=true
+        fi
+        
+        if [ "$cuda_found" = true ]; then
+            log_success "✅ CUDA development environment found"
             BUILD_TAGS="cuda"
             GPU_TYPE="CUDA"
             export CGO_ENABLED=1
         else
-            echo "🚨 CUDA development libraries not found, checking for Qiskit-Aer GPU..."
+            log_info "🚨 CUDA development libraries not found, checking for Qiskit-Aer GPU..."
             
-            # Check for Qiskit-Aer GPU support
-            if command -v python3 >/dev/null 2>&1 && python3 -c "import qiskit_aer; from qiskit_aer import AerSimulator; AerSimulator(device='GPU')" >/dev/null 2>&1; then
-                echo "✅ Qiskit-Aer GPU support detected"
-                BUILD_TAGS="cuda"
-                GPU_TYPE="Qiskit-GPU"
-                export CGO_ENABLED=0
+            if command -v python3 >/dev/null 2>&1; then
+                if python3 -c "import qiskit_aer; from qiskit_aer import AerSimulator; AerSimulator(device='GPU')" >/dev/null 2>&1; then
+                    log_success "✅ Qiskit-Aer GPU support detected"
+                    BUILD_TAGS="cuda"
+                    GPU_TYPE="Qiskit-GPU"
+                    export CGO_ENABLED=0
+                else
+                    log_warning "🚨 No GPU acceleration available, building CPU-only version"
+                    export CGO_ENABLED=0
+                fi
             else
-                echo "🚨 No GPU acceleration available, building CPU-only version"
+                log_warning "🚨 Python3 not available for Qiskit check, building CPU-only version"
                 export CGO_ENABLED=0
             fi
         fi
     else
-        echo "🚨 No NVIDIA GPU detected, building CPU-only version"
+        log_info "🚨 No NVIDIA GPU detected, building CPU-only version"
         export CGO_ENABLED=0
     fi
     
-    echo "🚀 Build Configuration:"
-    echo "  GPU Type: $GPU_TYPE"
-    echo "  Build Tags: ${BUILD_TAGS:-none}"
-    echo "  CGO Enabled: $CGO_ENABLED"
-    echo "💾 Using temporary directory: $BUILD_TEMP_DIR"
-    echo ""
+    log_info "Miner configuration:"
+    log_info "  GPU Type: $GPU_TYPE"
+    log_info "  Build Tags: ${BUILD_TAGS:-none}"
+    log_info "  CGO Enabled: $CGO_ENABLED"
+    log_info "  Architecture: $QGETH_GO_ARCH"
     
     cd ../../quantum-miner
     
-    # Ensure Go temp directories exist before build
-    echo "🔧 Ensuring Go temp directories exist..."
+    # Ensure temp directories exist
     mkdir -p "$GOCACHE" "$GOTMPDIR" "$TMPDIR"
     
-    # Build command for retry mechanism
-    BUILD_CMD="go build -ldflags \"$LDFLAGS\" -trimpath -buildvcs=false"
+    # Build command with appropriate flags based on Go version
+    if [ "$USE_CHECKLINKNAME" = true ]; then
+        log_info "🔧 Using -checklinkname=0 flag for Go 1.23+ memsize compatibility"
+        BUILD_CMD="go build -ldflags \"-checklinkname=0 $LDFLAGS\" -trimpath -buildvcs=false"
+    else
+        log_info "🔧 Using standard build flags for Go version compatibility"
+        BUILD_CMD="go build -ldflags \"$LDFLAGS\" -trimpath -buildvcs=false"
+    fi
+    
     if [ -n "$BUILD_TAGS" ]; then
         BUILD_CMD="$BUILD_CMD -tags $BUILD_TAGS"
     fi
     BUILD_CMD="$BUILD_CMD -o ../quantum-miner ."
     
-    # Use automated retry with error recovery
     if build_with_retry "quantum-miner" "$BUILD_CMD" "../quantum-miner"; then
         cd ..
-        echo "✅ Quantum-Miner built successfully: ./quantum-miner ($GPU_TYPE)"
+        log_success "✅ Quantum-Miner built successfully: ./quantum-miner ($GPU_TYPE)"
         
-        # Show file info if ls is available
         if command -v ls >/dev/null 2>&1; then
-            ls -lh ./quantum-miner 2>/dev/null || echo "Binary created: ./quantum-miner"
+            ls -lh ./quantum-miner 2>/dev/null || log_info "Binary created: ./quantum-miner"
         else
-            echo "Binary created: ./quantum-miner"
+            log_info "Binary created: ./quantum-miner"
         fi
         
-        # Test GPU support
         if [ "$GPU_TYPE" != "CPU" ]; then
-            echo "🚀 Testing GPU support..."
+            log_info "🚀 Testing GPU support..."
             if ./quantum-miner --help 2>/dev/null | grep -q "GPU" 2>/dev/null; then
-                echo "✅ GPU support confirmed in binary"
+                log_success "✅ GPU support confirmed in binary"
             else
-                echo "🚨 GPU support may not be active (check dependencies)"
+                log_warning "🚨 GPU support may not be active (check dependencies)"
             fi
         fi
     else
         cd ..
-        echo "🚨 Error: Failed to build quantum-miner after all retry attempts"
-        echo "🔧 Manual troubleshooting steps:"
-        echo "  1. Check Go version: go version"
-        echo "  2. Clean everything: go clean -cache -modcache -testcache"
-        echo "  3. Install build tools: apt install build-essential"
-        echo "  4. Check GPU drivers: nvidia-smi"
-        exit 1
+        log_error "Failed to build quantum-miner after all retry attempts"
+        return 1
     fi
 }
 
-# Function to create Q Coin geth wrapper - robust version for minimal Linux
+# Create geth wrapper
 create_geth_wrapper() {
-    echo "🚀 Creating Q Coin geth wrapper (prevents Ethereum connections)..."
+    log_info "🚀 Creating Q Coin geth wrapper..."
     
-    # Create wrapper in project root (current directory after build)
-    WRAPPER_PATH="./geth"
-    
-    # Create wrapper with fixed path resolution
-    cat > "$WRAPPER_PATH" << 'EOF'
+    cat > "./geth" << 'EOF'
 #!/bin/bash
-# Q Coin Geth Wrapper - Fixed path version
+# Q Coin Geth Wrapper
 # This wrapper ensures geth ALWAYS uses Q Coin networks, never Ethereum
 # Default: Q Coin Testnet (Chain ID 73235)
-# Use --qcoin-mainnet for Q Coin Mainnet (Chain ID 73236)
 
-# Set robust PATH for minimal Linux environments
-export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/go/bin:$PATH"
+export PATH="/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
 
-# Get absolute path to geth.bin regardless of where this script is called from
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REAL_GETH="$SCRIPT_DIR/geth.bin"
 
-# Check if actual geth binary exists
 if [ ! -f "$REAL_GETH" ]; then
     echo "🚨 ERROR: Q Coin geth binary not found at $REAL_GETH"
-    echo "   Build it first: ./build-linux.sh"
+    echo "   Build it first: ./build-linux.sh geth"
     exit 1
 fi
-# Parse Q Coin specific flags
+
 USE_QCOIN_MAINNET=false
 FILTERED_ARGS=()
 
@@ -693,11 +602,7 @@ for arg in "$@"; do
     esac
 done
 
-# Check if this is a bare geth call (likely trying to connect to Ethereum)
-# Allow init commands and commands with --datadir or --networkid through
-# CRITICAL: Always allow init commands through without interference
 if [[ " ${FILTERED_ARGS[*]} " =~ " init " ]]; then
-    # This is an init command - pass through directly without any modification
     exec "$REAL_GETH" "${FILTERED_ARGS[@]}"
 elif [ ${#FILTERED_ARGS[@]} -eq 0 ] || ([[ ! " ${FILTERED_ARGS[*]} " =~ " --networkid " ]] && [[ ! " ${FILTERED_ARGS[*]} " =~ " --datadir " ]]); then
     echo "🚨 Q Coin Geth: Prevented connection to Ethereum mainnet!"
@@ -721,7 +626,6 @@ elif [ ${#FILTERED_ARGS[@]} -eq 0 ] || ([[ ! " ${FILTERED_ARGS[*]} " =~ " --netw
     exit 1
 fi
 
-# Add Q Coin network defaults if not specified (but not for init commands)
 if [[ ! " ${FILTERED_ARGS[*]} " =~ " --networkid " ]] && [[ ! " ${FILTERED_ARGS[*]} " =~ " init " ]]; then
     if $USE_QCOIN_MAINNET; then
         FILTERED_ARGS+=("--networkid" "73236")
@@ -730,237 +634,225 @@ if [[ ! " ${FILTERED_ARGS[*]} " =~ " --networkid " ]] && [[ ! " ${FILTERED_ARGS[
     fi
 fi
 
-# Execute the real geth with filtered arguments
 exec "$REAL_GETH" "${FILTERED_ARGS[@]}"
 EOF
     
-    # Make wrapper executable with proper error handling
-    if chmod +x "$WRAPPER_PATH" 2>/dev/null; then
-        echo "✅ Q Coin geth wrapper created: ./geth"
+    if command -v chmod >/dev/null 2>&1; then
+        chmod +x "./geth"
+        log_success "✅ Q Coin geth wrapper created: ./geth"
     else
-        echo "⚠️ Q Coin geth wrapper created but chmod failed (may need manual chmod +x)"
-        echo "✅ Wrapper created at: ./geth"
+        log_warning "⚠️ chmod not available - wrapper may need manual chmod +x"
     fi
 }
 
-# Function to create quantum solver Python script
+# Create quantum solver script
 create_solver() {
-    echo "🚀 Creating quantum solver helper script..."
+    log_info "🚀 Creating quantum solver helper script..."
     
-    # Create using shell built-ins for robustness
-    {
-        echo '#!/usr/bin/env python3'
-        echo '"""'
-        echo 'Quantum circuit solver for Q Coin mining'
-        echo 'Compatible with the quantum-geth consensus algorithm'
-        echo '"""'
-        echo ''
-        echo 'import sys'
-        echo 'import json'
-        echo 'import argparse'
-        echo 'import hashlib'
-        echo 'import random'
-        echo 'from typing import List, Tuple'
-        echo ''
-        echo 'def create_quantum_circuit(seed: str, puzzle_idx: int) -> dict:'
-        echo '    """Create a 16-qubit quantum circuit based on seed and puzzle index"""'
-        echo '    # Use seed + puzzle index to generate deterministic circuit'
-        echo '    circuit_seed = hashlib.sha256((seed + str(puzzle_idx)).encode()).hexdigest()'
-        echo '    random.seed(circuit_seed)'
-        echo '    '
-        echo '    # Generate gates (simplified T-gate heavy circuit)'
-        echo '    gates = []'
-        echo '    for i in range(16):  # 16 qubits'
-        echo '        # Add T-gates for quantum advantage'
-        echo '        for _ in range(512):  # 512 T-gates per qubit = 8192 total'
-        echo '            gates.append(f"T q[{i}]")'
-        echo '    '
-        echo '    # Add some CNOT gates for entanglement'
-        echo '    for i in range(15):'
-        echo '        gates.append(f"CNOT q[{i}], q[{i+1}]")'
-        echo '    '
-        echo '    # Add measurements'
-        echo '    measurements = []'
-        echo '    for i in range(16):'
-        echo '        # Deterministic measurement outcome based on circuit'
-        echo '        outcome = random.randint(0, 1)'
-        echo '        measurements.append(outcome)'
-        echo '    '
-        echo '    return {'
-        echo '        "gates": gates,'
-        echo '        "measurements": measurements,'
-        echo '        "t_gate_count": 8192,'
-        echo '        "total_gates": len(gates),'
-        echo '        "depth": 16'
-        echo '    }'
-        echo ''
-        echo 'def solve_puzzles(seed: str, puzzle_count: int, qubits: int = 16) -> dict:'
-        echo '    """Solve multiple quantum puzzles"""'
-        echo '    all_proofs = []'
-        echo '    all_outcomes = []'
-        echo '    '
-        echo '    for i in range(puzzle_count):'
-        echo '        circuit = create_quantum_circuit(seed, i)'
-        echo '        all_proofs.extend(circuit["gates"])'
-        echo '        all_outcomes.extend(circuit["measurements"])'
-        echo '    '
-        echo '    # Create Merkle roots (simplified)'
-        echo '    proof_data = "".join(all_proofs).encode()'
-        echo '    proof_root = hashlib.sha256(proof_data).hexdigest()'
-        echo '    '
-        echo '    outcome_data = bytes(all_outcomes)'
-        echo '    outcome_root = hashlib.sha256(outcome_data).hexdigest()'
-        echo '    '
-        echo '    gate_data = f"T-gates:{puzzle_count * 20}".encode()'
-        echo '    gate_hash = hashlib.sha256(gate_data).hexdigest()'
-        echo '    '
-        echo '    # Create compressed quantum blob'
-        echo '    blob_data = proof_root[:31].encode()  # 31 bytes'
-        echo '    quantum_blob = blob_data.hex()'
-        echo '    '
-        echo '    return {'
-        echo '        "proof_root": proof_root,'
-        echo '        "outcome_root": outcome_root,'
-        echo '        "gate_hash": gate_hash,'
-        echo '        "quantum_blob": quantum_blob,'
-        echo '        "total_gates": puzzle_count * 20,'
-        echo '        "t_gates": puzzle_count * 20,'
-        echo '        "circuit_depth": 16,'
-        echo '        "measurements": all_outcomes,'
-        echo '        "success": True'
-        echo '    }'
-        echo ''
-        echo 'def main():'
-        echo '    parser = argparse.ArgumentParser(description="Quantum circuit solver")'
-        echo '    parser.add_argument("--seed", required=True, help="Hex seed for circuit generation")'
-        echo '    parser.add_argument("--puzzles", type=int, default=128, help="Number of puzzles")'
-        echo '    parser.add_argument("--qubits", type=int, default=16, help="Number of qubits")'
-        echo '    parser.add_argument("--simulator", default="aer_simulator", help="Simulator type")'
-        echo '    '
-        echo '    args = parser.parse_args()'
-        echo '    '
-        echo '    try:'
-        echo '        result = solve_puzzles(args.seed, args.puzzles, args.qubits)'
-        echo '        print(json.dumps(result, indent=2))'
-        echo '        sys.exit(0)'
-        echo '    except Exception as e:'
-        echo '        error_result = {'
-        echo '            "error": str(e),'
-        echo '            "success": False'
-        echo '        }'
-        echo '        print(json.dumps(error_result, indent=2))'
-        echo '        sys.exit(1)'
-        echo ''
-        echo 'if __name__ == "__main__":'
-        echo '    main()'
-    } > ./quantum_solver.py
+    cat > ./quantum_solver.py << 'EOF'
+#!/usr/bin/env python3
+"""
+Enhanced Quantum Circuit Solver for Q Coin Mining
+Compatible with the quantum-geth consensus algorithm
+"""
+
+import sys
+import json
+import argparse
+import hashlib
+import random
+
+def solve_puzzles(seed, puzzle_count, qubits=16):
+    """Solve quantum puzzles for Q Coin mining"""
     
-    # Make executable if chmod is available
+    all_outcomes = []
+    total_t_gates = 0
+    
+    for i in range(puzzle_count):
+        # Create deterministic quantum circuit simulation
+        circuit_seed = hashlib.sha256((seed + str(i)).encode()).hexdigest()
+        random.seed(circuit_seed)
+        
+        # Simulate 16-qubit quantum circuit with T-gates
+        outcome = []
+        t_gate_count = 512  # T-gates per qubit for quantum advantage
+        
+        for qubit in range(qubits):
+            # Simulate quantum measurement (0 or 1)
+            measurement = random.randint(0, 1)
+            outcome.append(measurement)
+        
+        all_outcomes.extend(outcome)
+        total_t_gates += qubits * t_gate_count
+    
+    # Create quantum proof
+    outcome_data = bytes(all_outcomes)
+    outcome_root = hashlib.sha256(outcome_data).hexdigest()
+    
+    gate_data = f"T-gates:{total_t_gates}".encode()
+    gate_hash = hashlib.sha256(gate_data).hexdigest()
+    
+    proof_root = hashlib.sha256((outcome_root + gate_hash).encode()).hexdigest()
+    quantum_blob = outcome_root[:31].encode().hex()
+    
+    return {
+        'proof_root': proof_root,
+        'outcome_root': outcome_root,
+        'gate_hash': gate_hash,
+        'quantum_blob': quantum_blob,
+        't_gates': total_t_gates,
+        'puzzle_count': puzzle_count,
+        'success': True
+    }
+
+def main():
+    parser = argparse.ArgumentParser(description="Q Coin Quantum Circuit Solver")
+    parser.add_argument("--seed", required=True, help="Hex seed for circuit generation")
+    parser.add_argument("--puzzles", type=int, default=128, help="Number of puzzles")
+    parser.add_argument("--qubits", type=int, default=16, help="Number of qubits")
+    
+    args = parser.parse_args()
+    
+    try:
+        result = solve_puzzles(args.seed, args.puzzles, args.qubits)
+        print(json.dumps(result, indent=2))
+        sys.exit(0)
+    except Exception as e:
+        error_result = {
+            'error': str(e),
+            'success': False
+        }
+        print(json.dumps(error_result, indent=2))
+        sys.exit(1)
+
+if __name__ == '__main__':
+    main()
+EOF
+    
     if command -v chmod >/dev/null 2>&1; then
         chmod +x ./quantum_solver.py
     fi
     
-    echo "✅ Quantum solver script created: ./quantum_solver.py"
+    log_success "✅ Quantum solver script created: ./quantum_solver.py"
 }
 
-# Function to create Linux miner startup script
-create_linux_miner_script() {
-    echo "🚀 Creating Linux miner startup script..."
+# Main execution function
+main() {
+    echo ""
+    echo -e "${CYAN}🚀 Q Coin Enhanced Cross-Distribution Build System${NC}"
+    echo ""
     
-    {
-        echo '#!/bin/bash'
-        echo '# Easy Q Coin miner startup for Linux'
-        echo '# Usage: ./start-linux-miner.sh [threads] [address]'
-        echo ''
-        echo 'THREADS=${1:-1}'
-        echo 'MINING_ADDRESS=${2:-"0x742d35C6C4e6d8de6f10E7FF75DD98dd25b02C3A"}'
-        echo 'RPC_URL="http://127.0.0.1:8545"'
-        echo ''
-        echo 'echo "🚀 Starting Q Coin Linux Miner..."'
-        echo 'echo "Threads: $THREADS"'
-        echo 'echo "Mining Address: $MINING_ADDRESS"'
-        echo 'echo "RPC URL: $RPC_URL"'
-        echo 'echo ""'
-        echo ''
-        echo 'if [ ! -f "./quantum-miner" ]; then'
-        echo '    echo "🚨 ERROR: quantum-miner not found!"'
-        echo '    echo "Build it first: ./build-linux.sh"'
-        echo '    exit 1'
-        echo 'fi'
-        echo ''
-        echo './quantum-miner -rpc-url "$RPC_URL" -address "$MINING_ADDRESS" -threads "$THREADS"'
-    } > ./start-linux-miner.sh
+    # Detect system
+    detect_system
     
-    if command -v chmod >/dev/null 2>&1; then
-        chmod +x ./start-linux-miner.sh
+    log_info "System Configuration:"
+    log_info "  OS: $QGETH_OS ($QGETH_DISTRO $QGETH_DISTRO_VERSION)"
+    log_info "  Architecture: $QGETH_ARCH (Go: $QGETH_GO_ARCH)"
+    log_info "  Package Manager: ${PKG_MANAGER:-unknown}"
+    log_info "  Shell: $QGETH_SHELL"
+    echo ""
+    log_info "Build Configuration:"
+    log_info "  Target: $TARGET"
+    log_info "  Version: $VERSION"
+    log_info "  Clean: $CLEAN"
+    log_info "  Auto-confirm: $AUTO_CONFIRM"
+    log_info "  Debug: $DEBUG"
+    echo ""
+    
+    # Pre-build checks
+    log_info "🔧 Running automated pre-build checks and fixes..."
+    check_and_fix_permissions
+    check_memory
+    setup_temp_build
+    
+    # Check for partial builds
+    if [ -f "geth.bin" ] && [ ! -f "geth" ]; then
+        log_info "🔍 Detected partial build (geth.bin without geth wrapper)"
+        log_info "🧹 Cleaning partial build state..."
+        rm -f geth.bin geth quantum-miner quantum_solver.py
+        log_info "Partial build artifacts removed"
     fi
     
-    echo "✅ Linux miner script created: ./start-linux-miner.sh"
+    # Clean if requested
+    if [ "$CLEAN" = true ]; then
+        log_info "🧹 Cleaning previous builds..."
+        rm -f geth geth.bin quantum-miner quantum_solver.py
+        go clean -cache 2>/dev/null || true
+        log_info "Previous binaries removed"
+    fi
+    
+    # Check directories exist
+    if [ ! -d "../../quantum-geth" ]; then
+        log_error "quantum-geth directory not found!"
+        log_error "Please run this script from scripts/linux/ directory."
+        exit 1
+    fi
+    
+    if [ ! -d "../../quantum-miner" ]; then
+        log_error "quantum-miner directory not found!"
+        log_error "Please run this script from scripts/linux/ directory."
+        exit 1
+    fi
+    
+    # Set build environment
+    export GOOS=linux
+    export GOARCH=$QGETH_GO_ARCH
+    export CGO_ENABLED=0
+    
+    # Get build flags and check Go version
+    get_build_flags
+    check_go_version_for_memsize
+    
+    log_info "Build environment:"
+    log_info "  Target OS: $GOOS/$GOARCH"
+    log_info "  Build Time: $BUILD_TIME"
+    log_info "  Git Commit: $GIT_COMMIT"
+    log_info "  Output Directory: $(pwd)"
+    echo ""
+    
+    # Execute builds
+    case $TARGET in
+        "geth")
+            if build_geth; then
+                create_solver
+                log_success "🎉 Geth build completed successfully!"
+            else
+                log_error "Geth build failed"
+                exit 1
+            fi
+            ;;
+        "miner")
+            if build_miner; then
+                log_success "🎉 Miner build completed successfully!"
+            else
+                log_error "Miner build failed"
+                exit 1
+            fi
+            ;;
+        "both")
+            if build_geth && build_miner; then
+                create_solver
+                log_success "🎉 Both builds completed successfully!"
+            else
+                log_error "One or more builds failed"
+                exit 1
+            fi
+            ;;
+    esac
+    
+    log_success "✅ Enhanced cross-distribution build completed!"
+    log_info "Target: $TARGET"
+    log_info "System: $QGETH_OS ($QGETH_DISTRO $QGETH_DISTRO_VERSION)"
+    log_info "Architecture: $QGETH_ARCH"
+    
+    if [ -f "./geth" ]; then
+        log_info "📱 Q Coin node ready: ./start-geth.sh"
+    fi
+    
+    if [ -f "./quantum-miner" ]; then
+        log_info "⛏️ Q Coin miner ready: ./start-miner.sh"
+    fi
 }
 
-# Main build logic
-case $TARGET in
-    "geth")
-        build_geth
-        create_solver
-        ;;
-    "miner")
-        build_miner
-        create_solver
-        create_linux_miner_script
-        ;;
-    "both")
-        build_geth
-        build_miner
-        create_solver
-        create_linux_miner_script
-        ;;
-    *)
-        echo "🚨 Error: Invalid target '$TARGET'"
-        echo "Usage: ./build-linux.sh [geth|miner|both] [--clean]"
-        exit 1
-        ;;
-esac
-
-echo ""
-echo "✅ Build Complete!"
-echo ""
-echo "🚀 Binaries created in project root directory:"
-if [ "$TARGET" = "geth" ] || [ "$TARGET" = "both" ]; then
-    echo "  ./geth                 - Q Coin Geth wrapper (prevents Ethereum connections)"
-    echo "  ./geth.bin             - Quantum-Geth binary"
-fi
-if [ "$TARGET" = "miner" ] || [ "$TARGET" = "both" ]; then
-    echo "  ./quantum-miner        - Quantum Miner"
-    echo "  ./start-linux-miner.sh - Easy miner startup"
-fi
-echo "  ./quantum_solver.py    - Python quantum solver helper"
-echo ""
-echo "🚀 Quick Start (Easy Method):"
-if [ "$TARGET" = "geth" ] || [ "$TARGET" = "both" ]; then
-    echo "  # Start node:"
-    echo "  ./start-geth.sh"
-fi
-if [ "$TARGET" = "miner" ] || [ "$TARGET" = "both" ]; then
-    echo "  # Start mining (in another terminal):"
-    echo "  ./start-linux-miner.sh"
-fi
-echo ""
-echo "💾 Manual Method:"
-if [ "$TARGET" = "geth" ] || [ "$TARGET" = "both" ]; then
-    echo "  # Initialize blockchain:"
-    echo "  ./geth --datadir \$HOME/.qcoin init ./configs/genesis_quantum_testnet.json"
-    echo ""
-    echo "  # Start node (testnet, external mining):"
-    echo "  ./geth --datadir \$HOME/.qcoin --networkid 73235 --mine --miner.threads 0 \\"
-    echo "         --http --http.api eth,net,web3,personal,admin,miner \\"
-    echo "         --miner.etherbase 0x742d35C6C4e6d8de6f10E7FF75DD98dd25b02C3A"
-fi
-if [ "$TARGET" = "miner" ] || [ "$TARGET" = "both" ]; then
-    echo ""
-    echo "  # Start mining (in another terminal):"
-    echo "  ./quantum-miner -rpc-url http://127.0.0.1:8545 \\"
-    echo "                  -address 0x742d35C6C4e6d8de6f10E7FF75DD98dd25b02C3A"
-fi
-echo ""
-echo "✅ All builds use CGO_ENABLED=0 for geth - quantum field compatibility guaranteed!" 
+# Run main function
+main "$@" 
