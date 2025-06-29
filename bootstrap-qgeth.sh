@@ -524,10 +524,13 @@ create_systemd_service() {
 
 echo "[$(date)] Q Geth systemd service starting..."
 
-# Clean up any existing geth processes
-echo "[$(date)] Cleaning up existing processes..."
-pkill -f "geth" >/dev/null 2>&1 || true
-pkill -f "start-geth" >/dev/null 2>&1 || true
+# Clean up any existing geth processes (but not this startup script)
+echo "[$(date)] Cleaning up existing geth processes..."
+pkill -f "geth.bin" >/dev/null 2>&1 || true
+pkill -f "geth --" >/dev/null 2>&1 || true
+
+# Clean up any stale geth processes by name (not command line)
+pgrep -x "geth" >/dev/null 2>&1 && pkill -x "geth" >/dev/null 2>&1 || true
 
 # Wait a moment for cleanup
 sleep 2
