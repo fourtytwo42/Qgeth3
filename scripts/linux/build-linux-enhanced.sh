@@ -972,12 +972,13 @@ verify_go_version() {
             USE_CHECKLINKNAME=false  # Go 1.21 uses standard build flags
         else
             log_warning "⚠️ Non-standard Go version detected: $go_version"
-            log_warning "⚠️ Quantum blockchain requires Go 1.21 for consensus compatibility"
-            log_warning "⚠️ Different Go versions may cause consensus failures"
+            log_warning "⚠️ Quantum blockchain requires Go 1.21.13 for optimal consensus compatibility"
+            log_warning "⚠️ Different Go versions may cause consensus failures across nodes"
+            log_warning "⚠️ Run bootstrap-qgeth.sh to install the correct Go version"
             USE_CHECKLINKNAME=false  # Default to standard build
         fi
     else
-        log_error "Go not found - please install Go 1.21"
+        log_error "Go not found - please install Go 1.21.13 via bootstrap-qgeth.sh"
         exit 1
     fi
 }
