@@ -16,6 +16,7 @@ AUTO_CONFIRM=false
 TARGET="both"
 CLEAN=false
 DEBUG=false
+LOG_FILE=""
 
 for arg in "$@"; do
     case $arg in
@@ -27,6 +28,12 @@ for arg in "$@"; do
             ;;
         --debug)
             DEBUG=true
+            ;;
+        --log)
+            LOG_FILE="build-$(date +%Y%m%d-%H%M%S).log"
+            ;;
+        --log=*)
+            LOG_FILE="${arg#--log=}"
             ;;
         geth|miner|both)
             TARGET="$arg"
@@ -45,6 +52,8 @@ for arg in "$@"; do
             echo "  -y, --yes     Auto-confirm all prompts"
             echo "  --clean       Clean previous builds"
             echo "  --debug       Enable debug output"
+            echo "  --log         Save build log to timestamped file"
+            echo "  --log=FILE    Save build log to specific file"
             echo "  --help        Show this help"
             echo ""
             exit 0
@@ -749,6 +758,12 @@ EOF
 
 # Main execution function
 main() {
+    # Set up logging if requested
+    if [ -n "$LOG_FILE" ]; then
+        echo "🔗 Logging build output to: $LOG_FILE"
+        exec > >(tee -a "$LOG_FILE") 2>&1
+    fi
+    
     echo ""
     echo -e "${CYAN}🚀 Q Coin Enhanced Cross-Distribution Build System${NC}"
     echo ""
@@ -892,6 +907,14 @@ main() {
     
     if [ -f "./quantum-miner" ]; then
         log_info "⛏️ Q Coin miner ready: ./start-miner.sh"
+    fi
+    
+    # Show log file location if logging was enabled
+    if [ -n "$LOG_FILE" ]; then
+        echo ""
+        log_success "📝 Full build log saved to: $LOG_FILE"
+        log_info "💡 To view log: cat $LOG_FILE"
+        log_info "💡 To search errors: grep -i error $LOG_FILE"
     fi
 }
 
