@@ -142,16 +142,23 @@ install_go_1_24() {
     # Check if Go 1.24.4 is already installed
     if command -v go >/dev/null 2>&1; then
         GO_VERSION_FULL=$(go version 2>/dev/null)
+        # Extract any Go version for logging
+        GO_VERSION_ANY=$(echo "$GO_VERSION_FULL" | grep -o 'go1\.[0-9]*\.[0-9]*' | head -1)
+        # Extract specifically Go 1.24.x versions for compatibility check
         GO_VERSION_EXACT=$(echo "$GO_VERSION_FULL" | grep -o 'go1\.24\.[0-9]*' | head -1)
         
         log_info "Found existing Go: $GO_VERSION_FULL"
-        log_info "Extracted version: $GO_VERSION_EXACT"
+        log_info "Detected version: $GO_VERSION_ANY"
         
         if [ "$GO_VERSION_EXACT" = "go1.24.4" ]; then
             log_success "✅ Go 1.24.4 already installed - quantum consensus compatible!"
             return 0
         else
-            log_warning "⚠️ Go $GO_VERSION_EXACT found, but need Go 1.24.4 for quantum consensus"
+            if [ -n "$GO_VERSION_EXACT" ]; then
+                log_warning "⚠️ Go $GO_VERSION_EXACT found, but need Go 1.24.4 for quantum consensus"
+            else
+                log_warning "⚠️ Go $GO_VERSION_ANY found, but need Go 1.24.4 for quantum consensus"
+            fi
             log_info "Upgrading to Go 1.24.4..."
         fi
     else
