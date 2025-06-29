@@ -16,6 +16,7 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"quantum-gpu-miner/pkg/quantum"
 	"runtime"
@@ -137,6 +138,15 @@ type QuantumMiner struct {
 	// Additional fields for optimized mining
 	wg        sync.WaitGroup // Wait group for thread management
 	isRunning atomic.Bool    // Atomic flag for running state
+	
+	// IBM Quantum Cloud integration
+	quantumCloudEnabled bool          // Whether IBM Quantum Cloud mining is enabled
+	ibmToken           string        // IBM Cloud API key
+	ibmInstance        string        // IBM Quantum service instance CRN
+	useSimulator       bool          // Use simulator vs real hardware
+	quantumBudget      float64       // Maximum budget for quantum hardware
+	quantumSpent       float64       // Amount spent so far
+	quantumMutex       sync.RWMutex  // Protect quantum cloud state
 }
 
 // ThreadState tracks individual thread execution state
@@ -259,16 +269,23 @@ type GPUMetrics struct {
 
 func main() {
 	var (
-		version  = flag.Bool("version", false, "Show version")
-		coinbase = flag.String("coinbase", "", "Coinbase address")
-		node     = flag.String("node", "", "Node URL (e.g., http://127.0.0.1:8545)")
-		ip       = flag.String("ip", "127.0.0.1", "Node IP address")
-		port     = flag.Int("port", 8545, "Node RPC port")
-		threads  = flag.Int("threads", runtime.NumCPU(), "Number of mining threads")
-		gpu      = flag.Bool("gpu", false, "Enable GPU mining (CUDA/Qiskit)")
-		gpuID    = flag.Int("gpu-id", 0, "GPU device ID to use (default: 0)")
-		logFile  = flag.Bool("log", false, "Enable logging to file (quantum-miner.log)")
-		help     = flag.Bool("help", false, "Show help")
+		version       = flag.Bool("version", false, "Show version")
+		coinbase      = flag.String("coinbase", "", "Coinbase address")
+		node          = flag.String("node", "", "Node URL (e.g., http://127.0.0.1:8545)")
+		ip            = flag.String("ip", "127.0.0.1", "Node IP address")
+		port          = flag.Int("port", 8545, "Node RPC port")
+		threads       = flag.Int("threads", runtime.NumCPU(), "Number of mining threads")
+		gpu           = flag.Bool("gpu", false, "Enable GPU mining (CUDA/Qiskit)")
+		gpuID         = flag.Int("gpu-id", 0, "GPU device ID to use (default: 0)")
+		logFile       = flag.Bool("log", false, "Enable logging to file (quantum-miner.log)")
+		help          = flag.Bool("help", false, "Show help")
+		
+		// IBM Quantum Cloud flags
+		quantumCloud  = flag.Bool("quantum-cloud", false, "Enable IBM Quantum Cloud mining")
+		ibmToken      = flag.String("ibm-token", "", "IBM Cloud API key (or set IBM_QUANTUM_TOKEN env var)")
+		ibmInstance   = flag.String("ibm-instance", "", "IBM Quantum service instance CRN (or set IBM_QUANTUM_INSTANCE env var)")
+		useSimulator  = flag.Bool("use-simulator", true, "Use IBM Cloud simulator (free) instead of real quantum hardware")
+		quantumBudget = flag.Float64("quantum-budget", 10.0, "Maximum budget for real quantum hardware mining (USD)")
 	)
 	flag.Parse()
 
@@ -345,10 +362,66 @@ func main() {
 	} else {
 		fmt.Printf("   🧵 CPU Threads: %d\n", *threads)
 	}
+	
+	// IBM Quantum Cloud configuration
+	if *quantumCloud {
+		fmt.Printf("   ☁️  IBM Quantum Cloud: ENABLED\n")
+		if *useSimulator {
+			fmt.Printf("   🖥️  Quantum Backend: IBM Cloud Simulator (FREE)\n")
+		} else {
+			fmt.Printf("   🔬 Quantum Backend: Real IBM Quantum Hardware\n")
+			fmt.Printf("   💸 Budget Limit: $%.2f USD\n", *quantumBudget)
+		}
+		// Show partial token for verification (hide sensitive parts)
+		if *ibmToken != "" {
+			tokenDisplay := ""
+			if len(*ibmToken) > 8 {
+				tokenDisplay = (*ibmToken)[:4] + "..." + (*ibmToken)[len(*ibmToken)-4:]
+			} else {
+				tokenDisplay = "***"
+			}
+			fmt.Printf("   🔑 IBM Token: %s\n", tokenDisplay)
+		}
+		if *ibmInstance != "" {
+			fmt.Printf("   🏭 Instance: %s\n", *ibmInstance)
+		}
+	} else {
+		fmt.Printf("   🖥️  Quantum Backend: Local simulation\n")
+	}
+	
 	fmt.Printf("   ⚛️  Quantum Puzzles: 128 chained per block\n")
 	fmt.Printf("   🔬 Qubits per Puzzle: 16\n")
 	fmt.Printf("   🚪 T-Gates per Puzzle: minimum 20 (ENFORCED)\n")
 	fmt.Println("")
+
+	// Validate IBM Quantum Cloud settings if enabled
+	if *quantumCloud {
+		// Get token from flag or environment
+		token := *ibmToken
+		if token == "" {
+			token = os.Getenv("IBM_QUANTUM_TOKEN")
+		}
+		
+		// Get instance from flag or environment  
+		instance := *ibmInstance
+		if instance == "" {
+			instance = os.Getenv("IBM_QUANTUM_INSTANCE")
+		}
+		
+		if token == "" {
+			log.Fatal("❌ IBM Quantum Cloud enabled but no API token provided!\n" +
+				"   Use: -ibm-token YOUR_TOKEN or set IBM_QUANTUM_TOKEN environment variable\n" +
+				"   Get your token from: https://cloud.ibm.com/quantum")
+		}
+		
+		if instance == "" {
+			log.Fatal("❌ IBM Quantum Cloud enabled but no instance CRN provided!\n" +
+				"   Use: -ibm-instance YOUR_CRN or set IBM_QUANTUM_INSTANCE environment variable\n" +
+				"   Get your instance CRN from: https://cloud.ibm.com/quantum")
+		}
+		
+		fmt.Printf("✅ IBM Quantum Cloud configuration validated\n")
+	}
 
 	// Create quantum miner
 	now := time.Now()
@@ -369,6 +442,14 @@ func main() {
 		threadStates:        make(map[int]*ThreadState),
 		puzzleMemoryPool:    make(chan []PuzzleMemory, 100), // Memory pool for puzzle solving
 		threadStartDelay:    100 * time.Millisecond,         // Stagger thread starts
+		
+		// IBM Quantum Cloud settings
+		quantumCloudEnabled: *quantumCloud,
+		ibmToken:           *ibmToken,
+		ibmInstance:        *ibmInstance, 
+		useSimulator:       *useSimulator,
+		quantumBudget:      *quantumBudget,
+		quantumSpent:       0.0,
 	}
 
 	// Initialize multi-GPU system if enabled
@@ -1164,9 +1245,14 @@ func (m *QuantumMiner) getWork(ctx context.Context) (*WorkPackage, error) {
 	}, nil
 }
 
-// Enhanced quantum puzzle solving with CPU/GPU load balancing
+// Enhanced quantum puzzle solving with CPU/GPU load balancing and IBM Quantum Cloud support
 func (m *QuantumMiner) enhancedSolveQuantumPuzzles(ctx context.Context, blockNumber uint64, puzzleHashes []string, qnonce uint64, qbits, tcount, lnet int) (*QuantumProofSubmission, error) {
-	// Adaptive processing based on puzzle count
+	// Check if IBM Quantum Cloud mining is enabled
+	if m.quantumCloudEnabled {
+		return m.solveQuantumPuzzlesCloud(ctx, blockNumber, puzzleHashes, qnonce, qbits, tcount, lnet)
+	}
+	
+	// Adaptive processing based on puzzle count (local simulation)
 	if lnet > 64 {
 		return m.solveLargePuzzleSet(ctx, blockNumber, puzzleHashes, qnonce, qbits, tcount, lnet)
 	} else {
@@ -1247,6 +1333,108 @@ func (m *QuantumMiner) solveStandardPuzzleSet(ctx context.Context, blockNumber u
 	}
 
 	return m.buildQuantumProofFromMemory(memory, lnet)
+}
+
+// Solve quantum puzzles using IBM Quantum Cloud
+func (m *QuantumMiner) solveQuantumPuzzlesCloud(ctx context.Context, blockNumber uint64, puzzleHashes []string, qnonce uint64, qbits, tcount, lnet int) (*QuantumProofSubmission, error) {
+	// Check budget before proceeding with real hardware
+	if !m.useSimulator {
+		m.quantumMutex.RLock()
+		if m.quantumSpent >= m.quantumBudget {
+			m.quantumMutex.RUnlock()
+			return nil, fmt.Errorf("IBM Quantum Cloud budget exceeded: $%.2f/$%.2f spent", m.quantumSpent, m.quantumBudget)
+		}
+		m.quantumMutex.RUnlock()
+	}
+	
+	// Call IBM Quantum Cloud Python backend
+	result, cost, err := m.callIBMQuantumCloud(ctx, qnonce, qbits, tcount, lnet)
+	if err != nil {
+		logError("IBM Quantum Cloud execution failed: %v", err)
+		// Fallback to local simulation
+		logInfo("Falling back to local simulation...")
+		if lnet > 64 {
+			return m.solveLargePuzzleSet(ctx, blockNumber, puzzleHashes, qnonce, qbits, tcount, lnet)
+		} else {
+			return m.solveStandardPuzzleSet(ctx, blockNumber, puzzleHashes, qnonce, qbits, tcount, lnet)
+		}
+	}
+	
+	// Update spent budget for real hardware
+	if !m.useSimulator && cost > 0 {
+		m.quantumMutex.Lock()
+		m.quantumSpent += cost
+		logInfo("IBM Quantum Cloud cost: $%.4f (Total: $%.2f/$%.2f)", cost, m.quantumSpent, m.quantumBudget)
+		
+		// Warn when approaching budget limit
+		if m.quantumSpent >= m.quantumBudget*0.9 {
+			logInfo("⚠️ Approaching IBM Quantum Cloud budget limit: $%.2f/$%.2f (%.1f%%)", 
+				m.quantumSpent, m.quantumBudget, (m.quantumSpent/m.quantumBudget)*100)
+		}
+		m.quantumMutex.Unlock()
+	}
+	
+	return result, nil
+}
+
+// callIBMQuantumCloud executes quantum computation on IBM Cloud
+func (m *QuantumMiner) callIBMQuantumCloud(ctx context.Context, qnonce uint64, qbits, tcount, lnet int) (*QuantumProofSubmission, float64, error) {
+	// Prepare command arguments
+	args := []string{
+		"python",
+		"pkg/quantum/ibm_quantum_cloud.py",
+		fmt.Sprintf("--qnonce=%d", qnonce),
+		fmt.Sprintf("--qbits=%d", qbits),
+		fmt.Sprintf("--tcount=%d", tcount),
+		fmt.Sprintf("--lnet=%d", lnet),
+		fmt.Sprintf("--token=%s", m.ibmToken),
+		fmt.Sprintf("--instance=%s", m.ibmInstance),
+	}
+	
+	if m.useSimulator {
+		args = append(args, "--use-simulator")
+	}
+	
+	// Execute IBM Quantum Cloud backend
+	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
+	cmd.Dir = "." // Run from quantum-miner directory
+	
+	// Capture output
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	
+	err := cmd.Run()
+	if err != nil {
+		return nil, 0, fmt.Errorf("IBM Quantum Cloud execution failed: %v, stderr: %s", err, stderr.String())
+	}
+	
+	// Parse JSON result
+	var response struct {
+		Success       bool                   `json:"success"`
+		Result        *QuantumProofSubmission `json:"result"`
+		Cost          float64                `json:"cost"`
+		Error         string                 `json:"error"`
+		ExecutionTime float64                `json:"execution_time"`
+		Backend       string                 `json:"backend"`
+	}
+	
+	if err := json.Unmarshal(stdout.Bytes(), &response); err != nil {
+		return nil, 0, fmt.Errorf("failed to parse IBM Quantum Cloud response: %v", err)
+	}
+	
+	if !response.Success {
+		return nil, 0, fmt.Errorf("IBM Quantum Cloud error: %s", response.Error)
+	}
+	
+	if response.Result == nil {
+		return nil, 0, fmt.Errorf("IBM Quantum Cloud returned no result")
+	}
+	
+	logInfo("IBM Quantum Cloud success: backend=%s, time=%.2fs, cost=$%.4f", 
+		response.Backend, response.ExecutionTime, response.Cost)
+	
+	return response.Result, response.Cost, nil
 }
 
 // Simulate quantum puzzle with CPU-optimized approach
@@ -1463,6 +1651,19 @@ func (m *QuantumMiner) updateDashboard() {
 	activeCount := atomic.LoadInt32(&m.activeThreads)
 	fmt.Printf("│ 🧵 Thread Status   │ Active: %d/%-2d │ Max Concurrent: %-2d │ Pool: %d/%d    │\n",
 		activeCount, m.threads, m.maxActiveThreads, len(m.puzzleMemoryPool), m.memoryPoolSize)
+	
+	// IBM Quantum Cloud status display
+	if m.quantumCloudEnabled {
+		m.quantumMutex.RLock()
+		if m.useSimulator {
+			fmt.Printf("│ ☁️  Quantum Cloud   │ IBM Simulator │ Status: ACTIVE │ Cost: FREE      │\n")
+		} else {
+			budgetPercent := (m.quantumSpent / m.quantumBudget) * 100
+			fmt.Printf("│ ☁️  Quantum Cloud   │ Real Hardware │ Budget: $%.2f/$%.2f │ Used: %.1f%% │\n",
+				m.quantumSpent, m.quantumBudget, budgetPercent)
+		}
+		m.quantumMutex.RUnlock()
+	}
 	fmt.Println("├─────────────────────────────────────────────────────────────────────────────────┤")
 	fmt.Printf("│ 🔗 Current Block   │ Block: %-10d │ Difficulty: %-15d       │\n",
 		blockNumber, m.currentDifficulty)
@@ -1597,6 +1798,13 @@ func showHelp() {
 	fmt.Println("  -version            Show version information")
 	fmt.Println("  -help               Show this help message")
 	fmt.Println("")
+	fmt.Println("IBM QUANTUM CLOUD OPTIONS:")
+	fmt.Println("  -quantum-cloud       Enable IBM Quantum Cloud mining")
+	fmt.Println("  -ibm-token TOKEN     IBM Cloud API key (or set IBM_QUANTUM_TOKEN env var)")
+	fmt.Println("  -ibm-instance CRN    IBM Quantum service instance CRN (or set IBM_QUANTUM_INSTANCE env var)")
+	fmt.Println("  -use-simulator       Use IBM Cloud simulator (free) instead of real hardware (default: true)")
+	fmt.Println("  -quantum-budget N    Maximum budget for real quantum hardware mining in USD (default: 10.0)")
+	fmt.Println("")
 	fmt.Println("EXAMPLES:")
 	fmt.Println("  # CPU mining (default)")
 	fmt.Println("  quantum-gpu-miner -coinbase 0x742d35C6C4e6d8de6f10E7FF75DD98dd25b02C3A")
@@ -1604,6 +1812,20 @@ func showHelp() {
 	fmt.Println("  # GPU mining with CUDA acceleration")
 	fmt.Println("  quantum-gpu-miner -coinbase 0x123... -gpu")
 	fmt.Println("  quantum-gpu-miner -coinbase 0x123... -gpu -gpu-id 1")
+	fmt.Println("")
+	fmt.Println("  # IBM Quantum Cloud mining (FREE simulator)")
+	fmt.Println("  quantum-gpu-miner -coinbase 0x123... -quantum-cloud \\")
+	fmt.Println("    -ibm-token YOUR_API_KEY -ibm-instance YOUR_CRN")
+	fmt.Println("")
+	fmt.Println("  # IBM Quantum Cloud mining (REAL hardware with budget limit)")
+	fmt.Println("  quantum-gpu-miner -coinbase 0x123... -quantum-cloud \\")
+	fmt.Println("    -ibm-token YOUR_API_KEY -ibm-instance YOUR_CRN \\")
+	fmt.Println("    -use-simulator=false -quantum-budget 50.0")
+	fmt.Println("")
+	fmt.Println("  # Environment variables approach")
+	fmt.Println("  export IBM_QUANTUM_TOKEN=your_api_key")
+	fmt.Println("  export IBM_QUANTUM_INSTANCE=your_crn")
+	fmt.Println("  quantum-gpu-miner -coinbase 0x123... -quantum-cloud")
 	fmt.Println("")
 	fmt.Println("  # Custom network settings")
 	fmt.Println("  quantum-gpu-miner -coinbase 0x123... -ip 192.168.1.100 -port 8545")
@@ -1618,11 +1840,21 @@ func showHelp() {
 	fmt.Println("  - Valid Ethereum address for coinbase")
 	fmt.Println("  - Network connectivity to the quantum-geth node")
 	fmt.Println("")
+	fmt.Println("IBM QUANTUM CLOUD SETUP:")
+	fmt.Println("  1. Create IBM Cloud account: https://cloud.ibm.com/quantum")
+	fmt.Println("  2. Create a Quantum service instance")
+	fmt.Println("  3. Get your API key from: https://cloud.ibm.com/iam/apikeys")
+	fmt.Println("  4. Copy your instance CRN from the service dashboard")
+	fmt.Println("  5. Free tier: 10 minutes/month on real quantum hardware")
+	fmt.Println("  6. Real hardware cost: ~$1.60/second")
+	fmt.Println("  7. Cloud simulator: Unlimited and FREE")
+	fmt.Println("")
 	fmt.Println("QUANTUM MINING DETAILS:")
 	fmt.Println("  - Each block requires 128 chained quantum puzzle solutions")
 	fmt.Println("  - Each puzzle uses 16 qubits with minimum 20 T-gates (ENFORCED)")
 	fmt.Println("  - Difficulty adjusts every block using ASERT-Q algorithm")
 	fmt.Println("  - Target block time: 12 seconds")
+	fmt.Println("  - Real quantum advantage: superposition, entanglement, interference")
 	fmt.Println("")
 }
 
