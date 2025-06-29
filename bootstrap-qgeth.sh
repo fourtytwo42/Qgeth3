@@ -354,28 +354,11 @@ Wants=network.target
 [Service]
 Type=exec
 User=$ACTUAL_USER
-Group=$ACTUAL_USER
 WorkingDirectory=$PROJECT_DIR/scripts/linux
 ExecStart=$PROJECT_DIR/scripts/linux/start-geth.sh testnet
-ExecReload=/bin/kill -HUP \$MAINPID
-KillMode=process
 Restart=on-failure
 RestartSec=10s
 TimeoutStopSec=30s
-
-# Security settings  
-NoNewPrivileges=true
-PrivateTmp=false
-ProtectSystem=false
-ProtectHome=false
-ReadWritePaths=$INSTALL_DIR
-ReadWritePaths=/tmp
-ReadWritePaths=/var/lib/qcoin
-ReadWritePaths=/root
-
-# Resource limits
-LimitNOFILE=65536
-LimitNPROC=4096
 
 # Environment
 Environment=HOME=$USER_HOME
