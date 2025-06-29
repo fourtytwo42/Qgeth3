@@ -346,23 +346,34 @@ build_with_retry() {
     
     while [ $retry_count -lt $max_retries ]; do
         log_info "🚀 Build attempt $((retry_count + 1))/$max_retries for $build_type..."
+        log_debug "Build command: $build_cmd"
         
-        if eval "$build_cmd"; then
+        # Capture both stdout and stderr for debugging
+        if eval "$build_cmd" 2>&1; then
             log_success "✅ $build_type built successfully"
             return 0
         else
+            local exit_code=$?
             retry_count=$((retry_count + 1))
-            log_warning "🚨 Build attempt $retry_count failed for $build_type"
+            log_warning "🚨 Build attempt $retry_count failed for $build_type (exit code: $exit_code)"
             
             if [ $retry_count -lt $max_retries ]; then
                 log_info "🔧 Attempting automated recovery..."
                 rm -f "$output_binary" 2>/dev/null || true
+                
+                # Show which Go version is being used
+                log_info "Current Go version: $(go version 2>/dev/null || echo 'Go not found')"
+                log_info "Current PATH: $PATH"
+                
                 go clean -cache -testcache 2>/dev/null || true
                 go mod tidy 2>/dev/null || true
                 go mod download 2>/dev/null || true
                 sleep 2
             else
                 log_error "🚨 All build attempts failed for $build_type"
+                log_error "💡 Try running the build manually to see detailed error output:"
+                log_error "   cd $(pwd)"
+                log_error "   $build_cmd"
                 return 1
             fi
         fi
@@ -401,10 +412,10 @@ build_geth() {
     # Build command with appropriate flags based on Go version
     if [ "$USE_CHECKLINKNAME" = true ]; then
         log_info "🔧 Using -checklinkname=0 flag for Go 1.23+ memsize compatibility"
-        BUILD_CMD="CGO_ENABLED=0 go build -ldflags \"-checklinkname=0 $LDFLAGS\" -trimpath -buildvcs=false -o ../../../geth.bin ."
+        BUILD_CMD="PATH=\"$PATH\" CGO_ENABLED=0 go build -ldflags \"-checklinkname=0 $LDFLAGS\" -trimpath -buildvcs=false -o ../../../geth.bin ."
     else
         log_info "🔧 Using standard build flags for Go version compatibility"
-        BUILD_CMD="CGO_ENABLED=0 go build -ldflags \"$LDFLAGS\" -trimpath -buildvcs=false -o ../../../geth.bin ."
+        BUILD_CMD="PATH=\"$PATH\" CGO_ENABLED=0 go build -ldflags \"$LDFLAGS\" -trimpath -buildvcs=false -o ../../../geth.bin ."
     fi
     
     if build_with_retry "quantum-geth" "$BUILD_CMD" "../../../geth.bin"; then
@@ -511,10 +522,10 @@ build_miner() {
     # Build command with appropriate flags based on Go version
     if [ "$USE_CHECKLINKNAME" = true ]; then
         log_info "🔧 Using -checklinkname=0 flag for Go 1.23+ memsize compatibility"
-        BUILD_CMD="go build -ldflags \"-checklinkname=0 $LDFLAGS\" -trimpath -buildvcs=false"
+        BUILD_CMD="PATH=\"$PATH\" go build -ldflags \"-checklinkname=0 $LDFLAGS\" -trimpath -buildvcs=false"
     else
         log_info "🔧 Using standard build flags for Go version compatibility"
-        BUILD_CMD="go build -ldflags \"$LDFLAGS\" -trimpath -buildvcs=false"
+        BUILD_CMD="PATH=\"$PATH\" go build -ldflags \"$LDFLAGS\" -trimpath -buildvcs=false"
     fi
     
     if [ -n "$BUILD_TAGS" ]; then
@@ -557,7 +568,7 @@ create_geth_wrapper() {
 # This wrapper ensures geth ALWAYS uses Q Coin networks, never Ethereum
 # Default: Q Coin Testnet (Chain ID 73235)
 
-export PATH="/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
+export PATH="/usr/local/go/bin:$PATH"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REAL_GETH="$SCRIPT_DIR/geth.bin"
@@ -791,6 +802,36 @@ main() {
     if [ ! -d "../../quantum-miner" ]; then
         log_error "quantum-miner directory not found!"
         log_error "Please run this script from scripts/linux/ directory."
+        exit 1
+    fi
+    
+    # Ensure Go 1.24.4 is in PATH (bootstrap installs to /usr/local/go)
+    export PATH="/usr/local/go/bin:$PATH"
+    
+    # Verify Go version after PATH update
+    if command -v go >/dev/null 2>&1; then
+        CURRENT_GO_VERSION=$(go version 2>/dev/null)
+        log_info "Active Go version: $CURRENT_GO_VERSION"
+        
+        if ! echo "$CURRENT_GO_VERSION" | grep -q "go1.24"; then
+            log_warning "⚠️ Go 1.24.x not active! Current: $CURRENT_GO_VERSION"
+            log_info "Checking for Go 1.24.4 installation..."
+            
+            if [ -x "/usr/local/go/bin/go" ]; then
+                export PATH="/usr/local/go/bin:$PATH"
+                log_info "Updated PATH to use /usr/local/go/bin/go"
+                UPDATED_GO_VERSION=$(go version 2>/dev/null)
+                log_success "✅ Now using: $UPDATED_GO_VERSION"
+            else
+                log_error "Go 1.24.4 not found at /usr/local/go/bin/go"
+                log_error "Please run bootstrap script first to install Go 1.24.4"
+                exit 1
+            fi
+        else
+            log_success "✅ Go 1.24.x is active and ready"
+        fi
+    else
+        log_error "Go not found in PATH"
         exit 1
     fi
     
