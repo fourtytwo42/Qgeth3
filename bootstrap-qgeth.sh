@@ -7,7 +7,19 @@ set -e
 
 # Configuration
 GITHUB_REPO="fourtytwo42/Qgeth3"
-INSTALL_DIR="$HOME/qgeth"
+
+# Determine correct user home directory even when run with sudo
+if [ -n "$SUDO_USER" ] && [ "$SUDO_USER" != "root" ]; then
+    # Script run with sudo, use original user's home
+    USER_HOME=$(eval echo "~$SUDO_USER")
+    ACTUAL_USER="$SUDO_USER"
+else
+    # Script run normally or as root
+    USER_HOME="$HOME"
+    ACTUAL_USER="$USER"
+fi
+
+INSTALL_DIR="$USER_HOME/qgeth"
 PROJECT_DIR="$INSTALL_DIR/Qgeth3"
 AUTO_CONFIRM=false
 
@@ -132,14 +144,18 @@ install_go_1_24() {
         GO_VERSION_FULL=$(go version 2>/dev/null)
         GO_VERSION_EXACT=$(echo "$GO_VERSION_FULL" | grep -o 'go1\.24\.[0-9]*' | head -1)
         
+        log_info "Found existing Go: $GO_VERSION_FULL"
+        log_info "Extracted version: $GO_VERSION_EXACT"
+        
         if [ "$GO_VERSION_EXACT" = "go1.24.4" ]; then
-            log_info "Go 1.24.4 already installed: $GO_VERSION_FULL"
+            log_success "✅ Go 1.24.4 already installed - quantum consensus compatible!"
             return 0
         else
-            log_warning "Found Go version: $GO_VERSION_FULL"
-            log_info "Need Go 1.24.4 for quantum consensus compatibility..."
+            log_warning "⚠️ Go $GO_VERSION_EXACT found, but need Go 1.24.4 for quantum consensus"
             log_info "Upgrading to Go 1.24.4..."
         fi
+    else
+        log_info "No Go installation found, installing Go 1.24.4..."
     fi
     
     # Determine architecture
@@ -292,46 +308,49 @@ main() {
     # Create simple service management scripts
     log_info "Creating management scripts..."
     
-    cat > "$INSTALL_DIR/start-qgeth.sh" << 'EOF'
+    cat > "$INSTALL_DIR/start-qgeth.sh" << EOF
 #!/bin/bash
-# Start Q Geth Node
-cd ~/qgeth/Qgeth3/scripts/linux
-nohup ./start-geth.sh testnet > ~/qgeth/geth.log 2>&1 &
-echo $! > ~/qgeth/qgeth.pid
+# Start Q Geth Node for user: $ACTUAL_USER
+QGETH_DIR="$INSTALL_DIR"
+cd "\$QGETH_DIR/Qgeth3/scripts/linux"
+nohup ./start-geth.sh testnet > "\$QGETH_DIR/geth.log" 2>&1 &
+echo \$! > "\$QGETH_DIR/qgeth.pid"
 echo "Q Geth started in background"
-echo "PID: $(cat ~/qgeth/qgeth.pid)"
-echo "Logs: tail -f ~/qgeth/geth.log"
+echo "PID: \$(cat \"\$QGETH_DIR/qgeth.pid\")"
+echo "Logs: tail -f \"\$QGETH_DIR/geth.log\""
 EOF
     
-    cat > "$INSTALL_DIR/stop-qgeth.sh" << 'EOF'
+    cat > "$INSTALL_DIR/stop-qgeth.sh" << EOF
 #!/bin/bash
-# Stop Q Geth Node
-if [ -f ~/qgeth/qgeth.pid ]; then
-    PID=$(cat ~/qgeth/qgeth.pid)
-    if kill -0 $PID 2>/dev/null; then
-        kill $PID
-        echo "Q Geth stopped (PID: $PID)"
-        rm -f ~/qgeth/qgeth.pid
+# Stop Q Geth Node for user: $ACTUAL_USER
+QGETH_DIR="$INSTALL_DIR"
+if [ -f "\$QGETH_DIR/qgeth.pid" ]; then
+    PID=\$(cat "\$QGETH_DIR/qgeth.pid")
+    if kill -0 \$PID 2>/dev/null; then
+        kill \$PID
+        echo "Q Geth stopped (PID: \$PID)"
+        rm -f "\$QGETH_DIR/qgeth.pid"
     else
         echo "Q Geth not running"
-        rm -f ~/qgeth/qgeth.pid
+        rm -f "\$QGETH_DIR/qgeth.pid"
     fi
 else
     echo "Q Geth PID file not found"
 fi
 EOF
     
-    cat > "$INSTALL_DIR/status-qgeth.sh" << 'EOF'
+    cat > "$INSTALL_DIR/status-qgeth.sh" << EOF
 #!/bin/bash
-# Check Q Geth Status
-if [ -f ~/qgeth/qgeth.pid ]; then
-    PID=$(cat ~/qgeth/qgeth.pid)
-    if kill -0 $PID 2>/dev/null; then
-        echo "Q Geth is running (PID: $PID)"
-        echo "Logs: tail -f ~/qgeth/geth.log"
+# Check Q Geth Status for user: $ACTUAL_USER
+QGETH_DIR="$INSTALL_DIR"
+if [ -f "\$QGETH_DIR/qgeth.pid" ]; then
+    PID=\$(cat "\$QGETH_DIR/qgeth.pid")
+    if kill -0 \$PID 2>/dev/null; then
+        echo "Q Geth is running (PID: \$PID)"
+        echo "Logs: tail -f \"\$QGETH_DIR/geth.log\""
     else
         echo "Q Geth not running (stale PID file)"
-        rm -f ~/qgeth/qgeth.pid
+        rm -f "\$QGETH_DIR/qgeth.pid"
     fi
 else
     echo "Q Geth is not running"
@@ -339,6 +358,13 @@ fi
 EOF
     
     chmod +x "$INSTALL_DIR"/*.sh
+    
+    # Fix ownership if installed with sudo
+    if [ -n "$SUDO_USER" ] && [ "$SUDO_USER" != "root" ]; then
+        log_info "Fixing ownership for user $SUDO_USER..."
+        chown -R "$SUDO_USER:$SUDO_USER" "$INSTALL_DIR" 2>/dev/null || true
+        log_success "✅ Ownership set to $SUDO_USER"
+    fi
     
     # Success message
     echo ""
@@ -348,19 +374,20 @@ EOF
     echo ""
     echo -e "${BLUE}📋 Installation Summary:${NC}"
     echo "  Directory: $PROJECT_DIR"
-    echo "  User: $USER"
+    echo "  User: $ACTUAL_USER"
+    echo "  Home: $USER_HOME"
     echo "  Management: $INSTALL_DIR/*.sh"
     echo ""
-    echo -e "${BLUE}🔧 Quick Commands:${NC}"
-    echo "  Start:  ~/qgeth/start-qgeth.sh"
-    echo "  Stop:   ~/qgeth/stop-qgeth.sh"
-    echo "  Status: ~/qgeth/status-qgeth.sh"
-    echo "  Logs:   tail -f ~/qgeth/geth.log"
+    echo -e "${BLUE}🔧 Quick Commands (for user $ACTUAL_USER):${NC}"
+    echo "  Start:  $INSTALL_DIR/start-qgeth.sh"
+    echo "  Stop:   $INSTALL_DIR/stop-qgeth.sh"
+    echo "  Status: $INSTALL_DIR/status-qgeth.sh"
+    echo "  Logs:   tail -f $INSTALL_DIR/geth.log"
     echo ""
     echo -e "${BLUE}🎯 Next Steps:${NC}"
-    echo "  1. Start Q Geth: ~/qgeth/start-qgeth.sh"
-    echo "  2. Check status: ~/qgeth/status-qgeth.sh"
-    echo "  3. Start mining: cd ~/qgeth/Qgeth3/scripts/linux && ./start-miner.sh"
+    echo "  1. Start Q Geth: $INSTALL_DIR/start-qgeth.sh"
+    echo "  2. Check status: $INSTALL_DIR/status-qgeth.sh"
+    echo "  3. Start mining: cd $PROJECT_DIR/scripts/linux && ./start-miner.sh"
     echo "  4. RPC API: http://localhost:8545"
     echo ""
     echo -e "${GREEN}Ready to go! 🚀${NC}"
