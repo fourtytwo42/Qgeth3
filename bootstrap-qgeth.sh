@@ -339,6 +339,141 @@ EOF
     log_info "Go 1.24.4 installation complete"
 }
 
+# Check and create swap if needed for building
+setup_swap_if_needed() {
+    log_info "Checking memory and swap for build requirements..."
+    
+    local required_mb=4096  # 4GB minimum total (RAM + swap)
+    local total_mb=0
+    local swap_mb=0
+    local combined_mb=0
+    
+    if [ -f /proc/meminfo ]; then
+        # Get RAM and swap in MB
+        local mem_total=$(grep MemTotal /proc/meminfo | awk '{print $2}')
+        total_mb=$((mem_total / 1024))
+        
+        # Check current swap
+        if [ -f /proc/swaps ]; then
+            local swap_total=$(awk 'NR>1 {sum+=$3} END {print sum+0}' /proc/swaps)
+            swap_mb=$((swap_total / 1024))
+        fi
+        
+        combined_mb=$((total_mb + swap_mb))
+        
+        log_info "Memory Status:"
+        log_info "  RAM: ${total_mb}MB"
+        log_info "  Swap: ${swap_mb}MB"
+        log_info "  Total Available: ${combined_mb}MB"
+        log_info "  Required: ${required_mb}MB (4GB)"
+        
+        # Check if we need more memory
+        if [ $combined_mb -lt $required_mb ]; then
+            local needed_swap=$((required_mb - combined_mb))
+            log_warning "Insufficient memory for building Q Geth!"
+            log_info "Need additional ${needed_swap}MB of swap space"
+            
+            # Only create swap if running as root/sudo
+            if [ "$EUID" -eq 0 ] || [ -n "$SUDO_USER" ]; then
+                log_info "Creating swap file automatically..."
+                create_swap_file $needed_swap
+            else
+                log_warning "Cannot create swap (not running as root/sudo)"
+                log_info "Manual swap creation needed:"
+                log_info "  sudo fallocate -l ${needed_swap}M /swapfile"
+                log_info "  sudo chmod 600 /swapfile"
+                log_info "  sudo mkswap /swapfile"
+                log_info "  sudo swapon /swapfile"
+                log_info "  echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab"
+                
+                if [ "$AUTO_CONFIRM" != true ]; then
+                    echo -n "Continue without creating swap? Build may fail (y/N): "
+                    read -r RESPONSE
+                    if [[ ! "$RESPONSE" =~ ^([yY][eE][sS]|[yY])$ ]]; then
+                        log_info "Bootstrap cancelled. Please create swap manually or run with sudo."
+                        exit 1
+                    fi
+                fi
+            fi
+        else
+            log_success "✅ Sufficient memory available (${combined_mb}MB total)"
+        fi
+    else
+        log_warning "Cannot check memory - /proc/meminfo not found"
+    fi
+}
+
+# Create swap file
+create_swap_file() {
+    local needed_mb=$1
+    local swap_size_mb=$((needed_mb + 512))  # Add 512MB buffer
+    
+    log_info "Creating ${swap_size_mb}MB swap file..."
+    
+    # Check available disk space
+    local available_mb=$(df / | awk 'NR==2 {print int($4/1024)}')
+    if [ $available_mb -lt $swap_size_mb ]; then
+        log_error "Insufficient disk space for swap file"
+        log_error "  Available: ${available_mb}MB"
+        log_error "  Required: ${swap_size_mb}MB"
+        return 1
+    fi
+    
+    # Remove any existing swapfile
+    if [ -f /swapfile ]; then
+        log_info "Removing existing swap file..."
+        swapoff /swapfile 2>/dev/null || true
+        rm -f /swapfile
+    fi
+    
+    # Create new swap file
+    log_info "Allocating ${swap_size_mb}MB swap file..."
+    if ! fallocate -l ${swap_size_mb}M /swapfile 2>/dev/null; then
+        # Fallback to dd if fallocate fails
+        log_info "fallocate failed, using dd method..."
+        if ! dd if=/dev/zero of=/swapfile bs=1M count=$swap_size_mb 2>/dev/null; then
+            log_error "Failed to create swap file"
+            return 1
+        fi
+    fi
+    
+    # Set correct permissions
+    chmod 600 /swapfile
+    
+    # Make swap
+    if ! mkswap /swapfile >/dev/null 2>&1; then
+        log_error "Failed to format swap file"
+        rm -f /swapfile
+        return 1
+    fi
+    
+    # Enable swap
+    if ! swapon /swapfile; then
+        log_error "Failed to enable swap file"
+        rm -f /swapfile
+        return 1
+    fi
+    
+    # Add to fstab for persistence
+    if ! grep -q "/swapfile" /etc/fstab 2>/dev/null; then
+        echo "/swapfile none swap sw 0 0" >> /etc/fstab
+    fi
+    
+    # Verify swap is active
+    local new_swap=$(awk 'NR>1 {sum+=$3} END {print sum+0}' /proc/swaps)
+    local new_swap_mb=$((new_swap / 1024))
+    
+    log_success "✅ Swap file created and activated"
+    log_info "  Swap file: /swapfile (${swap_size_mb}MB)"
+    log_info "  Total swap now: ${new_swap_mb}MB"
+    
+    # Update memory status
+    local mem_total=$(grep MemTotal /proc/meminfo | awk '{print $2}')
+    local total_mb=$((mem_total / 1024))
+    local combined_mb=$((total_mb + new_swap_mb))
+    log_success "✅ Total memory now: ${combined_mb}MB (sufficient for building)"
+}
+
 # Create system service based on detected init system
 create_system_service() {
     log_info "Creating Q Geth system service ($INIT_SYSTEM)..."
@@ -1096,6 +1231,8 @@ main() {
     else
         # For system service mode, install dependencies normally
         install_dependencies
+        # Setup swap if needed for building
+        setup_swap_if_needed
     fi
     
     # Create directories

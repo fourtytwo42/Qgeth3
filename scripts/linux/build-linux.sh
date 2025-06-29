@@ -298,6 +298,79 @@ build_with_retry() {
     return 1
 }
 
+# Create swap file for build (simplified version of bootstrap function)
+create_swap_for_build() {
+    local needed_mb=$1
+    local swap_size_mb=$((needed_mb + 512))  # Add 512MB buffer
+    
+    echo "🔧 Creating ${swap_size_mb}MB swap file for build..."
+    
+    # Check available disk space
+    local available_mb=$(df / | awk 'NR==2 {print int($4/1024)}')
+    if [ $available_mb -lt $swap_size_mb ]; then
+        echo "❌ Insufficient disk space for swap file"
+        echo "  Available: ${available_mb}MB"
+        echo "  Required: ${swap_size_mb}MB"
+        return 1
+    fi
+    
+    # Remove any existing swapfile
+    if [ -f /swapfile ]; then
+        echo "🔧 Removing existing swap file..."
+        swapoff /swapfile 2>/dev/null || true
+        rm -f /swapfile
+    fi
+    
+    # Create new swap file
+    echo "📁 Allocating ${swap_size_mb}MB swap file..."
+    if ! fallocate -l ${swap_size_mb}M /swapfile 2>/dev/null; then
+        # Fallback to dd if fallocate fails
+        echo "📁 fallocate failed, using dd method..."
+        if ! dd if=/dev/zero of=/swapfile bs=1M count=$swap_size_mb 2>/dev/null; then
+            echo "❌ Failed to create swap file"
+            return 1
+        fi
+    fi
+    
+    # Set correct permissions
+    chmod 600 /swapfile
+    
+    # Make swap
+    if ! mkswap /swapfile >/dev/null 2>&1; then
+        echo "❌ Failed to format swap file"
+        rm -f /swapfile
+        return 1
+    fi
+    
+    # Enable swap
+    if ! swapon /swapfile; then
+        echo "❌ Failed to enable swap file"
+        rm -f /swapfile
+        return 1
+    fi
+    
+    # Add to fstab for persistence (if not already there)
+    if ! grep -q "/swapfile" /etc/fstab 2>/dev/null; then
+        echo "/swapfile none swap sw 0 0" >> /etc/fstab 2>/dev/null || true
+    fi
+    
+    # Verify swap is active
+    local new_swap=$(awk 'NR>1 {sum+=$3} END {print sum+0}' /proc/swaps)
+    local new_swap_mb=$((new_swap / 1024))
+    
+    echo "✅ Swap file created and activated"
+    echo "  Swap file: /swapfile (${swap_size_mb}MB)"
+    echo "  Total swap now: ${new_swap_mb}MB"
+    
+    # Update memory status
+    local mem_total=$(grep MemTotal /proc/meminfo | awk '{print $2}')
+    local total_mb=$((mem_total / 1024))
+    local combined_mb=$((total_mb + new_swap_mb))
+    echo "✅ Total memory now: ${combined_mb}MB (sufficient for building)"
+    
+    return 0
+}
+
 # Memory check function
 check_memory() {
     local required_mb=4096  # 4GB minimum total (RAM + swap)
@@ -335,21 +408,54 @@ check_memory() {
             echo "   Required total: ${required_mb}MB"
             echo "   Deficit: ${deficit}MB"
             echo ""
-            echo "🔧 Recommendations:"
-            echo "  1. Run ./prepare-vps.sh to set up swap automatically"
-            echo "  2. Close unnecessary programs"
-            echo "  3. Use a VPS with more RAM"
+            echo "🔧 Fixing memory shortage automatically..."
             echo ""
             
-            # Auto-continue if non-interactive mode and deficit is small (< 100MB)
-            if [ "$AUTO_CONFIRM" = true ] && [ $deficit -lt 100 ]; then
-                echo "💡 Auto-continuing: Memory deficit is small (${deficit}MB < 100MB) and non-interactive mode is enabled"
+            # Try to create swap automatically
+            if [ "$EUID" -eq 0 ] || [ -n "$SUDO_USER" ]; then
+                echo "💡 Creating swap file to fix memory shortage..."
+                if create_swap_for_build $deficit; then
+                    echo "✅ Swap created successfully - continuing with build"
+                else
+                    echo "❌ Failed to create swap automatically"
+                    echo "🔧 Manual recommendations:"
+                    echo "  1. Run bootstrap script with sudo: curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qgeth.sh | sudo bash"
+                    echo "  2. Create swap manually: sudo fallocate -l ${deficit}M /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile"
+                    echo "  3. Close unnecessary programs"
+                    echo "  4. Use a VPS with more RAM"
+                    echo ""
+                    
+                    # Auto-continue if non-interactive mode and deficit is small (< 100MB)
+                    if [ "$AUTO_CONFIRM" = true ] && [ $deficit -lt 100 ]; then
+                        echo "💡 Auto-continuing: Memory deficit is small (${deficit}MB < 100MB) and non-interactive mode is enabled"
+                    else
+                        echo -n "Continue anyway? (y/N): "
+                        read -r RESPONSE
+                        if [[ ! "$RESPONSE" =~ ^([yY][eE][sS]|[yY])$ ]]; then
+                            echo "Build aborted."
+                            exit 1
+                        fi
+                    fi
+                fi
             else
-                echo -n "Continue anyway? (y/N): "
-                read -r RESPONSE
-                if [[ ! "$RESPONSE" =~ ^([yY][eE][sS]|[yY])$ ]]; then
-                    echo "Build aborted."
-                    exit 1
+                echo "❌ Cannot create swap (not running as root/sudo)"
+                echo "🔧 Recommendations:"
+                echo "  1. Run bootstrap script with sudo: curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qgeth.sh | sudo bash"
+                echo "  2. Create swap manually: sudo fallocate -l ${deficit}M /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile"
+                echo "  3. Close unnecessary programs"
+                echo "  4. Use a VPS with more RAM"
+                echo ""
+                
+                # Auto-continue if non-interactive mode and deficit is small (< 100MB)
+                if [ "$AUTO_CONFIRM" = true ] && [ $deficit -lt 100 ]; then
+                    echo "💡 Auto-continuing: Memory deficit is small (${deficit}MB < 100MB) and non-interactive mode is enabled"
+                else
+                    echo -n "Continue anyway? (y/N): "
+                    read -r RESPONSE
+                    if [[ ! "$RESPONSE" =~ ^([yY][eE][sS]|[yY])$ ]]; then
+                        echo "Build aborted."
+                        exit 1
+                    fi
                 fi
             fi
         elif [ $combined_mb -lt $required_mb ]; then
