@@ -27,20 +27,22 @@ Get up and running with Q Coin in minutes!
 
 ## 🐧 Linux Quick Start
 
-### Option 1: Ultimate One-Command Setup (Easiest!)
+### Option 1: Universal System Service Setup (Easiest!)
 ```bash
 # Interactive mode (asks for confirmations)
-curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/scripts/deployment/bootstrap-qgeth.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qgeth.sh | sudo bash
 
 # Non-interactive mode (auto-confirms all prompts - perfect for automation)
-curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/scripts/deployment/bootstrap-qgeth.sh | sudo bash -s -- -y
+curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qgeth.sh | sudo bash -s -- -y
 
-# This single command:
-# ✅ Installs all dependencies (git, curl, golang, build tools)
-# ✅ Downloads the Q Geth repository automatically
-# ✅ Prepares VPS (memory checks, swap creation, firewall)
-# ✅ Builds and configures Q Geth with production service setup
-# ✅ Sets up crash recovery and service monitoring
+# 🚀 NEW: Universal system service installer that:
+# ✅ Works on ALL Linux distributions (Ubuntu, Fedora, Debian, Alpine, Arch, etc.)
+# ✅ Auto-detects init system (systemd, OpenRC, SysV, Upstart)
+# ✅ Creates persistent services that survive reboots
+# ✅ Enterprise security (sandboxing, resource limits, user execution)
+# ✅ Automatic restart on failure with exponential backoff
+# ✅ Professional logging integration (journalctl, /var/log)
+# ✅ Installs to ~/qgeth/ with universal management scripts
 # ✅ Safe to run multiple times - detects existing installations gracefully
 ```
 
@@ -64,8 +66,30 @@ cd Qgeth3
 # Direct script access
 ./scripts/linux/start-geth.sh         # Linux node
 ./scripts/windows/start-geth.ps1      # Windows node  
-./scripts/deployment/bootstrap-qgeth.sh # VPS deployment
+./bootstrap-qgeth.sh                  # Universal system service deployment
 ```
+
+### 🔧 System Service Management (After Bootstrap)
+
+The bootstrap installer creates universal management scripts that work with ANY init system:
+
+```bash
+# Service control (works on systemd, OpenRC, SysV, Upstart)
+~/qgeth/start-qgeth.sh      # Start Q Geth service
+~/qgeth/stop-qgeth.sh       # Stop Q Geth service  
+~/qgeth/restart-qgeth.sh    # Restart Q Geth service
+~/qgeth/status-qgeth.sh     # Check service status
+
+# Monitoring
+~/qgeth/logs-qgeth.sh       # View service logs (universal)
+
+# Service management examples:
+~/qgeth/start-qgeth.sh      # Starts persistent service
+~/qgeth/status-qgeth.sh     # Shows: "Q Geth service is running"
+~/qgeth/logs-qgeth.sh       # Shows logs from journalctl or /var/log
+```
+
+**🎯 Universal Compatibility**: These scripts automatically detect your init system and use the appropriate commands (systemctl, rc-service, service, etc.)
 
 ## 🌐 Q Coin Testnet Details
 

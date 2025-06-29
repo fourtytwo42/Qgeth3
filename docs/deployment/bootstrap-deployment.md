@@ -1,15 +1,39 @@
-# Q Geth Bootstrap Deployment Guide
+# Q Geth Universal Bootstrap Deployment Guide
 
-Complete guide for operating and managing your Q Geth node after installation by the bootstrap script.
+Complete guide for operating and managing your Q Geth node after installation by the universal bootstrap script.
+
+## 🚀 Universal System Service Features
+
+The bootstrap script creates a **truly universal** system service that works on ALL Linux distributions:
+
+### 🎯 Multi-Init System Support
+- **Systemd**: Ubuntu, Fedora, Debian, CentOS, RHEL, openSUSE
+- **OpenRC**: Alpine Linux, Gentoo
+- **SysV Init**: Traditional Unix systems, older distributions
+- **Upstart**: Older Ubuntu versions
+
+### 🔒 Enterprise Security Features
+- **Sandboxed Execution**: NoNewPrivileges, PrivateTmp, ProtectSystem
+- **Resource Limits**: 65536 file handles, 4096 processes, memory protection
+- **Privilege Restrictions**: Runs as user, not root
+- **Secure File Access**: Read-only system directories, isolated temp space
+
+### 🏗️ Production-Grade Reliability
+- **Persistent Services**: Survive reboots and system restarts
+- **Automatic Recovery**: Restart on failure with exponential backoff (10s delay)
+- **Resource Management**: Proper cleanup on service stop
+- **Professional Logging**: Integration with system logging (journalctl, /var/log)
 
 ## 🎯 Quick Reference
 
-After running the bootstrap script, your VPS has:
-- **Q Geth Node**: Running on testnet with single streamlined service
-- **System Service**: `qgeth.service` (simplified architecture)  
+After running the bootstrap script, your system has:
+- **Q Geth Node**: Running on testnet with persistent system service
+- **Universal Service**: Auto-detected init system (systemd/OpenRC/SysV/Upstart)
+- **Enterprise Security**: Sandboxed execution, resource limits, privilege restrictions
 - **API Endpoints**: HTTP RPC (8545), WebSocket (8546)
 - **Network**: P2P networking on port 30303
-- **Manual Updates**: Use git pull for updates when needed
+- **Service Management**: Universal scripts work with any Linux distribution
+- **Persistent Operation**: Survives reboots, auto-restarts on failure
 
 ## 🚀 Bootstrap Installation
 
@@ -45,66 +69,105 @@ curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qg
 ```
 
 ### What Bootstrap Sets Up
-- **Dependencies**: Go, build tools, git, firewall
+- **Universal Compatibility**: Auto-detects init system (systemd/OpenRC/SysV/Upstart)
+- **Dependencies**: Go 1.24.4, build tools, git, firewall configuration
 - **Memory**: Creates swap file if needed (minimum 4GB total memory)
-- **Project**: Clones repository to `/opt/qgeth/Qgeth3/`
-- **Build**: Compiles Q Geth with automated error recovery
-- **Service**: Creates and starts persistent `qgeth.service`
-- **Firewall**: Configures UFW with required ports
-- **User**: Creates `geth` user for service execution
+- **Project**: Clones repository to `~/qgeth/Qgeth3/` (user directory installation)
+- **Build**: Compiles Q Geth with automated error recovery and retry logic
+- **Persistent Service**: Creates appropriate service for your init system
+- **Security Hardening**: Sandboxed execution, resource limits, privilege restrictions
+- **Management Scripts**: Universal scripts that work with any Linux distribution
+- **Firewall**: Configures system firewall with required ports (8545, 8546, 30303)
+- **Auto-Start**: Service configured to start on boot and restart on failure
 
-## 🔧 Service Management
+## 🔧 Universal Service Management
 
-### Check Service Status
+The bootstrap installer creates management scripts that work with **ANY** Linux distribution and init system:
+
+### Universal Service Control
 ```bash
-# Check Q Geth service status
-sudo systemctl status qgeth.service
+# Use these scripts - they work on ALL Linux distributions!
+~/qgeth/start-qgeth.sh      # Start Q Geth service
+~/qgeth/stop-qgeth.sh       # Stop Q Geth service
+~/qgeth/restart-qgeth.sh    # Restart Q Geth service
+~/qgeth/status-qgeth.sh     # Check service status
 
-# Quick status check
-sudo systemctl is-active qgeth.service
-
-# Check if service is enabled
-sudo systemctl is-enabled qgeth.service
+# Examples:
+~/qgeth/status-qgeth.sh     # Shows: "Q Geth service is running" or "stopped"
+~/qgeth/restart-qgeth.sh    # Restarts service regardless of init system
 ```
 
-### Start/Stop/Restart Service
+### Init System Specific Commands (Advanced)
+If you prefer to use native init system commands:
+
+**Systemd** (Ubuntu, Fedora, Debian, CentOS):
 ```bash
-# Control the blockchain node
 sudo systemctl start qgeth.service
 sudo systemctl stop qgeth.service
-sudo systemctl restart qgeth.service
-
-# Check service after restart
 sudo systemctl status qgeth.service
+sudo systemctl enable qgeth.service
 ```
 
-### Enable/Disable Auto-Start
+**OpenRC** (Alpine, Gentoo):
 ```bash
-# Enable service to start on boot (default)
-sudo systemctl enable qgeth.service
+sudo rc-service qgeth start
+sudo rc-service qgeth stop
+sudo rc-service qgeth status
+sudo rc-update add qgeth default
+```
 
-# Disable auto-start
-sudo systemctl disable qgeth.service
+**SysV Init** (Traditional systems):
+```bash
+sudo service qgeth start
+sudo service qgeth stop
+sudo service qgeth status
+sudo chkconfig qgeth on
+```
 
-# Check if enabled
-sudo systemctl is-enabled qgeth.service
+**Upstart** (Older Ubuntu):
+```bash
+sudo start qgeth
+sudo stop qgeth
+sudo status qgeth
+```
+
+### Auto-Start Configuration
+```bash
+# Services are automatically configured to start on boot
+# To disable auto-start (advanced users):
+~/qgeth/disable-autostart.sh
+
+# To re-enable auto-start:
+~/qgeth/enable-autostart.sh
 ```
 
 ## 📊 Monitoring Your Node
 
-### View Live Logs
+### Universal Log Viewing
 ```bash
-# Follow geth service logs (systemd journal)
+# Use universal log viewer (works with any init system)
+~/qgeth/logs-qgeth.sh       # View recent logs
+~/qgeth/logs-qgeth.sh -f    # Follow live logs
+~/qgeth/logs-qgeth.sh -n 100 # View last 100 lines
+
+# The script automatically detects your init system and uses:
+# - journalctl for systemd
+# - /var/log files for SysV/OpenRC
+# - Upstart log files for Upstart
+```
+
+### Init System Specific Log Commands (Advanced)
+**Systemd** (Ubuntu, Fedora, Debian):
+```bash
 sudo journalctl -u qgeth.service -f
-
-# Follow geth log file
-sudo tail -f /opt/qgeth/logs/geth.log
-
-# View recent service activity
-sudo journalctl -u qgeth.service --no-pager -l | tail -50
-
-# View logs from specific time
 sudo journalctl -u qgeth.service --since "1 hour ago"
+sudo journalctl -u qgeth.service --no-pager -l | tail -50
+```
+
+**OpenRC/SysV/Upstart** (Alpine, Gentoo, Traditional):
+```bash
+sudo tail -f /var/log/qgeth.log
+sudo tail -f ~/qgeth/logs/qgeth.log
 ```
 
 ### Check Node Status
@@ -329,15 +392,25 @@ sudo /opt/qgeth/update-qgeth.sh
 
 ### Important Directories
 ```bash
-/opt/qgeth/Qgeth3/           # Main project directory
-/opt/qgeth/logs/             # All log files
+~/qgeth/Qgeth3/              # Main project directory (user installation)
+~/qgeth/logs/                # All log files
 ~/.qcoin/testnet/            # Blockchain data directory
-/etc/systemd/system/         # Service configuration files
+~/qgeth/                     # Management scripts (start, stop, status, logs)
+
+# Service files (init system dependent):
+/etc/systemd/system/         # Systemd service files
+/etc/init.d/                 # SysV init scripts  
+/etc/conf.d/                 # OpenRC configuration
+/etc/init/                   # Upstart configuration
 ```
 
 ### Service Configuration
+
+**Universal Service Management**: The bootstrap automatically creates the appropriate service configuration for your init system.
+
+**Systemd** (Ubuntu, Fedora, Debian):
 ```bash
-# View geth service configuration
+# View service configuration
 sudo cat /etc/systemd/system/qgeth.service
 
 # Edit service configuration (if needed)
@@ -346,6 +419,34 @@ sudo nano /etc/systemd/system/qgeth.service
 # Reload configuration after changes
 sudo systemctl daemon-reload
 sudo systemctl restart qgeth.service
+```
+
+**OpenRC** (Alpine, Gentoo):
+```bash
+# View service configuration
+sudo cat /etc/init.d/qgeth
+
+# Edit service configuration
+sudo nano /etc/init.d/qgeth
+sudo nano /etc/conf.d/qgeth
+```
+
+**SysV Init** (Traditional systems):
+```bash
+# View service configuration
+sudo cat /etc/init.d/qgeth
+
+# Edit service configuration
+sudo nano /etc/init.d/qgeth
+```
+
+**Upstart** (Older Ubuntu):
+```bash
+# View service configuration
+sudo cat /etc/init/qgeth.conf
+
+# Edit service configuration
+sudo nano /etc/init/qgeth.conf
 ```
 
 ### Geth Configuration

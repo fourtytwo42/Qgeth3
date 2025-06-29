@@ -28,10 +28,17 @@ quantum-gpu-miner -coinbase 0xYourAddress -quantum-cloud \
 .\scripts\windows\start-geth.ps1 -mine -etherbase 0xYourAddress
 ```
 
-### Linux - One Command Setup
+### Linux - Universal System Service Setup
 ```bash
-# Complete VPS setup (everything automated!)
+# 🚀 NEW: Complete system service setup (works on ALL Linux distributions!)
 curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qgeth.sh | sudo bash -s -- -y
+
+# Creates persistent system service that:
+# ✅ Survives reboots (systemd/OpenRC/SysV/Upstart)
+# ✅ Auto-restarts on failure  
+# ✅ Professional logging & monitoring
+# ✅ Secure execution (runs as user, not root)
+# ✅ Universal compatibility (Ubuntu, Fedora, Debian, Alpine, etc.)
 
 # Or manual setup  
 git clone https://github.com/fourtytwo42/Qgeth3.git
@@ -153,12 +160,13 @@ Qgeth3/
 
 ## 🚀 Production Features
 
-### Auto-Updating VPS Service
-- **GitHub Monitoring:** Auto-updates on new commits
-- **Crash Recovery:** Automatic restart with 5-minute retry
-- **Memory Optimization:** Handles low-memory VPS gracefully
-- **Security:** UFW firewall configuration
-- **Monitoring:** Comprehensive logging and status tracking
+### Universal System Service Architecture
+- **Multi-Init System Support:** systemd, OpenRC, SysV init, Upstart
+- **Cross-Distribution:** Ubuntu, Fedora, Debian, CentOS, Alpine, Arch, Gentoo
+- **Persistent Services:** Survive reboots and system restarts
+- **Automatic Recovery:** Service restarts on failure with exponential backoff
+- **Security Hardening:** Sandboxed execution, resource limits, privilege restrictions
+- **Professional Logging:** journalctl integration, structured log rotation
 
 ### Professional Build System
 - **Multi-target builds:** Node-only, miner-only, or both
@@ -167,21 +175,22 @@ Qgeth3/
 - **Memory-efficient:** Temp directory management for VPS
 
 ### Enterprise-Ready
-- **Systemd Integration:** Production service management
-- **Backup System:** Automatic version backup and rollback
+- **Universal Service Management:** Works with any Linux init system
+- **Security Features:** NoNewPrivileges, PrivateTmp, ProtectSystem sandboxing
+- **Resource Controls:** File handle limits, process limits, memory protection
 - **Lock File Protection:** Prevents installation conflicts
-- **Log Management:** Structured logging and rotation
+- **Robust Installation:** Safe to re-run, detects existing installations
 
 ## 🛠️ Development Status
 
 ### Recent Improvements
-- ✅ **Complete script reorganization** with platform-specific directories
-- ✅ **Go temp directory build fixes** for VPS environments  
-- ✅ **Comprehensive documentation breakdown** for better navigation
-- ✅ **Enhanced .gitignore** to prevent build artifact commits
-- ✅ **One-command VPS bootstrap** with non-interactive mode
-- ✅ **Professional auto-service** with GitHub monitoring
-- ✅ **Directory context and permission fixes** for seamless VPS deployment
+- ✅ **Universal system service installer** - works on ALL Linux distributions
+- ✅ **Multi-init system support** - systemd, OpenRC, SysV, Upstart detection
+- ✅ **Enterprise-grade security** - sandboxing, resource limits, privilege restrictions
+- ✅ **Persistent service architecture** - survives reboots, auto-restart on failure
+- ✅ **Go 1.24.4 universal alignment** - cross-platform quantum consensus compatibility
+- ✅ **Professional service management** - unified scripts work with any init system
+- ✅ **Production-ready deployment** - one command creates permanent installation
 
 ### Core Features
 - ✅ **Quantum Consensus (QMPoW)** - Production ready
@@ -228,10 +237,10 @@ Qgeth3/
 - [ ] Start mining: `./quick-start.sh start-mining`
 
 ### Production Deployment
-- [ ] VPS with 2+ vCPU, 4GB+ RAM
+- [ ] VPS with 2+ vCPU, 4GB+ RAM (any Linux distribution)
 - [ ] Run: `curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qgeth.sh | sudo bash -s -- -y`
-- [ ] Verify service: `sudo systemctl status qgeth-node.service`
-- [ ] Monitor: `sudo journalctl -fu qgeth-node.service`
+- [ ] Verify service: `~/qgeth/status-qgeth.sh` (works with any init system)
+- [ ] Monitor: `~/qgeth/logs-qgeth.sh` (universal log viewing)
 
 ### Development Setup
 - [ ] Read [Contributing Guidelines](docs/contributing.md)
