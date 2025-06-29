@@ -117,25 +117,25 @@ install_dependencies() {
             ;;
     esac
     
-    # Install Go 1.21 specifically (required for quantum consensus compatibility)
-    install_go_1_21
+    # Install Go 1.24 specifically (required for quantum consensus compatibility)
+    install_go_1_24
     
     log_success "Dependencies installed"
 }
 
-# Install Go 1.21 specifically for quantum blockchain consensus
-install_go_1_21() {
-    log_info "Installing Go 1.21 for quantum consensus compatibility..."
+# Install Go 1.24 specifically for quantum blockchain consensus
+install_go_1_24() {
+    log_info "Installing Go 1.24 for quantum consensus compatibility..."
     
-    # Check if Go 1.21 is already installed
+    # Check if Go 1.24 is already installed
     if command -v go >/dev/null 2>&1; then
         GO_VERSION=$(go version 2>/dev/null | grep -o 'go1\.[0-9]*' | head -1)
-        if [ "$GO_VERSION" = "go1.21" ]; then
-            log_info "Go 1.21 already installed: $(go version)"
+        if [ "$GO_VERSION" = "go1.24" ]; then
+            log_info "Go 1.24 already installed: $(go version)"
             return 0
         else
-            log_warning "Found $GO_VERSION, but quantum blockchain requires Go 1.21"
-            log_info "Installing Go 1.21 for consensus compatibility..."
+            log_warning "Found $GO_VERSION, but quantum blockchain requires Go 1.24"
+            log_info "Installing Go 1.24 for consensus compatibility..."
         fi
     fi
     
@@ -160,7 +160,7 @@ install_go_1_21() {
             ;;
     esac
     
-    GO_VERSION="1.21.13"
+    GO_VERSION="1.24.4"
     GO_TARBALL="go${GO_VERSION}.linux-${GO_ARCH}.tar.gz"
     GO_URL="https://golang.org/dl/${GO_TARBALL}"
     
@@ -182,7 +182,7 @@ install_go_1_21() {
     # Remove existing Go installation
     $SUDO rm -rf /usr/local/go
     
-    # Install Go 1.21
+    # Install Go 1.24
     log_info "Installing Go $GO_VERSION to /usr/local/go..."
     $SUDO tar -C /usr/local -xzf "$GO_TARBALL"
     
@@ -196,7 +196,7 @@ install_go_1_21() {
     if [ ! -f /etc/profile.d/go.sh ]; then
         $SUDO tee /etc/profile.d/go.sh > /dev/null << 'EOF'
 #!/bin/bash
-# Go 1.21 for Quantum Blockchain Consensus
+# Go 1.24 for Quantum Blockchain Consensus
 export PATH="/usr/local/go/bin:$PATH"
 export GOPATH="$HOME/go"
 export GOROOT="/usr/local/go"
@@ -209,9 +209,9 @@ EOF
         GO_INSTALLED_VERSION=$(go version 2>/dev/null)
         log_success "✅ Go installed successfully: $GO_INSTALLED_VERSION"
         
-        # Verify it's Go 1.21
-        if echo "$GO_INSTALLED_VERSION" | grep -q "go1.21"; then
-            log_success "✅ Go 1.21 confirmed for quantum consensus compatibility"
+        # Verify it's Go 1.24
+        if echo "$GO_INSTALLED_VERSION" | grep -q "go1.24"; then
+            log_success "✅ Go 1.24 confirmed for quantum consensus compatibility"
         else
             log_warning "⚠️ Go version verification failed"
         fi
@@ -220,7 +220,7 @@ EOF
         exit 1
     fi
     
-    log_info "Go 1.21 installation complete"
+    log_info "Go 1.24 installation complete"
 }
 
 # Main installation

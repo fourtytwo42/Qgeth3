@@ -12,7 +12,7 @@ Complete guide for running Q Coin quantum blockchain nodes on Linux systems.
 - **Network**: Stable internet connection with 1Mbps+ bandwidth
 
 ### Software Dependencies
-- **Go**: Version 1.21 or later
+- **Go**: Version 1.24.4 exactly (installed automatically by bootstrap)
 - **Git**: For source code management
 - **Build Tools**: gcc, make, pkg-config
 

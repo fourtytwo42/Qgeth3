@@ -12,7 +12,7 @@ Complete guide for running Q Coin quantum blockchain nodes on Windows systems.
 - **Network**: Stable internet connection with 1Mbps+ bandwidth
 
 ### Software Dependencies
-- **Go**: Version 1.21 or later ([Download](https://golang.org/dl/))
+- **Go**: Version 1.24.4 exactly ([Download go1.24.4.windows-amd64.msi](https://golang.org/dl/go1.24.4.windows-amd64.msi))
 - **Git**: For source code management ([Download](https://git-scm.com/download/win))
 - **PowerShell**: 5.1+ (included with Windows)
 
