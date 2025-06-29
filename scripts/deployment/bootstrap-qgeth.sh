@@ -1,6 +1,6 @@
 #!/bin/bash
 # Q Geth Simplified Bootstrap Script
-# Single-command VPS setup for Q Geth auto-updating service
+# Single-command VPS setup for Q Geth persistent service
 # Usage: curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/scripts/deployment/bootstrap-qgeth.sh | sudo bash
 # Usage: curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/scripts/deployment/bootstrap-qgeth.sh | sudo bash -s -- -y
 
@@ -95,7 +95,7 @@ echo "  ✅ Clean up any existing installations"
 echo "  ✅ Prepare VPS (memory, swap, dependencies)"
 echo "  ✅ Clone Q Geth repository to /opt/qgeth/"
 echo "  ✅ Build Q Geth with automated error recovery"
-echo "  ✅ Create auto-updating systemd services"
+echo "  ✅ Create persistent systemd service"
 echo "  ✅ Configure firewall for Q Geth operations"
 echo ""
 
@@ -666,7 +666,13 @@ echo ""
 echo "📁 Log Files:"
 echo "  tail -f $LOGS_DIR/geth.log"
 echo ""
+echo "🔄 Manual Updates:"
+echo "  cd $PROJECT_DIR && sudo git pull origin main"
+echo "  cd $PROJECT_DIR/scripts/linux && sudo ./build-linux.sh geth"
+echo "  sudo systemctl restart qgeth.service"
+echo ""
 echo "✅ Q Geth is now running!"
+echo "📝 Note: Updates are manual only - no auto-update functionality"
 echo ""
 
 # Final verification

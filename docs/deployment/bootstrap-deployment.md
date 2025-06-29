@@ -49,7 +49,7 @@ curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qg
 - **Memory**: Creates swap file if needed (minimum 4GB total memory)
 - **Project**: Clones repository to `/opt/qgeth/Qgeth3/`
 - **Build**: Compiles Q Geth with automated error recovery
-- **Service**: Creates and starts `qgeth.service`
+- **Service**: Creates and starts persistent `qgeth.service`
 - **Firewall**: Configures UFW with required ports
 - **User**: Creates `geth` user for service execution
 
@@ -251,6 +251,8 @@ eth.mining
 ```
 
 ## 🔄 Manual Updates
+
+**Important**: Q Geth does not auto-update. All updates must be performed manually for security and stability. This gives you full control over when and how updates are applied.
 
 ### Check for Updates
 ```bash
@@ -603,7 +605,8 @@ sudo apt update && sudo apt upgrade -y
 # Check for security updates
 sudo apt list --upgradable
 
-# Configure automatic security updates
+# Configure automatic system security updates (OS packages only)
+# Note: This is for OS security patches, NOT Q Geth updates
 sudo apt install unattended-upgrades
 sudo dpkg-reconfigure unattended-upgrades
 ```
