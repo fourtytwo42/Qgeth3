@@ -425,9 +425,14 @@ build_geth() {
     # Ensure Go temp directories exist
     mkdir -p "$GOCACHE" "$GOTMPDIR" "$TMPDIR"
     
-    # Build command with Go 1.21 for quantum consensus compatibility
-    log_info "🔧 Using Go 1.21 standard build flags for quantum consensus compatibility"
-    BUILD_CMD="CGO_ENABLED=0 go build -ldflags \"$LDFLAGS\" -trimpath -buildvcs=false -o ../../../geth.bin ."
+    # Build command with appropriate flags based on Go version
+    if [ "$USE_CHECKLINKNAME" = true ]; then
+        log_info "🔧 Using -checklinkname=0 flag for Go 1.23+ memsize compatibility"
+        BUILD_CMD="CGO_ENABLED=0 go build -ldflags \"-checklinkname=0 $LDFLAGS\" -trimpath -buildvcs=false -o ../../../geth.bin ."
+    else
+        log_info "🔧 Using standard build flags for Go version compatibility"
+        BUILD_CMD="CGO_ENABLED=0 go build -ldflags \"$LDFLAGS\" -trimpath -buildvcs=false -o ../../../geth.bin ."
+    fi
     
     # Use automated retry with error recovery
     if build_with_retry "quantum-geth" "$BUILD_CMD" "../../../geth.bin"; then
@@ -530,8 +535,15 @@ build_miner() {
     # Ensure Go temp directories exist
     mkdir -p "$GOCACHE" "$GOTMPDIR" "$TMPDIR"
     
-    # Build command for retry mechanism
-    BUILD_CMD="go build -ldflags \"$LDFLAGS\" -trimpath -buildvcs=false"
+    # Build command for retry mechanism with appropriate flags based on Go version
+    if [ "$USE_CHECKLINKNAME" = true ]; then
+        log_info "🔧 Using -checklinkname=0 flag for Go 1.23+ memsize compatibility"
+        BUILD_CMD="go build -ldflags \"-checklinkname=0 $LDFLAGS\" -trimpath -buildvcs=false"
+    else
+        log_info "🔧 Using standard build flags for Go version compatibility"
+        BUILD_CMD="go build -ldflags \"$LDFLAGS\" -trimpath -buildvcs=false"
+    fi
+    
     if [ -n "$BUILD_TAGS" ]; then
         BUILD_CMD="$BUILD_CMD -tags $BUILD_TAGS"
     fi
@@ -960,25 +972,33 @@ export CGO_ENABLED=0  # Default for geth
 # Get build flags
 get_build_flags
 
-# Verify Go 1.21 for quantum consensus compatibility
+# Check Go version and determine correct build flags
 verify_go_version() {
-    local go_version
+    local go_version go_version_full major minor
     if command -v go >/dev/null 2>&1; then
-        go_version=$(go version 2>/dev/null | grep -o 'go1\.[0-9]*' | head -1)
+        go_version_full=$(go version 2>/dev/null)
+        go_version=$(echo "$go_version_full" | grep -oE 'go[0-9]+\.[0-9]+' | head -1)
         log_info "Detected Go version: ${go_version:-unknown}"
         
-        if [ "$go_version" = "go1.21" ]; then
-            log_success "✅ Go 1.21 confirmed for quantum consensus compatibility"
-            USE_CHECKLINKNAME=false  # Go 1.21 uses standard build flags
+        if [ -n "$go_version" ]; then
+            # Extract major and minor version numbers
+            major=$(echo "$go_version" | cut -d'.' -f1 | sed 's/go//')
+            minor=$(echo "$go_version" | cut -d'.' -f2)
+            
+            # Check if version is 1.23 or higher (needs -checklinkname=0)
+            if [ "$major" -gt 1 ] || ([ "$major" -eq 1 ] && [ "$minor" -ge 23 ]); then
+                log_success "✅ Go $go_version supports -checklinkname flag (memsize compatibility)"
+                USE_CHECKLINKNAME=true
+            else
+                log_info "ℹ️ Go $go_version uses standard build flags"
+                USE_CHECKLINKNAME=false
+            fi
         else
-            log_warning "⚠️ Non-standard Go version detected: $go_version"
-            log_warning "⚠️ Quantum blockchain requires Go 1.21.13 for optimal consensus compatibility"
-            log_warning "⚠️ Different Go versions may cause consensus failures across nodes"
-            log_warning "⚠️ Run bootstrap-qgeth.sh to install the correct Go version"
-            USE_CHECKLINKNAME=false  # Default to standard build
+            log_warning "⚠️ Could not parse Go version, using standard build flags"
+            USE_CHECKLINKNAME=false
         fi
     else
-        log_error "Go not found - please install Go 1.21.13 via bootstrap-qgeth.sh"
+        log_error "Go not found - please install Go via bootstrap-qgeth.sh"
         exit 1
     fi
 }
