@@ -117,26 +117,110 @@ install_dependencies() {
             ;;
     esac
     
-    # Install Go if not present
-    if ! command -v go >/dev/null 2>&1; then
-        log_info "Installing Go..."
-        case $PKG_MANAGER in
-            apt)
-                $SUDO $PKG_INSTALL golang-go
-                ;;
-            dnf|yum)
-                $SUDO $PKG_INSTALL golang
-                ;;
-            pacman)
-                $SUDO $PKG_INSTALL go
-                ;;
-        esac
-    else
-        GO_VERSION=$(go version 2>/dev/null | grep -o 'go[0-9]*\.[0-9]*' | head -1)
-        log_info "Go already installed: $GO_VERSION"
-    fi
+    # Install Go 1.21 specifically (required for quantum consensus compatibility)
+    install_go_1_21
     
     log_success "Dependencies installed"
+}
+
+# Install Go 1.21 specifically for quantum blockchain consensus
+install_go_1_21() {
+    log_info "Installing Go 1.21 for quantum consensus compatibility..."
+    
+    # Check if Go 1.21 is already installed
+    if command -v go >/dev/null 2>&1; then
+        GO_VERSION=$(go version 2>/dev/null | grep -o 'go1\.[0-9]*' | head -1)
+        if [ "$GO_VERSION" = "go1.21" ]; then
+            log_info "Go 1.21 already installed: $(go version)"
+            return 0
+        else
+            log_warning "Found $GO_VERSION, but quantum blockchain requires Go 1.21"
+            log_info "Installing Go 1.21 for consensus compatibility..."
+        fi
+    fi
+    
+    # Determine architecture
+    ARCH=$(uname -m)
+    case $ARCH in
+        x86_64)
+            GO_ARCH="amd64"
+            ;;
+        aarch64|arm64)
+            GO_ARCH="arm64"
+            ;;
+        armv7l)
+            GO_ARCH="armv6l"
+            ;;
+        i686)
+            GO_ARCH="386"
+            ;;
+        *)
+            log_error "Unsupported architecture: $ARCH"
+            exit 1
+            ;;
+    esac
+    
+    GO_VERSION="1.21.13"
+    GO_TARBALL="go${GO_VERSION}.linux-${GO_ARCH}.tar.gz"
+    GO_URL="https://golang.org/dl/${GO_TARBALL}"
+    
+    log_info "Downloading Go $GO_VERSION for $GO_ARCH..."
+    
+    # Download Go
+    cd /tmp
+    if ! wget -q "$GO_URL"; then
+        log_error "Failed to download Go $GO_VERSION"
+        exit 1
+    fi
+    
+    # Verify download
+    if [ ! -f "$GO_TARBALL" ]; then
+        log_error "Go tarball not found after download"
+        exit 1
+    fi
+    
+    # Remove existing Go installation
+    $SUDO rm -rf /usr/local/go
+    
+    # Install Go 1.21
+    log_info "Installing Go $GO_VERSION to /usr/local/go..."
+    $SUDO tar -C /usr/local -xzf "$GO_TARBALL"
+    
+    # Clean up
+    rm -f "$GO_TARBALL"
+    
+    # Add Go to PATH for current session
+    export PATH="/usr/local/go/bin:$PATH"
+    
+    # Add Go to system PATH
+    if [ ! -f /etc/profile.d/go.sh ]; then
+        $SUDO tee /etc/profile.d/go.sh > /dev/null << 'EOF'
+#!/bin/bash
+# Go 1.21 for Quantum Blockchain Consensus
+export PATH="/usr/local/go/bin:$PATH"
+export GOPATH="$HOME/go"
+export GOROOT="/usr/local/go"
+EOF
+        $SUDO chmod +x /etc/profile.d/go.sh
+    fi
+    
+    # Verify installation
+    if command -v go >/dev/null 2>&1; then
+        GO_INSTALLED_VERSION=$(go version 2>/dev/null)
+        log_success "✅ Go installed successfully: $GO_INSTALLED_VERSION"
+        
+        # Verify it's Go 1.21
+        if echo "$GO_INSTALLED_VERSION" | grep -q "go1.21"; then
+            log_success "✅ Go 1.21 confirmed for quantum consensus compatibility"
+        else
+            log_warning "⚠️ Go version verification failed"
+        fi
+    else
+        log_error "Go installation verification failed"
+        exit 1
+    fi
+    
+    log_info "Go 1.21 installation complete"
 }
 
 # Main installation

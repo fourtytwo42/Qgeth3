@@ -425,14 +425,9 @@ build_geth() {
     # Ensure Go temp directories exist
     mkdir -p "$GOCACHE" "$GOTMPDIR" "$TMPDIR"
     
-    # Build command with Go version compatibility
-    if [ "$USE_CHECKLINKNAME" = true ]; then
-        log_info "🔧 Using -checklinkname=0 flag for Go 1.23+ memsize compatibility"
-        BUILD_CMD="CGO_ENABLED=0 go build -ldflags \"-checklinkname=0 $LDFLAGS\" -trimpath -buildvcs=false -o ../../../geth.bin ."
-    else
-        log_info "🔧 Using standard build flags for Go version compatibility"
-        BUILD_CMD="CGO_ENABLED=0 go build -ldflags \"$LDFLAGS\" -trimpath -buildvcs=false -o ../../../geth.bin ."
-    fi
+    # Build command with Go 1.21 for quantum consensus compatibility
+    log_info "🔧 Using Go 1.21 standard build flags for quantum consensus compatibility"
+    BUILD_CMD="CGO_ENABLED=0 go build -ldflags \"$LDFLAGS\" -trimpath -buildvcs=false -o ../../../geth.bin ."
     
     # Use automated retry with error recovery
     if build_with_retry "quantum-geth" "$BUILD_CMD" "../../../geth.bin"; then
@@ -964,6 +959,31 @@ export CGO_ENABLED=0  # Default for geth
 
 # Get build flags
 get_build_flags
+
+# Verify Go 1.21 for quantum consensus compatibility
+verify_go_version() {
+    local go_version
+    if command -v go >/dev/null 2>&1; then
+        go_version=$(go version 2>/dev/null | grep -o 'go1\.[0-9]*' | head -1)
+        log_info "Detected Go version: ${go_version:-unknown}"
+        
+        if [ "$go_version" = "go1.21" ]; then
+            log_success "✅ Go 1.21 confirmed for quantum consensus compatibility"
+            USE_CHECKLINKNAME=false  # Go 1.21 uses standard build flags
+        else
+            log_warning "⚠️ Non-standard Go version detected: $go_version"
+            log_warning "⚠️ Quantum blockchain requires Go 1.21 for consensus compatibility"
+            log_warning "⚠️ Different Go versions may cause consensus failures"
+            USE_CHECKLINKNAME=false  # Default to standard build
+        fi
+    else
+        log_error "Go not found - please install Go 1.21"
+        exit 1
+    fi
+}
+
+# Verify Go version
+verify_go_version
 
 log_info "Build environment:"
 log_info "  Target OS: $GOOS/$GOARCH"
