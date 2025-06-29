@@ -18,6 +18,7 @@ CLEAN=false
 DEBUG=false
 LOG_FILE=""
 SKIP_MODULE_FIX=false
+SIMPLE_BUILD=false
 
 for arg in "$@"; do
     case $arg in
@@ -39,6 +40,9 @@ for arg in "$@"; do
         --skip-module-fix)
             SKIP_MODULE_FIX=true
             ;;
+        --simple-build)
+            SIMPLE_BUILD=true
+            ;;
         geth|miner|both)
             TARGET="$arg"
             ;;
@@ -59,6 +63,7 @@ for arg in "$@"; do
             echo "  --log         Save build log to timestamped file"
             echo "  --log=FILE    Save build log to specific file"
             echo "  --skip-module-fix  Skip Go module dependency fixing"
+            echo "  --simple-build     Use basic build flags (no checklinkname)"
             echo "  --help        Show this help"
             echo ""
             exit 0
@@ -272,11 +277,14 @@ get_build_flags() {
         GIT_COMMIT="unknown"
     fi
     
-    # Memory-efficient linker flags
+    # Use proper version string without spaces/special chars
+    BUILD_VERSION="v1.0.0"
+    if [ -n "$QGETH_DISTRO_VERSION" ]; then
+        BUILD_VERSION="v1.0.0-$QGETH_DISTRO_VERSION"
+    fi
+    
+    # Memory-efficient linker flags (properly quoted)
     LDFLAGS="-s -w"
-    LDFLAGS="$LDFLAGS -X main.VERSION=$VERSION"
-    LDFLAGS="$LDFLAGS -X main.BUILD_TIME=$BUILD_TIME"
-    LDFLAGS="$LDFLAGS -X main.GIT_COMMIT=$GIT_COMMIT"
     
     log_info "💾 Configuring build flags..."
     log_info "Build flags:"
@@ -284,6 +292,9 @@ get_build_flags() {
     log_info "  Trimpath: enabled"
     log_info "  VCS info: disabled"
     log_info "  Cache: $GOCACHE"
+    log_info "  Build Version: $BUILD_VERSION"
+    log_info "  Build Time: $BUILD_TIME"
+    log_info "  Git Commit: $GIT_COMMIT"
 }
 
 # Check Go version and determine appropriate flags
@@ -450,12 +461,15 @@ build_geth() {
     mkdir -p "$GOCACHE" "$GOTMPDIR" "$TMPDIR"
     
     # Build command with appropriate flags based on Go version
-    if [ "$USE_CHECKLINKNAME" = true ]; then
+    if [ "$SIMPLE_BUILD" = true ]; then
+        log_info "🔧 Using simple build flags (basic compatibility)"
+        BUILD_CMD="PATH=\"$PATH\" CGO_ENABLED=0 go build -ldflags=\"$LDFLAGS\" -trimpath -buildvcs=false -o ../../../geth.bin ."
+    elif [ "$USE_CHECKLINKNAME" = true ]; then
         log_info "🔧 Using -checklinkname=0 flag for Go 1.23+ memsize compatibility"
-        BUILD_CMD="PATH=\"$PATH\" CGO_ENABLED=0 go build -ldflags \"-checklinkname=0 $LDFLAGS\" -trimpath -buildvcs=false -o ../../../geth.bin ."
+        BUILD_CMD="PATH=\"$PATH\" CGO_ENABLED=0 go build -ldflags=\"-checklinkname=0 $LDFLAGS\" -trimpath -buildvcs=false -o ../../../geth.bin ."
     else
         log_info "🔧 Using standard build flags for Go version compatibility"
-        BUILD_CMD="PATH=\"$PATH\" CGO_ENABLED=0 go build -ldflags \"$LDFLAGS\" -trimpath -buildvcs=false -o ../../../geth.bin ."
+        BUILD_CMD="PATH=\"$PATH\" CGO_ENABLED=0 go build -ldflags=\"$LDFLAGS\" -trimpath -buildvcs=false -o ../../../geth.bin ."
     fi
     
     if build_with_retry "quantum-geth" "$BUILD_CMD" "../../../geth.bin"; then
@@ -564,12 +578,15 @@ build_miner() {
     mkdir -p "$GOCACHE" "$GOTMPDIR" "$TMPDIR"
     
     # Build command with appropriate flags based on Go version
-    if [ "$USE_CHECKLINKNAME" = true ]; then
+    if [ "$SIMPLE_BUILD" = true ]; then
+        log_info "🔧 Using simple build flags (basic compatibility)"
+        BUILD_CMD="PATH=\"$PATH\" go build -ldflags=\"$LDFLAGS\" -trimpath -buildvcs=false"
+    elif [ "$USE_CHECKLINKNAME" = true ]; then
         log_info "🔧 Using -checklinkname=0 flag for Go 1.23+ memsize compatibility"
-        BUILD_CMD="PATH=\"$PATH\" go build -ldflags \"-checklinkname=0 $LDFLAGS\" -trimpath -buildvcs=false"
+        BUILD_CMD="PATH=\"$PATH\" go build -ldflags=\"-checklinkname=0 $LDFLAGS\" -trimpath -buildvcs=false"
     else
         log_info "🔧 Using standard build flags for Go version compatibility"
-        BUILD_CMD="PATH=\"$PATH\" go build -ldflags \"$LDFLAGS\" -trimpath -buildvcs=false"
+        BUILD_CMD="PATH=\"$PATH\" go build -ldflags=\"$LDFLAGS\" -trimpath -buildvcs=false"
     fi
     
     if [ -n "$BUILD_TAGS" ]; then
@@ -819,6 +836,7 @@ main() {
     log_info "  Auto-confirm: $AUTO_CONFIRM"
     log_info "  Debug: $DEBUG"
     log_info "  Skip Module Fix: $SKIP_MODULE_FIX"
+    log_info "  Simple Build: $SIMPLE_BUILD"
     echo ""
     
     # Pre-build checks
