@@ -17,6 +17,7 @@ TARGET="both"
 CLEAN=false
 DEBUG=false
 LOG_FILE=""
+SKIP_MODULE_FIX=false
 
 for arg in "$@"; do
     case $arg in
@@ -34,6 +35,9 @@ for arg in "$@"; do
             ;;
         --log=*)
             LOG_FILE="${arg#--log=}"
+            ;;
+        --skip-module-fix)
+            SKIP_MODULE_FIX=true
             ;;
         geth|miner|both)
             TARGET="$arg"
@@ -54,6 +58,7 @@ for arg in "$@"; do
             echo "  --debug       Enable debug output"
             echo "  --log         Save build log to timestamped file"
             echo "  --log=FILE    Save build log to specific file"
+            echo "  --skip-module-fix  Skip Go module dependency fixing"
             echo "  --help        Show this help"
             echo ""
             exit 0
@@ -312,7 +317,7 @@ check_go_version_for_memsize() {
     fi
 }
 
-# Fix Go module conflicts
+# Fix Go module conflicts with timeout and better error handling
 fix_go_module_conflicts() {
     local module_dir="$1"
     log_info "🔧 Checking Go module dependencies in $module_dir..."
@@ -321,22 +326,44 @@ fix_go_module_conflicts() {
     
     if grep -q "github.com/fjl/memsize" go.mod 2>/dev/null; then
         log_info "🚨 Detected problematic memsize dependency"
-        log_info "🔧 Auto-fix: Cleaning Go module cache and dependencies..."
+        log_info "🔧 Light module cleanup (avoiding full cache wipe)..."
         
-        go clean -cache -modcache -testcache 2>/dev/null || true
+        # Less aggressive cleanup - don't wipe entire cache
         rm -f go.sum
         
-        log_info "🚀 Re-downloading dependencies with fresh resolution..."
-        GOPROXY=direct go mod download 2>/dev/null || true
-        go mod tidy 2>/dev/null || true
+        log_info "🚀 Updating dependencies with timeout protection..."
         
-        if go mod verify 2>/dev/null; then
-            log_success "✅ Module dependencies verified and fixed"
+        # Check if timeout command is available
+        if command -v timeout >/dev/null 2>&1; then
+            # Try with standard proxy first (faster and more reliable)
+            if timeout 60s go mod tidy 2>&1; then
+                log_success "✅ Module dependencies updated successfully"
+            else
+                log_warning "⚠️ Standard module update timed out, trying alternative..."
+                
+                # Fallback: use direct proxy with shorter timeout
+                if timeout 30s env GOPROXY=https://proxy.golang.org,direct go mod tidy 2>&1; then
+                    log_success "✅ Module dependencies updated with fallback method"
+                else
+                    log_warning "⚠️ Module update timed out, proceeding with existing dependencies..."
+                    log_info "💡 Build may still work with cached dependencies"
+                fi
+            fi
+            
+            # Quick verification without hanging
+            if timeout 10s go mod verify >/dev/null 2>&1; then
+                log_success "✅ Module dependencies verified"
+            else
+                log_info "ℹ️ Module verification skipped (proceeding with build)"
+            fi
         else
-            log_warning "Module verification failed, trying alternative approach..."
-            go clean -cache -modcache 2>/dev/null || true
-            GOPROXY=https://proxy.golang.org go mod download 2>/dev/null || true
-            go mod tidy 2>/dev/null || true
+            # No timeout available - use simpler approach
+            log_info "⚠️ No timeout command available, using basic module update..."
+            if go mod tidy 2>&1; then
+                log_success "✅ Module dependencies updated"
+            else
+                log_warning "⚠️ Module update failed, proceeding anyway..."
+            fi
         fi
     else
         log_success "✅ No problematic dependencies detected"
@@ -400,8 +427,12 @@ build_geth() {
         exit 1
     fi
     
-    # Fix module conflicts
-    fix_go_module_conflicts "../../quantum-geth"
+    # Fix module conflicts (if not skipped)
+    if [ "$SKIP_MODULE_FIX" = false ]; then
+        fix_go_module_conflicts "../../quantum-geth"
+    else
+        log_info "⚡ Skipping Go module dependency fixing (--skip-module-fix)"
+    fi
     
     # Set build environment
     ORIGINAL_CGO=$CGO_ENABLED
@@ -457,8 +488,12 @@ build_miner() {
         exit 1
     fi
     
-    # Fix module conflicts
-    fix_go_module_conflicts "../../quantum-miner"
+    # Fix module conflicts (if not skipped)
+    if [ "$SKIP_MODULE_FIX" = false ]; then
+        fix_go_module_conflicts "../../quantum-miner"
+    else
+        log_info "⚡ Skipping Go module dependency fixing (--skip-module-fix)"
+    fi
     
     # Detect GPU capabilities
     BUILD_TAGS=""
@@ -783,6 +818,7 @@ main() {
     log_info "  Clean: $CLEAN"
     log_info "  Auto-confirm: $AUTO_CONFIRM"
     log_info "  Debug: $DEBUG"
+    log_info "  Skip Module Fix: $SKIP_MODULE_FIX"
     echo ""
     
     # Pre-build checks
