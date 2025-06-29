@@ -30,7 +30,7 @@ quantum-gpu-miner -coinbase 0xYourAddress -quantum-cloud \
 
 ### Linux - Universal System Service Setup
 ```bash
-# 🚀 NEW: Complete system service setup (works on ALL Linux distributions!)
+# 🚀 NEW: Complete system service setup (works on most Linux distributions!)
 curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qgeth.sh | sudo bash -s -- -y
 
 # Creates persistent system service that:
@@ -38,7 +38,7 @@ curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qg
 # ✅ Auto-restarts on failure  
 # ✅ Professional logging & monitoring
 # ✅ Secure execution (runs as user, not root)
-# ✅ Universal compatibility (Ubuntu, Fedora, Debian, Alpine, etc.)
+# ✅ Universal compatibility (Ubuntu, Debian, CentOS, Alpine, etc.)
 
 # Or manual setup  
 git clone https://github.com/fourtytwo42/Qgeth3.git
@@ -46,6 +46,36 @@ cd Qgeth3
 ./quick-start.sh build
 ./quick-start.sh start
 ```
+
+### 🐳 Docker - Universal Cross-Platform Setup
+```bash
+# Linux - Smart Docker Scripts
+git clone https://github.com/fourtytwo42/Qgeth3.git
+cd Qgeth3
+chmod +x scripts/linux/start-geth-docker.sh
+./scripts/linux/start-geth-docker.sh                    # Start testnet
+./scripts/linux/start-geth-docker.sh --mining           # Start with mining
+./scripts/linux/start-geth-docker.sh devnet             # Start dev network
+```
+
+```powershell
+# Windows - Smart Docker Scripts
+git clone https://github.com/fourtytwo42/Qgeth3.git
+cd Qgeth3
+.\scripts\windows\start-geth-docker.ps1                 # Start testnet
+.\scripts\windows\start-geth-docker.ps1 -Mining         # Start with mining
+.\scripts\windows\start-geth-docker.ps1 devnet          # Start dev network
+```
+
+```bash
+# Manual Docker-Compose (Advanced Users)
+docker-compose up -d qgeth-testnet              # Testnet node only
+docker-compose --profile mining up -d qgeth-miner  # Testnet with mining
+docker-compose --profile dev up -d qgeth-dev      # Dev network
+```
+
+**🎯 Perfect for Fedora users!** - Bypasses systemd service issues
+**✅ Features:** Auto-build, health checks, MetaMask ready, mining support
 
 ### Using the Quick Start Wrapper
 ```bash
@@ -133,9 +163,10 @@ Qgeth3/
 - **[Windows Mining Troubleshooting](docs/mining/troubleshooting-windows-mining.md)** - Windows mining troubleshooting
 
 ### 🚀 Production Deployment
-- **[VPS Deployment Guide](docs/deployment/vps-deployment.md)** - Production server setup & management
+- **[🐳 Docker Deployment Guide](docs/deployment/docker-deployment.md)** - **Universal cross-platform deployment (Linux, Windows, macOS)**
+- **[Bootstrap Deployment Guide](docs/deployment/bootstrap-deployment.md)** - Linux system service deployment (includes Fedora manual setup)
 - **[Windows Deployment Guide](docs/deployment/windows-deploy.md)** - Windows production deployment
-- **[VPS Deployment Troubleshooting](docs/deployment/troubleshooting-vps-deployment.md)** - Production deployment troubleshooting
+- **[Bootstrap Deployment Troubleshooting](docs/deployment/troubleshooting-bootstrap-deployment.md)** - Bootstrap deployment troubleshooting
 - **[Windows Deployment Troubleshooting](docs/deployment/troubleshooting-windows-deploy.md)** - Windows deployment troubleshooting
 
 ### 👨‍💻 Development
@@ -162,11 +193,13 @@ Qgeth3/
 
 ### Universal System Service Architecture
 - **Multi-Init System Support:** systemd, OpenRC, SysV init, Upstart
-- **Cross-Distribution:** Ubuntu, Fedora, Debian, CentOS, Alpine, Arch, Gentoo
+- **Cross-Distribution:** Ubuntu, Debian, CentOS, Alpine, Arch, Gentoo
 - **Persistent Services:** Survive reboots and system restarts
 - **Automatic Recovery:** Service restarts on failure with exponential backoff
 - **Security Hardening:** Sandboxed execution, resource limits, privilege restrictions
 - **Professional Logging:** journalctl integration, structured log rotation
+
+**Note:** Fedora requires manual installation due to systemd execution complexities. See [Bootstrap Deployment Guide](docs/deployment/bootstrap-deployment.md#-fedora-manual-installation) for Fedora-specific instructions.
 
 ### Professional Build System
 - **Multi-target builds:** Node-only, miner-only, or both

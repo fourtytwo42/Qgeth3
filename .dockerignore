@@ -1,0 +1,92 @@
+# Git and version control
+.git
+.gitignore
+.gitattributes
+
+# Documentation
+README.md
+docs/
+*.md
+
+# Build artifacts and binaries (will be rebuilt in container)
+geth
+geth.bin
+quantum-miner
+*.exe
+*.dll
+
+# Development files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS specific files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Testing and temporary files
+test/
+tests/
+tmp/
+temp/
+*.tmp
+*.temp
+
+# Logs
+*.log
+logs/
+
+# Node modules (if any)
+node_modules/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Go specific
+vendor/
+*.mod.orig
+
+# Build directories
+build/
+dist/
+releases/
+
+# IDE and editor files
+*.sublime-*
+*.tmlanguage.cache
+*.tmPreferences.cache
+*.stTheme.cache
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Blockchain data directories
+qdata/
+**/qdata/
+**/.qcoin/
+
+# Scripts that aren't needed in container
+scripts/windows/
+bootstrap-qgeth.sh
+quick-start.sh
+
+# Development tools
+docker-compose.yml
+docker-compose.*.yml
+Dockerfile
+.dockerignore 

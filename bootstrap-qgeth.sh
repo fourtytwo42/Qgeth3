@@ -110,6 +110,37 @@ detect_system() {
     fi
     
     log_info "Detected: $OS (using $PKG_MANAGER)"
+    
+    # Special note for Fedora users
+    if [ "$OS" = "fedora" ]; then
+        log_warning "⚠️ Fedora Detected"
+        log_info "Fedora requires manual installation due to systemd execution complexities."
+        log_info "The quantum blockchain builds and runs perfectly on Fedora, but the"
+        log_info "automated bootstrap service creation fails with exit code 203."
+        log_info ""
+        log_info "🐳 RECOMMENDED: Use Docker for Fedora instead!"
+        log_info "  Docker provides perfect cross-platform compatibility:"
+        log_info "  1. Install Docker: sudo dnf install docker docker-compose"
+        log_info "  2. Start Docker: sudo systemctl start docker"
+        log_info "  3. Run Q Geth: docker-compose up -d qgeth-testnet"
+        log_info "  4. See: docs/deployment/docker-deployment.md"
+        log_info ""
+        log_info "📋 Manual Installation Guide:"
+        log_info "  See: docs/deployment/bootstrap-deployment.md#-fedora-manual-installation"
+        log_info ""
+        
+        if [ "$AUTO_CONFIRM" != true ]; then
+            echo -n "Continue with bootstrap anyway? (y/N): "
+            read -r RESPONSE
+            if [[ ! "$RESPONSE" =~ ^([yY][eE][sS]|[yY])$ ]]; then
+                log_info "Bootstrap cancelled. Consider using Docker for easier Fedora deployment!"
+                exit 0
+            fi
+        else
+            log_warning "Continuing with bootstrap in non-interactive mode..."
+            log_warning "Service creation will likely fail on Fedora."
+        fi
+    fi
 }
 
 # Detect init system for service creation
@@ -344,6 +375,29 @@ create_systemd_service() {
         return 1
     fi
     
+    # Create service wrapper script that handles process cleanup
+    cat > "$PROJECT_DIR/scripts/linux/systemd-start-geth.sh" << 'WRAPPER_EOF'
+#!/bin/bash
+# Systemd Service Wrapper for Q Geth
+# Handles automatic process cleanup before starting
+
+echo "[$(date)] Q Geth systemd service starting..."
+
+# Clean up any existing geth processes
+echo "[$(date)] Cleaning up existing processes..."
+pkill -f "geth" >/dev/null 2>&1 || true
+pkill -f "start-geth" >/dev/null 2>&1 || true
+
+# Wait a moment for cleanup
+sleep 2
+
+# Start Q Geth
+echo "[$(date)] Starting Q Geth..."
+exec ./start-geth.sh testnet
+WRAPPER_EOF
+    
+    chmod +x "$PROJECT_DIR/scripts/linux/systemd-start-geth.sh"
+    
     $SUDO_CMD tee /etc/systemd/system/qgeth.service > /dev/null << EOF
 [Unit]
 Description=Q Geth Quantum Blockchain Node
@@ -352,13 +406,16 @@ After=network.target
 Wants=network.target
 
 [Service]
-Type=exec
+Type=simple
 User=$ACTUAL_USER
 WorkingDirectory=$PROJECT_DIR/scripts/linux
-ExecStart=$PROJECT_DIR/scripts/linux/start-geth.sh testnet
+ExecStart=/bin/bash $PROJECT_DIR/scripts/linux/systemd-start-geth.sh
 Restart=on-failure
 RestartSec=10s
+TimeoutStartSec=60s
 TimeoutStopSec=30s
+StandardOutput=journal
+StandardError=journal
 
 # Environment
 Environment=HOME=$USER_HOME
@@ -375,7 +432,7 @@ EOF
     fi
     
     # Check if ExecStart path exists and is executable
-    local exec_start_script="$PROJECT_DIR/scripts/linux/start-geth.sh"
+    local exec_start_script="$PROJECT_DIR/scripts/linux/systemd-start-geth.sh"
     if [ ! -f "$exec_start_script" ]; then
         log_error "ExecStart script missing: $exec_start_script"
         return 1
@@ -607,7 +664,12 @@ start_system_service() {
             if $SUDO_CMD systemctl is-active --quiet qgeth.service; then
                 log_success "✅ Q Geth service started successfully"
             else
-                log_warning "⚠️ Service created but failed to start - check logs"
+                log_warning "⚠️ Service created but failed to start"
+                log_info "Troubleshooting commands:"
+                log_info "  Check status: sudo systemctl status qgeth.service"
+                log_info "  View logs: sudo journalctl -xeu qgeth.service -f"
+                log_info "  Restart service: sudo systemctl restart qgeth.service"
+                log_info "  Or run manually: cd $PROJECT_DIR/scripts/linux && ./start-geth.sh testnet"
             fi
             ;;
         "openrc")
@@ -615,7 +677,9 @@ start_system_service() {
             if $SUDO_CMD rc-service qgeth status >/dev/null 2>&1; then
                 log_success "✅ Q Geth service started successfully"
             else
-                log_warning "⚠️ Service created but failed to start - check logs"
+                log_warning "⚠️ Service created but failed to start"
+                log_info "Check status: sudo rc-service qgeth status"
+                log_info "Or run manually: cd $PROJECT_DIR/scripts/linux && ./start-geth.sh testnet"
             fi
             ;;
         "sysv")
@@ -623,7 +687,9 @@ start_system_service() {
             if $SUDO_CMD service qgeth status >/dev/null 2>&1; then
                 log_success "✅ Q Geth service started successfully"
             else
-                log_warning "⚠️ Service created but failed to start - check logs"
+                log_warning "⚠️ Service created but failed to start"
+                log_info "Check status: sudo service qgeth status"
+                log_info "Or run manually: cd $PROJECT_DIR/scripts/linux && ./start-geth.sh testnet"
             fi
             ;;
         "upstart")
@@ -631,7 +697,9 @@ start_system_service() {
             if $SUDO_CMD initctl status qgeth | grep -q "start/running"; then
                 log_success "✅ Q Geth service started successfully"
             else
-                log_warning "⚠️ Service created but failed to start - check logs"
+                log_warning "⚠️ Service created but failed to start"
+                log_info "Check status: sudo initctl status qgeth"
+                log_info "Or run manually: cd $PROJECT_DIR/scripts/linux && ./start-geth.sh testnet"
             fi
             ;;
         *)
@@ -1055,6 +1123,12 @@ EOF
     echo "  3. View logs: $INSTALL_DIR/logs-qgeth.sh -f"
     echo "  4. Start mining: cd $PROJECT_DIR/scripts/linux && ./start-miner.sh"
     echo "  5. RPC API: http://localhost:8545"
+    echo ""
+    echo -e "${YELLOW}💡 Troubleshooting:${NC}"
+    echo "  If service fails to start with 'datadir already used by another process':"
+    echo "  1. Kill existing processes: pkill -f geth"
+    echo "  2. Restart service: sudo systemctl restart qgeth.service"
+    echo "  3. Or run manually: cd $PROJECT_DIR/scripts/linux && ./start-geth.sh testnet"
     echo ""
     echo -e "${GREEN}Q Geth is now running as a persistent system service! 🚀${NC}"
 }

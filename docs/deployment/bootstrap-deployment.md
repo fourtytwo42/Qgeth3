@@ -7,10 +7,29 @@ Complete guide for operating and managing your Q Geth node after installation by
 The bootstrap script creates a **truly universal** system service that works on ALL Linux distributions:
 
 ### 🎯 Multi-Init System Support
-- **Systemd**: Ubuntu, Fedora, Debian, CentOS, RHEL, openSUSE
+- **Systemd**: Ubuntu, Debian, CentOS, RHEL, openSUSE
 - **OpenRC**: Alpine Linux, Gentoo
 - **SysV Init**: Traditional Unix systems, older distributions
 - **Upstart**: Older Ubuntu versions
+
+### ⚠️ Distribution Compatibility
+
+**Fully Supported (Bootstrap Script + System Service):**
+- Ubuntu 20.04+ (LTS recommended)
+- Debian 10+ (Stable/Testing)
+- CentOS 7+, RHEL 7+
+- openSUSE Leap/Tumbleweed
+- Alpine Linux 3.14+
+- Arch Linux (current)
+
+**Manual Installation Only:**
+- **Fedora**: Due to systemd service execution complexities and security policy differences, Fedora requires manual installation. The quantum blockchain builds and runs perfectly on Fedora, but the automated bootstrap service creation fails.
+
+**Why Fedora Bootstrap Fails:**
+- Fedora's enhanced systemd security policies cause service execution failures (exit code 203)
+- Complex interactions between Fedora's SELinux policies and systemd sandboxing
+- Fedora's rapidly changing package management and system configuration
+- Different default PATH and environment variable handling in systemd services
 
 ### 🔒 Enterprise Security Features
 - **Sandboxed Execution**: NoNewPrivileges, PrivateTmp, ProtectSystem
@@ -79,6 +98,129 @@ curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qg
 - **Management Scripts**: Universal scripts that work with any Linux distribution
 - **Firewall**: Configures system firewall with required ports (8545, 8546, 30303)
 - **Auto-Start**: Service configured to start on boot and restart on failure
+
+## 🔧 Fedora Manual Installation
+
+**Important**: Fedora is not supported by the bootstrap script due to systemd execution complexities. However, Q Geth builds and runs perfectly on Fedora with manual installation.
+
+### Prerequisites
+```bash
+# Update system packages
+sudo dnf update -y
+
+# Install required dependencies
+sudo dnf install -y git gcc gcc-c++ make curl wget
+
+# Install Go 1.24.4 (required for quantum consensus)
+# Remove any existing Go from package manager
+sudo dnf remove golang -y
+
+# Download and install Go 1.24.4
+cd /tmp
+wget https://golang.org/dl/go1.24.4.linux-amd64.tar.gz
+sudo rm -rf /usr/local/go
+sudo tar -C /usr/local -xzf go1.24.4.linux-amd64.tar.gz
+
+# Configure Go environment
+echo 'export PATH=/usr/local/go/bin:$PATH' | sudo tee /etc/profile.d/go.sh
+chmod +x /etc/profile.d/go.sh
+source /etc/profile.d/go.sh
+
+# Verify Go installation
+go version  # Should show go1.24.4
+```
+
+### Manual Q Geth Installation
+```bash
+# Create installation directory
+mkdir -p ~/qgeth
+cd ~/qgeth
+
+# Clone repository
+git clone https://github.com/fourtytwo42/Qgeth3.git
+cd Qgeth3
+
+# Make scripts executable
+find . -name "*.sh" -type f -exec chmod +x {} \;
+
+# Build Q Geth
+cd scripts/linux
+./build-linux.sh geth
+
+# Verify build
+ls -la ../../geth.bin  # Should exist
+ls -la ../../geth      # Should exist
+```
+
+### Manual Service Setup (Optional)
+```bash
+# Create simple systemd service (minimal configuration)
+sudo tee /etc/systemd/system/qgeth-manual.service > /dev/null << EOF
+[Unit]
+Description=Q Geth Quantum Blockchain Node (Manual)
+After=network.target
+
+[Service]
+Type=simple
+User=$USER
+WorkingDirectory=$HOME/qgeth/Qgeth3/scripts/linux
+ExecStart=/bin/bash -c 'cd $HOME/qgeth/Qgeth3/scripts/linux && ./start-geth.sh testnet'
+Restart=on-failure
+RestartSec=10s
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Enable and start the service
+sudo systemctl daemon-reload
+sudo systemctl enable qgeth-manual.service
+sudo systemctl start qgeth-manual.service
+
+# Check service status
+sudo systemctl status qgeth-manual.service
+```
+
+### Manual Start (Recommended for Fedora)
+```bash
+# Start Q Geth manually (most reliable on Fedora)
+cd ~/qgeth/Qgeth3/scripts/linux
+./start-geth.sh testnet
+
+# The node will run in foreground - use screen or tmux for background:
+# Install screen: sudo dnf install screen -y
+# Start in screen: screen -S qgeth
+# Run: ./start-geth.sh testnet
+# Detach: Ctrl+A, D
+# Reattach: screen -r qgeth
+```
+
+### Fedora Firewall Configuration
+```bash
+# Configure firewalld (Fedora's default firewall)
+sudo firewall-cmd --permanent --add-port=8545/tcp  # HTTP RPC
+sudo firewall-cmd --permanent --add-port=8546/tcp  # WebSocket
+sudo firewall-cmd --permanent --add-port=30303/tcp # P2P
+sudo firewall-cmd --permanent --add-port=30303/udp # P2P
+sudo firewall-cmd --reload
+
+# Verify firewall rules
+sudo firewall-cmd --list-ports
+```
+
+### Fedora-Specific Troubleshooting
+```bash
+# If SELinux causes issues, check and adjust:
+sudo setsebool -P httpd_can_network_connect 1
+sudo semanage port -a -t http_port_t -p tcp 8545
+sudo semanage port -a -t http_port_t -p tcp 8546
+
+# Check SELinux status
+sestatus
+
+# View SELinux denials (if any)
+sudo sealert -a /var/log/audit/audit.log
+```
 
 ## 🔧 Universal Service Management
 
