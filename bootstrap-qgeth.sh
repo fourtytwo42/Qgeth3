@@ -376,9 +376,18 @@ WantedBy=multi-user.target
 EOF
     
     # Reload systemd and enable service
-    $SUDO_CMD systemctl daemon-reload
-    $SUDO_CMD systemctl enable qgeth.service
+    if ! $SUDO_CMD systemctl daemon-reload; then
+        log_error "Failed to reload systemd"
+        return 1
+    fi
+    
+    if ! $SUDO_CMD systemctl enable qgeth.service; then
+        log_error "Failed to enable systemd service"
+        return 1
+    fi
+    
     log_success "✅ Systemd service created and enabled"
+    return 0
 }
 
 # Create OpenRC service
@@ -414,8 +423,14 @@ start_pre() {
 EOF
     
     $SUDO_CMD chmod +x /etc/init.d/qgeth
-    $SUDO_CMD rc-update add qgeth default
+    
+    if ! $SUDO_CMD rc-update add qgeth default; then
+        log_error "Failed to enable OpenRC service"
+        return 1
+    fi
+    
     log_success "✅ OpenRC service created and enabled"
+    return 0
 }
 
 # Create SysV init script
@@ -503,14 +518,26 @@ EOF
     $SUDO_CMD chmod +x /etc/init.d/qgeth
     
     # Enable service for different runlevels
+    SERVICE_CREATED=true
     for runlevel in 3 4 5; do
-        $SUDO_CMD ln -sf /etc/init.d/qgeth "/etc/rc${runlevel}.d/S80qgeth" 2>/dev/null || true
+        if ! $SUDO_CMD ln -sf /etc/init.d/qgeth "/etc/rc${runlevel}.d/S80qgeth" 2>/dev/null; then
+            log_warning "Failed to create start link for runlevel $runlevel"
+            SERVICE_CREATED=false
+        fi
     done
     for runlevel in 0 1 2 6; do
-        $SUDO_CMD ln -sf /etc/init.d/qgeth "/etc/rc${runlevel}.d/K20qgeth" 2>/dev/null || true
+        if ! $SUDO_CMD ln -sf /etc/init.d/qgeth "/etc/rc${runlevel}.d/K20qgeth" 2>/dev/null; then
+            log_warning "Failed to create stop link for runlevel $runlevel"
+        fi
     done
     
-    log_success "✅ SysV init script created and enabled"
+    if [ "$SERVICE_CREATED" = true ]; then
+        log_success "✅ SysV init script created and enabled"
+        return 0
+    else
+        log_error "Failed to fully enable SysV service"
+        return 1
+    fi
 }
 
 # Create Upstart service
@@ -546,6 +573,7 @@ end script
 EOF
     
     log_success "✅ Upstart service created"
+    return 0
 }
 
 # Start and enable the system service
@@ -662,13 +690,36 @@ main() {
     log_info "Building Q Geth..."
     cd "$PROJECT_DIR/scripts/linux"
     
-    # Use consolidated build script
-    ./build-linux.sh geth ${AUTO_CONFIRM:+-y}
+    # Use consolidated build script with error handling
+    if ! ./build-linux.sh geth ${AUTO_CONFIRM:+-y}; then
+        log_error "Failed to build Q Geth"
+        log_info "Build log may contain more details"
+        log_info "You can try running the build manually:"
+        log_info "  cd $PROJECT_DIR/scripts/linux"
+        log_info "  ./build-linux.sh geth"
+        exit 1
+    fi
+    
+    # Verify geth binary was created
+    if [ ! -f "$PROJECT_DIR/geth.bin" ] && [ ! -f "$PROJECT_DIR/geth" ]; then
+        log_error "Q Geth binary not found after build"
+        log_info "Expected binary at: $PROJECT_DIR/geth.bin or $PROJECT_DIR/geth"
+        exit 1
+    fi
+    
+    log_success "✅ Q Geth build completed successfully"
     
     # Create system service and management scripts
-    create_system_service
+    if ! create_system_service; then
+        log_error "Failed to create system service"
+        log_info "Q Geth was built successfully but service creation failed"
+        log_info "You can still run Q Geth manually:"
+        log_info "  cd $PROJECT_DIR/scripts/linux"
+        log_info "  ./start-geth.sh testnet"
+        exit 1
+    fi
     
-    log_info "Creating system service management scripts..."
+    log_info "Creating universal service management scripts..."
     
     # Create universal service management scripts
     cat > "$INSTALL_DIR/start-qgeth.sh" << EOF
@@ -820,6 +871,94 @@ case "$INIT_SYSTEM" in
         ;;
 esac
 EOF
+
+    cat > "$INSTALL_DIR/logs-qgeth.sh" << EOF
+#!/bin/bash
+# View Q Geth System Service Logs for user: $ACTUAL_USER
+# Usage: ./logs-qgeth.sh [-f] [-n NUMBER]
+
+FOLLOW_MODE=false
+LINE_COUNT=50
+
+# Parse arguments
+while [[ \$# -gt 0 ]]; do
+    case \$1 in
+        -f|--follow)
+            FOLLOW_MODE=true
+            shift
+            ;;
+        -n|--lines)
+            LINE_COUNT="\$2"
+            shift 2
+            ;;
+        -h|--help)
+            echo "Usage: \$0 [-f|--follow] [-n|--lines NUMBER]"
+            echo "  -f, --follow    Follow log output (live mode)"
+            echo "  -n, --lines     Number of lines to show (default: 50)"
+            echo "  -h, --help      Show this help"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: \$1"
+            echo "Use -h for help"
+            exit 1
+            ;;
+    esac
+done
+
+echo "Q Geth system service logs ($INIT_SYSTEM):"
+echo ""
+
+case "$INIT_SYSTEM" in
+    "systemd")
+        if [ "\$FOLLOW_MODE" = true ]; then
+            echo "Following Q Geth service logs (press Ctrl+C to exit)..."
+            sudo journalctl -u qgeth.service -f
+        else
+            echo "Last \$LINE_COUNT lines from Q Geth service:"
+            sudo journalctl -u qgeth.service --no-pager -l -n "\$LINE_COUNT"
+        fi
+        ;;
+    "openrc"|"sysv"|"upstart")
+        # Try multiple log locations
+        LOG_FILES=(
+            "/var/log/qgeth.log"
+            "$INSTALL_DIR/logs/qgeth.log"
+            "$USER_HOME/.qcoin/testnet/geth.log"
+        )
+        
+        FOUND_LOG=false
+        for LOG_FILE in "\${LOG_FILES[@]}"; do
+            if [ -f "\$LOG_FILE" ]; then
+                echo "Using log file: \$LOG_FILE"
+                if [ "\$FOLLOW_MODE" = true ]; then
+                    echo "Following Q Geth logs (press Ctrl+C to exit)..."
+                    tail -f "\$LOG_FILE"
+                else
+                    echo "Last \$LINE_COUNT lines from Q Geth:"
+                    tail -n "\$LINE_COUNT" "\$LOG_FILE"
+                fi
+                FOUND_LOG=true
+                break
+            fi
+        done
+        
+        if [ "\$FOUND_LOG" = false ]; then
+            echo "❌ No log files found. Tried:"
+            for LOG_FILE in "\${LOG_FILES[@]}"; do
+                echo "  - \$LOG_FILE"
+            done
+            echo ""
+            echo "💡 Try checking service status:"
+            echo "  $INSTALL_DIR/status-qgeth.sh"
+        fi
+        ;;
+    *)
+        echo "❌ Unsupported init system: $INIT_SYSTEM"
+        exit 1
+        ;;
+esac
+EOF
     
     chmod +x "$INSTALL_DIR"/*.sh
     
@@ -881,11 +1020,12 @@ EOF
             ;;
     esac
     echo ""
-    echo -e "${BLUE}🔧 Quick Management Scripts:${NC}"
+    echo -e "${BLUE}🔧 Universal Management Scripts:${NC}"
     echo "  Start:   $INSTALL_DIR/start-qgeth.sh"
     echo "  Stop:    $INSTALL_DIR/stop-qgeth.sh"
     echo "  Restart: $INSTALL_DIR/restart-qgeth.sh"
     echo "  Status:  $INSTALL_DIR/status-qgeth.sh"
+    echo "  Logs:    $INSTALL_DIR/logs-qgeth.sh [-f] [-n 100]"
     echo ""
     echo -e "${BLUE}🎯 Service Features:${NC}"
     echo "  ✅ Persistent service (survives reboots)"
@@ -897,8 +1037,9 @@ EOF
     echo -e "${BLUE}🎯 Next Steps:${NC}"
     echo "  1. Service started automatically"
     echo "  2. Check status: $INSTALL_DIR/status-qgeth.sh"
-    echo "  3. Start mining: cd $PROJECT_DIR/scripts/linux && ./start-miner.sh"
-    echo "  4. RPC API: http://localhost:8545"
+    echo "  3. View logs: $INSTALL_DIR/logs-qgeth.sh -f"
+    echo "  4. Start mining: cd $PROJECT_DIR/scripts/linux && ./start-miner.sh"
+    echo "  5. RPC API: http://localhost:8545"
     echo ""
     echo -e "${GREEN}Q Geth is now running as a persistent system service! 🚀${NC}"
 }
