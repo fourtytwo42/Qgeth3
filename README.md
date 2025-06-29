@@ -33,12 +33,16 @@ quantum-gpu-miner -coinbase 0xYourAddress -quantum-cloud \
 # 🚀 NEW: Complete system service setup (works on most Linux distributions!)
 curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qgeth.sh | sudo bash -s -- -y
 
+# 🐳 NEW: Bootstrap with Docker (perfect for Fedora!)
+curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qgeth.sh | bash -s -- --docker
+
 # Creates persistent system service that:
 # ✅ Survives reboots (systemd/OpenRC/SysV/Upstart)
 # ✅ Auto-restarts on failure  
 # ✅ Professional logging & monitoring
 # ✅ Secure execution (runs as user, not root)
 # ✅ Universal compatibility (Ubuntu, Debian, CentOS, Alpine, etc.)
+# 🐳 Docker option bypasses Fedora systemd issues
 
 # Or manual setup  
 git clone https://github.com/fourtytwo42/Qgeth3.git

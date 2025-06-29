@@ -23,12 +23,16 @@ fi
 INSTALL_DIR="$USER_HOME/qgeth"
 PROJECT_DIR="$INSTALL_DIR/Qgeth3"
 AUTO_CONFIRM=false
+DOCKER_MODE=false
 
 # Parse simple flags
 for arg in "$@"; do
     case $arg in
         -y|--yes)
             AUTO_CONFIRM=true
+            ;;
+        --docker)
+            DOCKER_MODE=true
             ;;
         --help|-h)
             echo "Q Geth Universal Bootstrap Script with System Service Integration"
@@ -48,9 +52,11 @@ for arg in "$@"; do
             echo "  curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qgeth.sh | bash"
             echo "  curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qgeth.sh | sudo bash"
             echo "  curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qgeth.sh | bash -s -- -y"
+            echo "  curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qgeth.sh | bash -s -- --docker"
             echo ""
             echo "Options:"
             echo "  -y, --yes    Auto-confirm all prompts"
+            echo "  --docker     Use Docker deployment instead of system service"
             echo "  --help       Show this help"
             echo ""
             exit 0
@@ -648,6 +654,323 @@ EOF
     return 0
 }
 
+# Install Docker and Docker Compose
+install_docker() {
+    log_info "Installing Docker and Docker Compose..."
+    
+    # Check if running as root for package installation
+    if [ "$EUID" -ne 0 ]; then
+        SUDO="sudo"
+    else
+        SUDO=""
+    fi
+    
+    # Check if Docker is already installed
+    if command -v docker >/dev/null 2>&1; then
+        DOCKER_VERSION=$(docker --version 2>/dev/null)
+        log_info "Found existing Docker: $DOCKER_VERSION"
+        
+        # Check if Docker daemon is running
+        if docker info >/dev/null 2>&1; then
+            log_success "✅ Docker is already installed and running"
+        else
+            log_info "Docker is installed but daemon not running, starting..."
+            $SUDO systemctl start docker
+            $SUDO systemctl enable docker
+            log_success "✅ Docker daemon started and enabled"
+        fi
+    else
+        log_info "Installing Docker..."
+        
+        case $PKG_MANAGER in
+            apt)
+                # Install Docker using official script (most reliable)
+                curl -fsSL https://get.docker.com -o get-docker.sh
+                $SUDO sh get-docker.sh
+                rm get-docker.sh
+                
+                # Start and enable Docker
+                $SUDO systemctl start docker
+                $SUDO systemctl enable docker
+                ;;
+            dnf)
+                $SUDO $PKG_INSTALL docker docker-compose
+                $SUDO systemctl start docker
+                $SUDO systemctl enable docker
+                ;;
+            yum)
+                $SUDO $PKG_INSTALL docker docker-compose
+                $SUDO systemctl start docker
+                $SUDO systemctl enable docker
+                ;;
+            pacman)
+                $SUDO $PKG_INSTALL docker docker-compose
+                $SUDO systemctl start docker
+                $SUDO systemctl enable docker
+                ;;
+        esac
+        
+        # Add user to docker group if not root
+        if [ "$ACTUAL_USER" != "root" ]; then
+            $SUDO usermod -aG docker "$ACTUAL_USER"
+            log_info "Added user $ACTUAL_USER to docker group"
+        fi
+        
+        log_success "✅ Docker installed successfully"
+    fi
+    
+    # Check Docker Compose
+    if command -v docker-compose >/dev/null 2>&1; then
+        COMPOSE_VERSION=$(docker-compose --version 2>/dev/null)
+        log_success "✅ Docker Compose found: $COMPOSE_VERSION"
+    else
+        log_info "Installing Docker Compose..."
+        
+        # Install Docker Compose
+        COMPOSE_VERSION="v2.24.0"
+        ARCH=$(uname -m)
+        case $ARCH in
+            x86_64)
+                COMPOSE_ARCH="x86_64"
+                ;;
+            aarch64|arm64)
+                COMPOSE_ARCH="aarch64"
+                ;;
+            *)
+                log_error "Unsupported architecture for Docker Compose: $ARCH"
+                exit 1
+                ;;
+        esac
+        
+        $SUDO curl -L "https://github.com/docker/compose/releases/download/$COMPOSE_VERSION/docker-compose-$(uname -s)-$COMPOSE_ARCH" \
+            -o /usr/local/bin/docker-compose
+        $SUDO chmod +x /usr/local/bin/docker-compose
+        
+        if command -v docker-compose >/dev/null 2>&1; then
+            log_success "✅ Docker Compose installed successfully"
+        else
+            log_error "Failed to install Docker Compose"
+            exit 1
+        fi
+    fi
+    
+    # Verify Docker is working
+    if docker info >/dev/null 2>&1; then
+        log_success "✅ Docker is working correctly"
+    else
+        log_error "Docker installation completed but daemon is not responding"
+        log_info "You may need to:"
+        log_info "  1. Restart your shell session"
+        log_info "  2. Log out and back in (for group membership)"
+        log_info "  3. Run: newgrp docker"
+        exit 1
+    fi
+}
+
+# Deploy Q Geth with Docker
+deploy_docker() {
+    log_info "Deploying Q Geth with Docker..."
+    
+    cd "$PROJECT_DIR"
+    
+    # Make Docker scripts executable
+    chmod +x scripts/linux/start-geth-docker.sh 2>/dev/null || true
+    
+    # Build Docker containers
+    log_info "Building Q Geth Docker containers..."
+    if ! docker-compose build; then
+        log_error "Failed to build Docker containers"
+        exit 1
+    fi
+    
+    log_success "✅ Docker containers built successfully"
+    
+    # Start Q Geth container
+    log_info "Starting Q Geth Docker container..."
+    if ! docker-compose up -d qgeth-testnet; then
+        log_error "Failed to start Q Geth Docker container"
+        exit 1
+    fi
+    
+    # Wait for container to start
+    log_info "Waiting for container to start..."
+    sleep 5
+    
+    # Check container status
+    if docker-compose ps | grep -q "qgeth-testnet.*Up"; then
+        log_success "✅ Q Geth Docker container started successfully"
+    else
+        log_warning "⚠️ Container may not be healthy, checking logs..."
+        docker-compose logs qgeth-testnet
+        return 1
+    fi
+    
+    # Test API connectivity
+    log_info "Testing API connectivity..."
+    sleep 3
+    if curl -s http://localhost:8545 >/dev/null 2>&1; then
+        log_success "✅ Q Geth API is accessible at http://localhost:8545"
+    else
+        log_info "API not yet ready (normal during startup)"
+    fi
+}
+
+# Create Docker management scripts
+create_docker_scripts() {
+    log_info "Creating Docker management scripts..."
+    
+    cat > "$INSTALL_DIR/start-qgeth-docker.sh" << 'EOF'
+#!/bin/bash
+# Start Q Geth Docker Container
+echo "Starting Q Geth Docker container..."
+cd ~/qgeth/Qgeth3
+
+if ! docker-compose up -d qgeth-testnet; then
+    echo "❌ Failed to start Q Geth Docker container"
+    exit 1
+fi
+
+echo "✅ Q Geth Docker container started"
+echo "🌐 HTTP RPC: http://localhost:8545"
+echo "🌐 WebSocket: ws://localhost:8546"
+echo ""
+echo "💡 Management Commands:"
+echo "  Status: docker-compose ps"
+echo "  Logs:   docker-compose logs -f qgeth-testnet"
+echo "  Stop:   docker-compose stop qgeth-testnet"
+EOF
+    
+    cat > "$INSTALL_DIR/stop-qgeth-docker.sh" << 'EOF'
+#!/bin/bash
+# Stop Q Geth Docker Container
+echo "Stopping Q Geth Docker container..."
+cd ~/qgeth/Qgeth3
+
+docker-compose stop qgeth-testnet
+echo "✅ Q Geth Docker container stopped"
+EOF
+    
+    cat > "$INSTALL_DIR/restart-qgeth-docker.sh" << 'EOF'
+#!/bin/bash
+# Restart Q Geth Docker Container
+echo "Restarting Q Geth Docker container..."
+cd ~/qgeth/Qgeth3
+
+docker-compose restart qgeth-testnet
+echo "✅ Q Geth Docker container restarted"
+EOF
+    
+    cat > "$INSTALL_DIR/status-qgeth-docker.sh" << 'EOF'
+#!/bin/bash
+# Check Q Geth Docker Container Status
+echo "Q Geth Docker container status:"
+echo ""
+cd ~/qgeth/Qgeth3
+
+docker-compose ps
+echo ""
+
+# Test API connectivity
+echo "🔗 Testing API connectivity..."
+if curl -s http://localhost:8545 >/dev/null 2>&1; then
+    echo "✅ HTTP RPC API: http://localhost:8545 (accessible)"
+else
+    echo "❌ HTTP RPC API: http://localhost:8545 (not accessible)"
+fi
+
+if curl -s http://localhost:8546 >/dev/null 2>&1; then
+    echo "✅ WebSocket API: ws://localhost:8546 (accessible)"
+else
+    echo "❌ WebSocket API: ws://localhost:8546 (not accessible)"
+fi
+
+echo ""
+echo "📋 Docker Management Commands:"
+echo "  Start:   docker-compose up -d qgeth-testnet"
+echo "  Stop:    docker-compose stop qgeth-testnet"
+echo "  Restart: docker-compose restart qgeth-testnet"
+echo "  Logs:    docker-compose logs -f qgeth-testnet"
+echo "  Status:  docker-compose ps"
+echo "  Remove:  docker-compose down"
+EOF
+    
+    cat > "$INSTALL_DIR/logs-qgeth-docker.sh" << 'EOF'
+#!/bin/bash
+# View Q Geth Docker Container Logs
+# Usage: ./logs-qgeth-docker.sh [-f] [-n NUMBER]
+
+FOLLOW_MODE=false
+LINE_COUNT=50
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -f|--follow)
+            FOLLOW_MODE=true
+            shift
+            ;;
+        -n|--lines)
+            LINE_COUNT="$2"
+            shift 2
+            ;;
+        -h|--help)
+            echo "Usage: $0 [-f|--follow] [-n|--lines NUMBER]"
+            echo "  -f, --follow    Follow log output (live mode)"
+            echo "  -n, --lines     Number of lines to show (default: 50)"
+            echo "  -h, --help      Show this help"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Use -h for help"
+            exit 1
+            ;;
+    esac
+done
+
+echo "Q Geth Docker container logs:"
+echo ""
+cd ~/qgeth/Qgeth3
+
+if [ "$FOLLOW_MODE" = true ]; then
+    echo "Following Q Geth Docker logs (press Ctrl+C to exit)..."
+    docker-compose logs -f qgeth-testnet
+else
+    echo "Last $LINE_COUNT lines from Q Geth Docker:"
+    docker-compose logs --tail="$LINE_COUNT" qgeth-testnet
+fi
+EOF
+
+    cat > "$INSTALL_DIR/mining-qgeth-docker.sh" << 'EOF'
+#!/bin/bash
+# Start Q Geth Docker Container with Mining
+echo "Starting Q Geth Docker container with mining enabled..."
+cd ~/qgeth/Qgeth3
+
+# Stop any existing containers
+docker-compose down >/dev/null 2>&1
+
+# Start mining container
+if ! docker-compose --profile mining up -d qgeth-miner; then
+    echo "❌ Failed to start Q Geth mining Docker container"
+    exit 1
+fi
+
+echo "✅ Q Geth mining Docker container started"
+echo "⚡ Mining: Enabled"
+echo "🌐 HTTP RPC: http://localhost:8547"
+echo "🌐 WebSocket: ws://localhost:8548"
+echo ""
+echo "💡 Management Commands:"
+echo "  Status: docker-compose ps"
+echo "  Logs:   docker-compose logs -f qgeth-miner"
+echo "  Stop:   docker-compose stop qgeth-miner"
+EOF
+    
+    chmod +x "$INSTALL_DIR"/*-qgeth-docker.sh
+    log_success "✅ Docker management scripts created"
+}
+
 # Start and enable the system service
 start_system_service() {
     log_info "Starting Q Geth system service..."
@@ -712,13 +1035,23 @@ start_system_service() {
 # Main installation
 main() {
     echo ""
-    echo -e "${CYAN}🚀 Q Geth Universal Bootstrap with System Service${NC}"
-    echo ""
-    echo "This will:"
-    echo "  📦 Install Q Geth to: $PROJECT_DIR"
-    echo "  🔧 Create persistent system service"
-    echo "  🚀 Auto-start Q Geth service"
-    echo ""
+    if [ "$DOCKER_MODE" = true ]; then
+        echo -e "${CYAN}🐳 Q Geth Universal Bootstrap with Docker${NC}"
+        echo ""
+        echo "This will:"
+        echo "  📦 Install Q Geth to: $PROJECT_DIR"
+        echo "  🐳 Install Docker and Docker Compose"
+        echo "  🚀 Deploy Q Geth as Docker container"
+        echo ""
+    else
+        echo -e "${CYAN}🚀 Q Geth Universal Bootstrap with System Service${NC}"
+        echo ""
+        echo "This will:"
+        echo "  📦 Install Q Geth to: $PROJECT_DIR"
+        echo "  🔧 Create persistent system service"
+        echo "  🚀 Auto-start Q Geth service"
+        echo ""
+    fi
     
     # Confirm installation
     if [ "$AUTO_CONFIRM" != true ]; then
@@ -751,10 +1084,19 @@ main() {
     
     # Detect system and init system
     detect_system
-    detect_init_system
+    if [ "$DOCKER_MODE" != true ]; then
+        detect_init_system
+    fi
     
     # Install dependencies
-    install_dependencies
+    if [ "$DOCKER_MODE" = true ]; then
+        # For Docker mode, we need basic dependencies and Docker
+        install_dependencies
+        install_docker
+    else
+        # For system service mode, install dependencies normally
+        install_dependencies
+    fi
     
     # Create directories
     log_info "Creating directories..."
@@ -769,42 +1111,63 @@ main() {
     cd "$PROJECT_DIR"
     find . -name "*.sh" -type f -exec chmod +x {} \; 2>/dev/null || true
     
-    # Build Q Geth
-    log_info "Building Q Geth..."
-    cd "$PROJECT_DIR/scripts/linux"
-    
-    # Use consolidated build script with error handling
-    if ! ./build-linux.sh geth ${AUTO_CONFIRM:+-y}; then
-        log_error "Failed to build Q Geth"
-        log_info "Build log may contain more details"
-        log_info "You can try running the build manually:"
-        log_info "  cd $PROJECT_DIR/scripts/linux"
-        log_info "  ./build-linux.sh geth"
-        exit 1
+    if [ "$DOCKER_MODE" = true ]; then
+        # Docker deployment path
+        log_info "Deploying Q Geth with Docker..."
+        
+        # Deploy with Docker
+        if ! deploy_docker; then
+            log_error "Failed to deploy Q Geth with Docker"
+            log_info "You can try running Docker manually:"
+            log_info "  cd $PROJECT_DIR"
+            log_info "  docker-compose up -d qgeth-testnet"
+            exit 1
+        fi
+        
+        # Create Docker management scripts
+        create_docker_scripts
+        
+        log_success "✅ Q Geth Docker deployment completed successfully"
+    else
+        # Traditional build and service creation path
+        # Build Q Geth
+        log_info "Building Q Geth..."
+        cd "$PROJECT_DIR/scripts/linux"
+        
+        # Use consolidated build script with error handling
+        if ! ./build-linux.sh geth ${AUTO_CONFIRM:+-y}; then
+            log_error "Failed to build Q Geth"
+            log_info "Build log may contain more details"
+            log_info "You can try running the build manually:"
+            log_info "  cd $PROJECT_DIR/scripts/linux"
+            log_info "  ./build-linux.sh geth"
+            exit 1
+        fi
+        
+        # Verify geth binary was created
+        if [ ! -f "$PROJECT_DIR/geth.bin" ] && [ ! -f "$PROJECT_DIR/geth" ]; then
+            log_error "Q Geth binary not found after build"
+            log_info "Expected binary at: $PROJECT_DIR/geth.bin or $PROJECT_DIR/geth"
+            exit 1
+        fi
+        
+        log_success "✅ Q Geth build completed successfully"
+        
+        # Create system service and management scripts
+        if ! create_system_service; then
+            log_error "Failed to create system service"
+            log_info "Q Geth was built successfully but service creation failed"
+            log_info "You can still run Q Geth manually:"
+            log_info "  cd $PROJECT_DIR/scripts/linux"
+            log_info "  ./start-geth.sh testnet"
+            exit 1
+        fi
     fi
     
-    # Verify geth binary was created
-    if [ ! -f "$PROJECT_DIR/geth.bin" ] && [ ! -f "$PROJECT_DIR/geth" ]; then
-        log_error "Q Geth binary not found after build"
-        log_info "Expected binary at: $PROJECT_DIR/geth.bin or $PROJECT_DIR/geth"
-        exit 1
-    fi
-    
-    log_success "✅ Q Geth build completed successfully"
-    
-    # Create system service and management scripts
-    if ! create_system_service; then
-        log_error "Failed to create system service"
-        log_info "Q Geth was built successfully but service creation failed"
-        log_info "You can still run Q Geth manually:"
-        log_info "  cd $PROJECT_DIR/scripts/linux"
-        log_info "  ./start-geth.sh testnet"
-        exit 1
-    fi
-    
-    log_info "Creating universal service management scripts..."
-    
-    # Create universal service management scripts
+    if [ "$DOCKER_MODE" != true ]; then
+        log_info "Creating universal service management scripts..."
+        
+        # Create universal service management scripts
     cat > "$INSTALL_DIR/start-qgeth.sh" << EOF
 #!/bin/bash
 # Start Q Geth System Service for user: $ACTUAL_USER
@@ -1043,10 +1406,11 @@ case "$INIT_SYSTEM" in
 esac
 EOF
     
-    chmod +x "$INSTALL_DIR"/*.sh
-    
-    # Start the service
-    start_system_service
+        chmod +x "$INSTALL_DIR"/*.sh
+        
+        # Start the service
+        start_system_service
+    fi
     
     # Fix ownership if installed with sudo
     if [ -n "$SUDO_USER" ] && [ "$SUDO_USER" != "root" ]; then
@@ -1058,79 +1422,139 @@ EOF
     # Success message
     echo ""
     echo "========================================"
-    echo -e "${GREEN}🎉 Q Geth System Service Installation Complete!${NC}"
+    if [ "$DOCKER_MODE" = true ]; then
+        echo -e "${GREEN}🎉 Q Geth Docker Installation Complete!${NC}"
+    else
+        echo -e "${GREEN}🎉 Q Geth System Service Installation Complete!${NC}"
+    fi
     echo "========================================"
     echo ""
     echo -e "${BLUE}📋 Installation Summary:${NC}"
     echo "  Directory: $PROJECT_DIR"
     echo "  User: $ACTUAL_USER"
     echo "  Home: $USER_HOME"
-    echo "  Init System: $INIT_SYSTEM"
-    echo "  Service: qgeth ($INIT_SYSTEM service)"
-    echo "  Management: $INSTALL_DIR/*.sh"
+    if [ "$DOCKER_MODE" = true ]; then
+        echo "  Deployment: Docker containers"
+        echo "  Management: Docker Compose + scripts"
+    else
+        echo "  Init System: $INIT_SYSTEM"
+        echo "  Service: qgeth ($INIT_SYSTEM service)"
+        echo "  Management: $INSTALL_DIR/*.sh"
+    fi
     echo ""
-    echo -e "${BLUE}🔧 System Service Commands:${NC}"
-    case $INIT_SYSTEM in
-        "systemd")
-            echo "  Start:   sudo systemctl start qgeth.service"
-            echo "  Stop:    sudo systemctl stop qgeth.service"
-            echo "  Restart: sudo systemctl restart qgeth.service"
-            echo "  Status:  sudo systemctl status qgeth.service"
-            echo "  Logs:    sudo journalctl -u qgeth.service -f"
-            echo "  Enable:  sudo systemctl enable qgeth.service"
-            echo "  Disable: sudo systemctl disable qgeth.service"
-            ;;
-        "openrc")
-            echo "  Start:   sudo rc-service qgeth start"
-            echo "  Stop:    sudo rc-service qgeth stop"
-            echo "  Restart: sudo rc-service qgeth restart" 
-            echo "  Status:  sudo rc-service qgeth status"
-            echo "  Logs:    tail -f /var/log/qgeth.log"
-            ;;
-        "sysv")
-            echo "  Start:   sudo service qgeth start"
-            echo "  Stop:    sudo service qgeth stop"
-            echo "  Restart: sudo service qgeth restart"
-            echo "  Status:  sudo service qgeth status"
-            echo "  Logs:    tail -f /var/log/qgeth.log"
-            ;;
-        "upstart")
-            echo "  Start:   sudo initctl start qgeth"
-            echo "  Stop:    sudo initctl stop qgeth"
-            echo "  Restart: sudo initctl restart qgeth"
-            echo "  Status:  sudo initctl status qgeth"
-            echo "  Logs:    tail -f /var/log/qgeth.log"
-            ;;
-    esac
+    if [ "$DOCKER_MODE" = true ]; then
+        echo -e "${BLUE}🐳 Docker Management Commands:${NC}"
+        echo "  Start:   docker-compose up -d qgeth-testnet"
+        echo "  Stop:    docker-compose stop qgeth-testnet"
+        echo "  Restart: docker-compose restart qgeth-testnet"
+        echo "  Status:  docker-compose ps"
+        echo "  Logs:    docker-compose logs -f qgeth-testnet"
+        echo "  Remove:  docker-compose down"
+        echo ""
+        echo -e "${BLUE}🔧 Docker Management Scripts:${NC}"
+        echo "  Start:    $INSTALL_DIR/start-qgeth-docker.sh"
+        echo "  Stop:     $INSTALL_DIR/stop-qgeth-docker.sh"
+        echo "  Restart:  $INSTALL_DIR/restart-qgeth-docker.sh"
+        echo "  Status:   $INSTALL_DIR/status-qgeth-docker.sh"
+        echo "  Logs:     $INSTALL_DIR/logs-qgeth-docker.sh [-f] [-n 100]"
+        echo "  Mining:   $INSTALL_DIR/mining-qgeth-docker.sh"
+    else
+        echo -e "${BLUE}🔧 System Service Commands:${NC}"
+        case $INIT_SYSTEM in
+            "systemd")
+                echo "  Start:   sudo systemctl start qgeth.service"
+                echo "  Stop:    sudo systemctl stop qgeth.service"
+                echo "  Restart: sudo systemctl restart qgeth.service"
+                echo "  Status:  sudo systemctl status qgeth.service"
+                echo "  Logs:    sudo journalctl -u qgeth.service -f"
+                echo "  Enable:  sudo systemctl enable qgeth.service"
+                echo "  Disable: sudo systemctl disable qgeth.service"
+                ;;
+            "openrc")
+                echo "  Start:   sudo rc-service qgeth start"
+                echo "  Stop:    sudo rc-service qgeth stop"
+                echo "  Restart: sudo rc-service qgeth restart" 
+                echo "  Status:  sudo rc-service qgeth status"
+                echo "  Logs:    tail -f /var/log/qgeth.log"
+                ;;
+            "sysv")
+                echo "  Start:   sudo service qgeth start"
+                echo "  Stop:    sudo service qgeth stop"
+                echo "  Restart: sudo service qgeth restart"
+                echo "  Status:  sudo service qgeth status"
+                echo "  Logs:    tail -f /var/log/qgeth.log"
+                ;;
+            "upstart")
+                echo "  Start:   sudo initctl start qgeth"
+                echo "  Stop:    sudo initctl stop qgeth"
+                echo "  Restart: sudo initctl restart qgeth"
+                echo "  Status:  sudo initctl status qgeth"
+                echo "  Logs:    tail -f /var/log/qgeth.log"
+                ;;
+        esac
+        echo ""
+        echo -e "${BLUE}🔧 Universal Management Scripts:${NC}"
+        echo "  Start:   $INSTALL_DIR/start-qgeth.sh"
+        echo "  Stop:    $INSTALL_DIR/stop-qgeth.sh"
+        echo "  Restart: $INSTALL_DIR/restart-qgeth.sh"
+        echo "  Status:  $INSTALL_DIR/status-qgeth.sh"
+        echo "  Logs:    $INSTALL_DIR/logs-qgeth.sh [-f] [-n 100]"
+    fi
     echo ""
-    echo -e "${BLUE}🔧 Universal Management Scripts:${NC}"
-    echo "  Start:   $INSTALL_DIR/start-qgeth.sh"
-    echo "  Stop:    $INSTALL_DIR/stop-qgeth.sh"
-    echo "  Restart: $INSTALL_DIR/restart-qgeth.sh"
-    echo "  Status:  $INSTALL_DIR/status-qgeth.sh"
-    echo "  Logs:    $INSTALL_DIR/logs-qgeth.sh [-f] [-n 100]"
-    echo ""
-    echo -e "${BLUE}🎯 Service Features:${NC}"
-    echo "  ✅ Persistent service (survives reboots)"
-    echo "  ✅ Automatic restart on failure"
-    echo "  ✅ Proper logging and monitoring"
-    echo "  ✅ Secure execution as user: $ACTUAL_USER"
-    echo "  ✅ System integration with $INIT_SYSTEM"
-    echo ""
-    echo -e "${BLUE}🎯 Next Steps:${NC}"
-    echo "  1. Service started automatically"
-    echo "  2. Check status: $INSTALL_DIR/status-qgeth.sh"
-    echo "  3. View logs: $INSTALL_DIR/logs-qgeth.sh -f"
-    echo "  4. Start mining: cd $PROJECT_DIR/scripts/linux && ./start-miner.sh"
-    echo "  5. RPC API: http://localhost:8545"
-    echo ""
-    echo -e "${YELLOW}💡 Troubleshooting:${NC}"
-    echo "  If service fails to start with 'datadir already used by another process':"
-    echo "  1. Kill existing processes: pkill -f geth"
-    echo "  2. Restart service: sudo systemctl restart qgeth.service"
-    echo "  3. Or run manually: cd $PROJECT_DIR/scripts/linux && ./start-geth.sh testnet"
-    echo ""
-    echo -e "${GREEN}Q Geth is now running as a persistent system service! 🚀${NC}"
+    if [ "$DOCKER_MODE" = true ]; then
+        echo -e "${BLUE}🎯 Docker Features:${NC}"
+        echo "  ✅ Cross-platform compatibility (Linux, Windows, macOS)"
+        echo "  ✅ Isolated environment with no system dependencies"
+        echo "  ✅ Persistent data volumes (survives container restarts)"
+        echo "  ✅ Health checks and automatic restart on failure"
+        echo "  ✅ Easy scaling and management"
+        echo "  ✅ Perfect for Fedora (bypasses systemd issues)"
+        echo ""
+        echo -e "${BLUE}🎯 Next Steps:${NC}"
+        echo "  1. Container started automatically"
+        echo "  2. Check status: $INSTALL_DIR/status-qgeth-docker.sh"
+        echo "  3. View logs: $INSTALL_DIR/logs-qgeth-docker.sh -f"
+        echo "  4. Start mining: $INSTALL_DIR/mining-qgeth-docker.sh"
+        echo "  5. RPC API: http://localhost:8545"
+        echo "  6. WebSocket: ws://localhost:8546"
+        echo ""
+        echo -e "${BLUE}🔗 MetaMask Connection:${NC}"
+        echo "  Network: Custom RPC"
+        echo "  RPC URL: http://localhost:8545"
+        echo "  Chain ID: 73235"
+        echo "  Currency: QGC"
+        echo ""
+        echo -e "${YELLOW}💡 Troubleshooting:${NC}"
+        echo "  If container fails to start:"
+        echo "  1. Check Docker status: docker info"
+        echo "  2. Check container logs: docker-compose logs qgeth-testnet"
+        echo "  3. Restart container: docker-compose restart qgeth-testnet"
+        echo "  4. Rebuild if needed: docker-compose build --no-cache"
+        echo ""
+        echo -e "${GREEN}Q Geth is now running as a Docker container! 🐳${NC}"
+    else
+        echo -e "${BLUE}🎯 Service Features:${NC}"
+        echo "  ✅ Persistent service (survives reboots)"
+        echo "  ✅ Automatic restart on failure"
+        echo "  ✅ Proper logging and monitoring"
+        echo "  ✅ Secure execution as user: $ACTUAL_USER"
+        echo "  ✅ System integration with $INIT_SYSTEM"
+        echo ""
+        echo -e "${BLUE}🎯 Next Steps:${NC}"
+        echo "  1. Service started automatically"
+        echo "  2. Check status: $INSTALL_DIR/status-qgeth.sh"
+        echo "  3. View logs: $INSTALL_DIR/logs-qgeth.sh -f"
+        echo "  4. Start mining: cd $PROJECT_DIR/scripts/linux && ./start-miner.sh"
+        echo "  5. RPC API: http://localhost:8545"
+        echo ""
+        echo -e "${YELLOW}💡 Troubleshooting:${NC}"
+        echo "  If service fails to start with 'datadir already used by another process':"
+        echo "  1. Kill existing processes: pkill -f geth"
+        echo "  2. Restart service: sudo systemctl restart qgeth.service"
+        echo "  3. Or run manually: cd $PROJECT_DIR/scripts/linux && ./start-geth.sh testnet"
+        echo ""
+        echo -e "${GREEN}Q Geth is now running as a persistent system service! 🚀${NC}"
+    fi
 }
 
 # Run main function

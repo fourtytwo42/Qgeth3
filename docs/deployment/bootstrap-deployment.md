@@ -83,8 +83,14 @@ apt install -y wget ca-certificates
 # Non-interactive installation (recommended for automation)
 curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qgeth.sh | sudo bash -s -- -y
 
+# 🐳 Docker installation (perfect for Fedora and cross-platform!)
+curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qgeth.sh | bash -s -- --docker
+
 # Interactive installation (prompts for confirmation)
 curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qgeth.sh | sudo bash
+
+# Docker + non-interactive mode
+curl -sSL https://raw.githubusercontent.com/fourtytwo42/Qgeth3/main/bootstrap-qgeth.sh | bash -s -- --docker -y
 ```
 
 ### What Bootstrap Sets Up
