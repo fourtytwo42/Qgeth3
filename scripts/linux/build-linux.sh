@@ -333,6 +333,36 @@ get_build_flags() {
     echo ""
 }
 
+# Check Go version and determine if checklinkname flag is supported
+check_go_version_for_memsize() {
+    local go_version
+    if command -v go >/dev/null 2>&1; then
+        go_version=$(go version 2>/dev/null | grep -oE 'go[0-9]+\.[0-9]+' | head -1)
+        if [ -n "$go_version" ]; then
+            # Extract major and minor version numbers
+            local major=$(echo "$go_version" | cut -d'.' -f1 | sed 's/go//')
+            local minor=$(echo "$go_version" | cut -d'.' -f2)
+            
+            echo "🔍 Detected Go version: $go_version"
+            
+            # Check if version is 1.23 or higher
+            if [ "$major" -gt 1 ] || ([ "$major" -eq 1 ] && [ "$minor" -ge 23 ]); then
+                echo "✅ Go $go_version supports -checklinkname flag (memsize compatibility)"
+                USE_CHECKLINKNAME=true
+            else
+                echo "ℹ️  Go $go_version does not support -checklinkname flag (not needed)"
+                USE_CHECKLINKNAME=false
+            fi
+        else
+            echo "⚠️  Could not parse Go version, assuming older version"
+            USE_CHECKLINKNAME=false
+        fi
+    else
+        echo "⚠️  Go command not found, assuming older version"
+        USE_CHECKLINKNAME=false
+    fi
+}
+
 # EXECUTE AUTOMATED FIXES
 echo "🔧 Running automated pre-build checks and fixes..."
 check_and_fix_permissions
@@ -422,6 +452,9 @@ CURRENT_DIR=$(pwd)
 # Get memory-efficient build flags
 get_build_flags
 
+# Check Go version for memsize compatibility
+check_go_version_for_memsize
+
 echo "🚀 Build Environment:"
 echo "  Target OS: linux/amd64"
 echo "  Build Time: $BUILD_TIME"
@@ -460,8 +493,14 @@ build_geth() {
     mkdir -p "$GOCACHE" "$GOTMPDIR" "$TMPDIR"
     
     # Build command for retry mechanism
-    # Add -checklinkname=0 to allow memsize package to work with Go 1.23+
-    BUILD_CMD="CGO_ENABLED=0 go build -ldflags \"-checklinkname=0 $LDFLAGS\" -trimpath -buildvcs=false -o ../../../geth.bin ."
+    # Conditionally add -checklinkname=0 based on Go version
+    if [ "$USE_CHECKLINKNAME" = true ]; then
+        echo "🔧 Using -checklinkname=0 flag for Go 1.23+ memsize compatibility"
+        BUILD_CMD="CGO_ENABLED=0 go build -ldflags \"-checklinkname=0 $LDFLAGS\" -trimpath -buildvcs=false -o ../../../geth.bin ."
+    else
+        echo "🔧 Using standard build flags for Go version compatibility"
+        BUILD_CMD="CGO_ENABLED=0 go build -ldflags \"$LDFLAGS\" -trimpath -buildvcs=false -o ../../../geth.bin ."
+    fi
     
     # Use automated retry with error recovery
     if build_with_retry "quantum-geth" "$BUILD_CMD" "../../../geth.bin"; then
