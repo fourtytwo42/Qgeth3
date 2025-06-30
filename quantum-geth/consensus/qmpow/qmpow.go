@@ -225,6 +225,12 @@ func (q *QMPoW) Author(header *types.Header) (common.Address, error) {
 
 // VerifyHeader checks whether a header conforms to the consensus rules
 func (q *QMPoW) VerifyHeader(chain consensus.ChainHeaderReader, header *types.Header, seal bool) error {
+	// FIXED: Add future block time validation for consistent sync behavior
+	const allowedFutureBlockTime = 15 * time.Second // Match Lyra2 tolerance for consistency
+	if header.Time > uint64(time.Now().Add(allowedFutureBlockTime).Unix()) {
+		return consensus.ErrFutureBlock
+	}
+	
 	// Check that the header has quantum fields
 	if header.Epoch == nil || header.QBits == nil || header.TCount == nil || header.LNet == nil {
 		return ErrMissingQuantumFields

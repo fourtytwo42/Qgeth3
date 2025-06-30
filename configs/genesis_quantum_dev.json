@@ -13,7 +13,7 @@
       "qbits": 16,
       "tcount": 20,
       "lnet": 128,
-      "epochLen": 100,
+      "epochLen": 600000,
       "testMode": false
     }
   },
