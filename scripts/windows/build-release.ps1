@@ -305,6 +305,7 @@ if ($Component -eq "miner" -or $Component -eq "both") {
             $requiredScripts = @(
                 "pkg/quantum/qiskit_gpu.py",
                 "pkg/quantum/cupy_gpu.py", 
+                "pkg/quantum/ibm_quantum_cloud.py",
                 "test_gpu.py"
             )
             
@@ -321,7 +322,52 @@ if ($Component -eq "miner" -or $Component -eq "both") {
                     Write-Host "  Warning: $script not found" -ForegroundColor Yellow
                 }
             }
-            Write-Host "Python GPU scripts added successfully" -ForegroundColor Green
+            
+            # Add requirements.txt for easy Python setup
+            $requirementsPath = Join-Path $QuantumMinerDir "requirements-windows.txt"
+            if (Test-Path $requirementsPath) {
+                Copy-Item $requirementsPath (Join-Path $releaseDir "requirements-windows.txt") -Force
+                Write-Host "  Added: requirements-windows.txt" -ForegroundColor Green
+            }
+            
+            # Create easy Python setup script
+            @'
+@echo off
+echo Q Coin Miner - Python Dependencies Setup
+echo ========================================
+
+echo Checking Python installation...
+python --version >nul 2>&1
+if %ERRORLEVEL% neq 0 (
+    echo ❌ Python not found! Please install Python 3.8+ from https://python.org
+    echo    Make sure to check "Add Python to PATH" during installation
+    pause
+    exit /b 1
+)
+
+echo ✅ Python found
+echo.
+echo Installing Q Coin dependencies...
+pip install -r requirements-windows.txt
+
+if %ERRORLEVEL% eq 0 (
+    echo.
+    echo ✅ Dependencies installed successfully!
+    echo.
+    echo Testing installation...
+    python -c "import qiskit; print('✅ Qiskit:', qiskit.__version__)"
+    python -c "import cupy; print('✅ GPU available:', cupy.cuda.is_available())" 2>nul || echo "⚠️ GPU support not available (CPU-only mode)"
+    echo.
+    echo 🚀 Ready to mine! Run start-miner.bat
+) else (
+    echo ❌ Installation failed
+    echo Try: pip install --upgrade pip
+    echo Then run this script again
+)
+pause
+'@ | Out-File -FilePath (Join-Path $releaseDir "setup-python.bat") -Encoding ASCII
+            
+            Write-Host "Python GPU scripts and setup tools added successfully" -ForegroundColor Green
             
             # Create PowerShell launcher
             @'
@@ -377,22 +423,63 @@ quantum-miner.exe -node %NODE% -coinbase %COINBASE% -threads %THREADS%
 Built: $(Get-Date)
 Component: Quantum-Miner (Mining Software)
 
-## Quick Start
-PowerShell: .\start-miner.ps1 [-threads 8] [-node http://localhost:8545] [-coinbase 0xYourAddress]
-Batch: start-miner.bat [threads] [node_url] [coinbase_address]
+## 🚀 Two Setup Options
 
-## Examples
-start-miner.bat 8 http://localhost:8545 0x1234567890abcdef1234567890abcdef12345678
-start-miner.ps1 -threads 8 -coinbase 0x1234567890abcdef1234567890abcdef12345678
+### Option 1: Easy Setup (Recommended)
+1. Run `setup-python.bat` - installs all dependencies automatically
+2. Run `start-miner.bat` to start mining
 
-## Performance
-- CPU Mining: ~0.3-0.8 puzzles/sec
-- GPU Mining: ~2.0 puzzles/sec (with CuPy)
+### Option 2: Manual Setup
+1. Install Python 3.8+ from https://python.org
+2. Run: `pip install -r requirements-windows.txt`
+3. Run `start-miner.bat` to start mining
 
-## Requirements
-- Q Coin Geth node running
-- Valid Ethereum address for coinbase (mining rewards)
-- For GPU: Python with CuPy
+## 📋 What's Included
+- ✅ quantum-miner.exe (main mining software)
+- ✅ Python scripts for GPU acceleration  
+- ✅ requirements-windows.txt (dependency list)
+- ✅ setup-python.bat (automatic installer)
+- ✅ start-miner.bat/ps1 (mining launchers)
+- ✅ test_gpu.py (GPU testing utility)
+
+## 🎯 Quick Start
+```batch
+REM Easy way (auto-installs dependencies)
+setup-python.bat
+
+REM Then start mining
+start-miner.bat
+
+REM Custom settings
+start-miner.bat 16 http://localhost:8545 0xYourAddress
+```
+
+```powershell
+# PowerShell version
+.\start-miner.ps1 -threads 16 -coinbase 0xYourAddress
+```
+
+## 📊 Performance
+- **CPU Mining**: ~0.3-0.8 puzzles/sec (no GPU needed)
+- **GPU Mining**: ~2.0-4.0 puzzles/sec (NVIDIA GPU + CuPy)
+
+## 🔧 System Requirements
+- **Basic**: Windows 10/11, Python 3.8+
+- **For GPU**: NVIDIA GPU with CUDA support
+- **Running Q Geth node**: Required for mining
+
+## 🧪 Testing
+```batch
+REM Test dependencies
+python -c "import qiskit; print('Qiskit OK')"
+
+REM Test GPU support  
+python test_gpu.py
+```
+
+## ❓ Need Self-Contained Version?
+For zero-installation mining, use our embedded Python release:
+`quantum-miner-embedded-[timestamp]` - no Python setup required!
 
 See project README for full documentation.
 "@ | Out-File -FilePath (Join-Path $releaseDir "README.md") -Encoding UTF8
