@@ -105,7 +105,7 @@ func (f *ForkChoice) ReorgNeeded(current *types.Header, extern *types.Header) (b
 		localTD  = f.chain.GetTd(current.Hash(), current.Number.Uint64())
 		externTd = f.chain.GetTd(extern.Hash(), extern.Number.Uint64())
 	)
-	log.Info("🔗 DEBUG: ForkChoice.ReorgNeeded", "current.number", current.Number.Uint64(), "extern.number", extern.Number.Uint64(), "localTD", localTD, "externTd", externTd)
+	log.Debug("🔗 ForkChoice.ReorgNeeded", "current.number", current.Number.Uint64(), "extern.number", extern.Number.Uint64(), "localTD", localTD, "externTd", externTd)
 	if localTD == nil || externTd == nil {
 		log.Error("❌ ForkChoice: Missing TD", "localTD", localTD, "externTd", externTd, "current.hash", current.Hash().Hex()[:10], "extern.hash", extern.Hash().Hex()[:10])
 		return false, errors.New("missing td")
@@ -117,18 +117,46 @@ func (f *ForkChoice) ReorgNeeded(current *types.Header, extern *types.Header) (b
 		return true, nil
 	}
 
-	// CRITICAL FIX: For quantum blockchain, always accept blocks with higher numbers
-	// This ensures progression even if difficulty calculation is not perfect
-	if extern.Number.Uint64() > current.Number.Uint64() {
-		log.Info("🔗 CRITICAL FIX: ForkChoice forcing reorg for higher block number",
-			"current.number", current.Number.Uint64(),
-			"extern.number", extern.Number.Uint64(),
-			"localTD", localTD,
-			"externTd", externTd)
+	// Primary rule: Compare total difficulty (standard PoW consensus)
+	if externTd.Cmp(localTD) > 0 {
+		log.Debug("🔗 Accepting chain with higher total difficulty", 
+			"localTD", localTD, "externTd", externTd,
+			"tdDiff", new(big.Int).Sub(externTd, localTD))
 		return true, nil
 	}
 
-	// Local and external difficulty is identical.
+	// QUANTUM FIX: Only accept higher block numbers if total difficulties are very close
+	// This handles cases where quantum difficulty calculation might have minor variations
+	// but prevents dangerous reorgs based solely on block numbers
+	if extern.Number.Uint64() > current.Number.Uint64() {
+		// Calculate TD difference as percentage
+		tdDiff := new(big.Int).Sub(localTD, externTd)
+		tdDiff.Abs(tdDiff) // Get absolute difference
+		
+		// Only accept if TD difference is less than 1% of local TD
+		onePercent := new(big.Int).Div(localTD, big.NewInt(100))
+		
+		if tdDiff.Cmp(onePercent) <= 0 {
+			log.Info("🔗 QUANTUM: Accepting higher block number with similar total difficulty",
+				"current.number", current.Number.Uint64(),
+				"extern.number", extern.Number.Uint64(),
+				"localTD", localTD,
+				"externTd", externTd,
+				"tdDiff", tdDiff,
+				"tdThreshold", onePercent)
+			return true, nil
+		} else {
+			log.Warn("🔗 QUANTUM: Rejecting higher block number with significantly lower total difficulty",
+				"current.number", current.Number.Uint64(),
+				"extern.number", extern.Number.Uint64(),
+				"localTD", localTD,
+				"externTd", externTd,
+				"tdDiff", tdDiff,
+				"tdThreshold", onePercent)
+		}
+	}
+
+	// Local and external difficulty is identical or very close.
 	// Second clause in the if statement reduces the vulnerability to selfish mining.
 	// Please refer to http://www.cs.cornell.edu/~ie53/publications/btcProcFC.pdf
 	reorg := externTd.Cmp(localTD) > 0
