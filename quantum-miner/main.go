@@ -275,7 +275,8 @@ func main() {
 		ip            = flag.String("ip", "127.0.0.1", "Node IP address")
 		port          = flag.Int("port", 8545, "Node RPC port")
 		threads       = flag.Int("threads", runtime.NumCPU(), "Number of mining threads")
-		gpu           = flag.Bool("gpu", false, "Enable GPU mining (CUDA/Qiskit)")
+		gpu           = flag.Bool("gpu", true, "Enable GPU mining (CUDA/Qiskit) - tries GPU first, falls back to CPU")
+		cpu           = flag.Bool("cpu", false, "Force CPU mining only (disables GPU detection)")
 		gpuID         = flag.Int("gpu-id", 0, "GPU device ID to use (default: 0)")
 		logFile       = flag.Bool("log", false, "Enable logging to file (quantum-miner.log)")
 		help          = flag.Bool("help", false, "Show help")
@@ -288,6 +289,12 @@ func main() {
 		quantumBudget = flag.Float64("quantum-budget", 10.0, "Maximum budget for real quantum hardware mining (USD)")
 	)
 	flag.Parse()
+
+	// Handle CPU override flag - forces CPU mode even if GPU is available
+	if *cpu {
+		*gpu = false
+		logInfo("🔧 CPU mode forced via -cpu flag")
+	}
 
 	// Set global log file flag and initialize logging
 	logToFile = *logFile
@@ -304,8 +311,8 @@ func main() {
 		fmt.Printf("Quantum-Geth GPU/CPU Miner v%s\n", VERSION)
 		fmt.Printf("Runtime: %s/%s\n", runtime.GOOS, runtime.GOARCH)
 		fmt.Printf("Build: %s\n", time.Now().Format("2006-01-02 15:04:05"))
-		if *gpu {
-			fmt.Printf("GPU Support: CUDA/Qiskit GPU (device %d)\n", *gpuID)
+		if *gpu && !*cpu {
+			fmt.Printf("Default Mode: GPU with CPU fallback\n")
 		} else {
 			fmt.Printf("Mining Mode: CPU only\n")
 		}
@@ -317,17 +324,19 @@ func main() {
 		os.Exit(0)
 	}
 
-	// Display startup banner
+	// Display startup banner with auto-detection info
 	fmt.Println("🚀 Quantum-Geth GPU/CPU Miner v" + VERSION)
 	fmt.Println("⚛️  16-qubit quantum circuit mining")
 	fmt.Println("🔗 ASERT-Q difficulty adjustment with quantum proof-of-work")
-	if *gpu {
-		fmt.Printf("🎮 GPU Mining: ENABLED (CUDA device %d)\n", *gpuID)
+	if *cpu {
+		fmt.Println("💻 CPU Mining: FORCED via -cpu flag")
+	} else if *gpu {
+		fmt.Println("🎮 Auto-Detection: GPU preferred, CPU fallback enabled")
 	} else {
 		fmt.Println("💻 CPU Mining: ENABLED")
 	}
 	fmt.Println("")
-
+	
 	// Validate coinbase address
 	if *coinbase == "" {
 		log.Fatal("❌ Coinbase address is required for solo mining!\n   Use: quantum-gpu-miner -coinbase 0xYourAddress")
@@ -337,12 +346,18 @@ func main() {
 		log.Fatal("❌ Invalid coinbase address format!")
 	}
 
-	// GPU validation
-	if *gpu {
+	// GPU detection and fallback logic
+	gpuAvailable := false
+	if *gpu && !*cpu {
+		fmt.Printf("🔍 Attempting GPU initialization...\n")
 		if err := checkGPUSupport(*gpuID); err != nil {
-			log.Fatalf("❌ GPU initialization failed: %v", err)
+			fmt.Printf("⚠️  GPU initialization failed: %v\n", err)
+			fmt.Printf("🔄 Falling back to CPU mining mode...\n")
+			*gpu = false // Switch to CPU mode
+		} else {
+			fmt.Printf("✅ GPU %d initialized successfully!\n", *gpuID)
+			gpuAvailable = true
 		}
-		fmt.Printf("✅ GPU %d initialized successfully!\n", *gpuID)
 	}
 
 	// Determine node URL: prioritize -node flag, then construct from -ip and -port
@@ -353,14 +368,19 @@ func main() {
 		nodeURL = fmt.Sprintf("http://%s:%d", *ip, *port)
 	}
 
-	fmt.Printf("📋 Configuration:\n")
+	fmt.Printf("📋 Final Configuration:\n")
 	fmt.Printf("   💰 Coinbase: %s\n", *coinbase)
 	fmt.Printf("   🌐 Node URL: %s\n", nodeURL)
-	if *gpu {
-		fmt.Printf("   🎮 GPU Device: %d (CUDA/Qiskit)\n", *gpuID)
+	if *gpu && gpuAvailable {
+		fmt.Printf("   🎮 GPU Device: %d (CUDA/Qiskit) ✅ ACTIVE\n", *gpuID)
 		fmt.Printf("   🧵 GPU Threads: %d quantum circuits in parallel\n", *threads)
 	} else {
-		fmt.Printf("   🧵 CPU Threads: %d\n", *threads)
+		fmt.Printf("   💻 CPU Mode: %d threads ✅ ACTIVE\n", *threads)
+		if *cpu {
+			fmt.Printf("   🔧 Reason: Forced via -cpu flag\n")
+		} else {
+			fmt.Printf("   🔄 Reason: GPU unavailable, automatic fallback\n")
+		}
 	}
 	
 	// IBM Quantum Cloud configuration
@@ -453,19 +473,21 @@ func main() {
 	}
 
 	// Log mining mode configuration
-	if *gpu && miner.multiGPUEnabled {
+	if *gpu && gpuAvailable && miner.multiGPUEnabled {
 		fmt.Printf("🚀 MINING MODE: Multi-GPU Acceleration (%d GPUs)\n", len(miner.availableGPUs))
-	} else if *gpu {
+	} else if *gpu && gpuAvailable {
 		fmt.Printf("🚀 MINING MODE: GPU Acceleration (Device %d)\n", *gpuID)
 	} else {
 		fmt.Printf("🚀 MINING MODE: CPU Processing (%d Threads)\n", *threads)
 	}
 
-	// Initialize multi-GPU system if enabled
-	if *gpu {
+	// Initialize multi-GPU system if GPU is available
+	if *gpu && gpuAvailable {
 		err := miner.initializeMultiGPU()
 		if err != nil {
-			log.Fatalf("❌ Failed to initialize multi-GPU system: %v", err)
+			fmt.Printf("⚠️  Multi-GPU initialization failed: %v\n", err)
+			fmt.Printf("🔄 Continuing with single-GPU mode...\n")
+			// Don't fail completely - continue with single GPU or CPU fallback
 		}
 	}
 
@@ -1860,7 +1882,8 @@ func showHelp() {
 	fmt.Println("  -ip ADDRESS         Node IP address (default: localhost)")
 	fmt.Println("  -port NUMBER        Node RPC port (default: 8545)")
 	fmt.Println("  -threads N          Number of mining threads (default: CPU cores)")
-	fmt.Println("  -gpu                Enable GPU mining with CUDA/Qiskit acceleration")
+	fmt.Println("  -gpu                Enable GPU mining with CUDA/Qiskit acceleration (DEFAULT: true)")
+	fmt.Println("  -cpu                Force CPU-only mining (disables GPU auto-detection)")
 	fmt.Println("  -gpu-id N           GPU device ID to use (default: 0)")
 	fmt.Println("  -log                Enable detailed logging to quantum-miner.log file")
 	fmt.Println("  -version            Show version information")
@@ -1873,12 +1896,19 @@ func showHelp() {
 	fmt.Println("  -use-simulator       Use IBM Cloud simulator (free) instead of real hardware (default: true)")
 	fmt.Println("  -quantum-budget N    Maximum budget for real quantum hardware mining in USD (default: 10.0)")
 	fmt.Println("")
+	fmt.Println("MINING MODES (auto-selected in order of preference):")
+	fmt.Println("  1. GPU ACCELERATION (DEFAULT) - Tries GPU first, falls back to CPU if needed")
+	fmt.Println("  2. CPU FALLBACK               - Used automatically if GPU unavailable")
+	fmt.Println("  3. CPU FORCED                 - Use -cpu flag to force CPU-only mode")
+	fmt.Println("")
 	fmt.Println("EXAMPLES:")
-	fmt.Println("  # CPU mining (default)")
+	fmt.Println("  # Auto-detection (GPU preferred, CPU fallback)")
 	fmt.Println("  quantum-gpu-miner -coinbase 0x742d35C6C4e6d8de6f10E7FF75DD98dd25b02C3A")
 	fmt.Println("")
-	fmt.Println("  # GPU mining with CUDA acceleration")
-	fmt.Println("  quantum-gpu-miner -coinbase 0x123... -gpu")
+	fmt.Println("  # Force CPU-only mining")
+	fmt.Println("  quantum-gpu-miner -coinbase 0x123... -cpu")
+	fmt.Println("")
+	fmt.Println("  # Explicit GPU with specific device")
 	fmt.Println("  quantum-gpu-miner -coinbase 0x123... -gpu -gpu-id 1")
 	fmt.Println("")
 	fmt.Println("  # IBM Quantum Cloud mining (FREE simulator)")
@@ -1901,7 +1931,7 @@ func showHelp() {
 	fmt.Println("")
 	fmt.Println("  # Multiple threads")
 	fmt.Println("  quantum-gpu-miner -coinbase 0x123... -threads 8")
-	fmt.Println("  quantum-gpu-miner -coinbase 0x123... -gpu -threads 16  # GPU parallel circuits")
+	fmt.Println("  quantum-gpu-miner -coinbase 0x123... -threads 16  # More GPU parallel circuits")
 	fmt.Println("")
 	fmt.Println("REQUIREMENTS:")
 	fmt.Println("  - Running quantum-geth node with --mine enabled")
@@ -1923,6 +1953,11 @@ func showHelp() {
 	fmt.Println("  - Difficulty adjusts every block using ASERT-Q algorithm")
 	fmt.Println("  - Target block time: 12 seconds")
 	fmt.Println("  - Real quantum advantage: superposition, entanglement, interference")
+	fmt.Println("")
+	fmt.Println("PERFORMANCE EXPECTATIONS:")
+	fmt.Println("  - CPU Mining:  ~2,000-4,000 PZ/s  (puzzles per second)")
+	fmt.Println("  - GPU Mining:  ~15,000+ PZ/s      (with CUDA acceleration)")
+	fmt.Println("  - Cloud Mining: Variable          (depends on quantum backend)")
 	fmt.Println("")
 }
 
