@@ -455,7 +455,6 @@ def batch_simulate_quantum_puzzles_gpu(puzzles: List[Dict[str, Any]]) -> List[Di
             entropy = -cp.sum(probabilities * cp.log2(probabilities + 1e-16))
             
             # Convert to CPU only at the end
-            probabilities_cpu = cp.asnumpy(probabilities)
             entropy_cpu = float(cp.asnumpy(entropy))
             
             result = {
@@ -480,6 +479,10 @@ def batch_simulate_quantum_puzzles_gpu(puzzles: List[Dict[str, Any]]) -> List[Di
             result['avg_time'] = total_time / len(puzzles)
         
         return all_results
+        
+    except KeyboardInterrupt:
+        # Handle Ctrl+C gracefully in batch simulation
+        raise KeyboardInterrupt("Batch simulation interrupted")
         
     except Exception as e:
         log_error(f"Pure CuPy GPU simulation failed: {e}", e)
@@ -551,9 +554,12 @@ def main():
                 puzzles = input_data.get('puzzles', [])
                 results = batch_simulate_quantum_puzzles_gpu(puzzles)
                 
+                # Only output essential summary instead of full results
                 output = {
                     'status': 'success',
-                    'results': results
+                    'puzzle_count': len(results),
+                    'backend': results[0]['backend'] if results else 'unknown',
+                    'batch_time': results[0].get('batch_time', 0) if results else 0
                 }
                 print(json.dumps(output))
             
@@ -562,9 +568,11 @@ def main():
                 puzzle = input_data.get('puzzle', {})
                 result = simulator.simulate_quantum_puzzle(puzzle)
                 
+                # Only output essential summary
                 output = {
                     'status': 'success',
-                    'result': result
+                    'backend': result.get('backend', 'unknown'),
+                    'success': result.get('success', False)
                 }
                 print(json.dumps(output))
                 
@@ -577,23 +585,37 @@ def main():
                 }))
                 sys.exit(1)
                 
+        except KeyboardInterrupt:
+            # Handle Ctrl+C gracefully without spam
+            print(json.dumps({
+                'status': 'interrupted',
+                'message': 'Simulation interrupted by user'
+            }))
+            sys.exit(130)  # Standard exit code for Ctrl+C
+                
         except Exception as e:
             error_msg = f'Simulation error: {e}'
             log_error(error_msg, e)
             print(json.dumps({
                 'status': 'error',
-                'message': error_msg,
-                'traceback': traceback.format_exc()
+                'message': error_msg
             }))
             sys.exit(1)
                 
+    except KeyboardInterrupt:
+        # Catch-all KeyboardInterrupt handler
+        print(json.dumps({
+            'status': 'interrupted',
+            'message': 'Operation interrupted by user'
+        }))
+        sys.exit(130)  # Standard exit code for Ctrl+C
+        
     except Exception as e:
         # Catch-all error handler
         log_error(f"Unexpected error in main: {e}", e)
         print(json.dumps({
             'status': 'error',
-            'message': f'Unexpected error: {e}',
-            'traceback': traceback.format_exc()
+            'message': f'Unexpected error: {e}'
         }))
         sys.exit(1)
 
