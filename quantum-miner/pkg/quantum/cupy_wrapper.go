@@ -7,7 +7,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"time"
+	"bytes"
 )
 
 // CupyGPUSimulator wraps the CuPy-based GPU quantum simulator
@@ -15,6 +17,7 @@ type CupyGPUSimulator struct {
 	pythonScript string
 	available    bool
 	deviceInfo   map[string]interface{}
+	pythonPath   string // Store the Python executable path
 }
 
 // NewCupyGPUSimulator creates a new CuPy GPU simulator instance
@@ -24,30 +27,139 @@ func NewCupyGPUSimulator() *CupyGPUSimulator {
 		available:    false,
 	}
 
+	// Find Python executable (embedded first, then system)
+	simulator.pythonPath = findPythonExecutable()
+
 	// Test if CuPy GPU is available
 	simulator.testAvailability()
 
 	return simulator
 }
 
+// findPythonExecutable finds the best Python executable to use
+func findPythonExecutable() string {
+	fmt.Println("🔍 Searching for Python executable...")
+	
+	// Get executable directory for embedded Python check
+	exePath, err := os.Executable()
+	if err != nil {
+		fmt.Printf("⚠️  Could not get executable path: %v\n", err)
+	} else {
+		exeDir := filepath.Dir(exePath)
+		
+		// Check for embedded python.bat in same directory as executable
+		embeddedPython := filepath.Join(exeDir, "python.bat")
+		if fileExists(embeddedPython) {
+			fmt.Printf("✅ Found embedded Python: %s\n", embeddedPython)
+			return embeddedPython
+		}
+		
+		// Check for python.exe in embedded directory
+		embeddedPythonExe := filepath.Join(exeDir, "python.exe")
+		if fileExists(embeddedPythonExe) {
+			fmt.Printf("✅ Found embedded Python executable: %s\n", embeddedPythonExe)
+			return embeddedPythonExe
+		}
+		
+		fmt.Printf("ℹ️  No embedded Python found in: %s\n", exeDir)
+	}
+	
+	// Try system Python
+	fmt.Println("🔍 Checking system Python...")
+	systemPythons := []string{"python", "python3", "py"}
+	
+	if runtime.GOOS == "windows" {
+		// On Windows, also try specific paths
+		username := os.Getenv("USERNAME")
+		systemPythons = append(systemPythons, 
+			"C:\\Users\\"+username+"\\AppData\\Local\\Programs\\Python\\Python311\\python.exe",
+			"C:\\Users\\"+username+"\\AppData\\Local\\Programs\\Python\\Python310\\python.exe",
+			"C:\\Python311\\python.exe",
+			"C:\\Python310\\python.exe",
+		)
+	}
+	
+	for _, cmd := range systemPythons {
+		if path, err := exec.LookPath(cmd); err == nil {
+			// Test if it's a real Python (not Windows Store stub)
+			if runtime.GOOS == "windows" && contains(path, "WindowsApps") {
+				fmt.Printf("⚠️  Skipping Windows Store Python stub: %s\n", path)
+				continue
+			}
+			fmt.Printf("✅ Found system Python: %s\n", path)
+			return cmd
+		}
+	}
+	
+	fmt.Println("❌ No Python executable found!")
+	return "python" // Fallback
+}
+
 // testAvailability checks if CuPy GPU simulation is available
 func (c *CupyGPUSimulator) testAvailability() {
 	start := time.Now()
 
-	fmt.Println("🧪 Testing CuPy GPU availability...")
+	fmt.Printf("🧪 Testing CuPy GPU availability with: %s\n", c.pythonPath)
+	fmt.Printf("📄 Script path: %s\n", c.pythonScript)
 
 	// Test CuPy GPU availability by running test mode
-	cmd := exec.Command("python", c.pythonScript)
-	output, err := cmd.Output()
+	cmd := exec.Command(c.pythonPath, c.pythonScript)
+	
+	// Capture both stdout and stderr separately for better debugging
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	
+	err := cmd.Run()
+
+	// Get output and error output
+	outputStr := stdout.String()
+	errorStr := stderr.String()
+
+	// Always log stderr if present for debugging
+	if errorStr != "" {
+		fmt.Printf("🔍 GPU Test: Python stderr output:\n%s\n", errorStr)
+	}
 
 	if err != nil {
 		fmt.Printf("❌ CuPy GPU test failed: %v\n", err)
+		
+		if outputStr != "" {
+			fmt.Printf("📝 Stdout: %s\n", outputStr)
+		}
+		if errorStr != "" {
+			fmt.Printf("📝 Stderr: %s\n", errorStr)
+		}
+		
+		fmt.Printf("💡 Diagnosis:\n")
+		
+		// Check both stdout and stderr for diagnostic information
+		fullOutput := outputStr + " " + errorStr
+		
+		if contains(fullOutput, "ModuleNotFoundError") || contains(fullOutput, "No module named") {
+			fmt.Printf("   • Missing Python packages (cupy, numpy, etc.)\n")
+			fmt.Printf("   • Install with: pip install cupy-cuda12x numpy\n")
+		} else if contains(fullOutput, "CUDA") || contains(fullOutput, "cuda") {
+			fmt.Printf("   • CUDA driver/runtime issue\n")
+			fmt.Printf("   • Check NVIDIA drivers and CUDA installation\n")
+		} else if contains(err.Error(), "cannot run executable") || contains(err.Error(), "executable file not found") {
+			fmt.Printf("   • Python executable not found or not accessible\n")
+			fmt.Printf("   • Current Python path: %s\n", c.pythonPath)
+		} else if contains(err.Error(), "exit status 1") {
+			fmt.Printf("   • Python script execution error (see stderr output above)\n")
+			fmt.Printf("   • Check Python dependencies and GPU drivers\n")
+		} else {
+			fmt.Printf("   • Unknown GPU initialization error\n")
+			fmt.Printf("   • Check Python installation and GPU drivers\n")
+		}
+		
 		c.available = false
 		return
 	}
 
 	// Parse test output to check for GPU availability
-	outputStr := string(output)
+	fmt.Printf("📊 GPU Test Output: %s\n", outputStr)
+	
 	if contains(outputStr, "GPU Acceleration Available") || contains(outputStr, "Backend: cupy_gpu") {
 		c.available = true
 		fmt.Printf("✅ CuPy GPU simulator available (test took %v)\n", time.Since(start))
@@ -58,7 +170,8 @@ func (c *CupyGPUSimulator) testAvailability() {
 			"tested":  true,
 		}
 	} else {
-		fmt.Println("⚠️  CuPy falling back to CPU")
+		fmt.Printf("⚠️  CuPy falling back to CPU (no GPU acceleration detected)\n")
+		fmt.Printf("💡 This usually means CuPy is working but no compatible GPU was found\n")
 		c.available = false
 	}
 }
@@ -85,18 +198,55 @@ func (c *CupyGPUSimulator) SimulateQuantumPuzzle(puzzleConfig map[string]interfa
 		return nil, fmt.Errorf("failed to marshal input: %v", err)
 	}
 
-	// Execute Python script
-	cmd := exec.Command("python", c.pythonScript, string(inputJSON))
-	output, err := cmd.Output()
+	fmt.Printf("🔍 GPU: Executing Python script with command: single_simulate\n")
+	fmt.Printf("🔍 GPU: Using Python: %s\n", c.pythonPath)
+	fmt.Printf("🔍 GPU: Script path: %s\n", c.pythonScript)
 
-	if err != nil {
-		return nil, fmt.Errorf("CuPy simulation failed: %v", err)
+	// Execute Python script with the resolved Python path
+	cmd := exec.Command(c.pythonPath, c.pythonScript, string(inputJSON))
+	
+	// Capture both stdout and stderr
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	
+	err = cmd.Run()
+
+	// Get output and error output
+	outputStr := stdout.String()
+	errorStr := stderr.String()
+
+	// Log all output for debugging
+	if errorStr != "" {
+		fmt.Printf("🔍 GPU: Python stderr output:\n%s\n", errorStr)
+	}
+	if outputStr != "" {
+		fmt.Printf("🔍 GPU: Python stdout output:\n%s\n", outputStr)
 	}
 
-	// Parse result
+	if err != nil {
+		// Provide detailed error information
+		errorMsg := fmt.Sprintf("CuPy simulation failed: %v", err)
+		if errorStr != "" {
+			errorMsg += fmt.Sprintf("\nStderr: %s", errorStr)
+		}
+		if outputStr != "" {
+			errorMsg += fmt.Sprintf("\nStdout: %s", outputStr)
+		}
+		return nil, fmt.Errorf(errorMsg)
+	}
+
+	// Parse result from stdout
 	var result map[string]interface{}
-	if err := json.Unmarshal(output, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse result: %v", err)
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		errorMsg := fmt.Sprintf("failed to parse result: %v", err)
+		if outputStr != "" {
+			errorMsg += fmt.Sprintf("\nRaw output: %s", outputStr)
+		}
+		if errorStr != "" {
+			errorMsg += fmt.Sprintf("\nError output: %s", errorStr)
+		}
+		return nil, fmt.Errorf(errorMsg)
 	}
 
 	// Check for errors
@@ -109,6 +259,7 @@ func (c *CupyGPUSimulator) SimulateQuantumPuzzle(puzzleConfig map[string]interfa
 
 	// Extract simulation result
 	if simResult, ok := result["result"].(map[string]interface{}); ok {
+		fmt.Printf("✅ GPU: Single simulation completed successfully\n")
 		return simResult, nil
 	}
 
@@ -132,13 +283,35 @@ func (c *CupyGPUSimulator) BatchSimulateQuantumPuzzles(puzzles []map[string]inte
 		return nil, fmt.Errorf("failed to marshal input: %v", err)
 	}
 
+	fmt.Printf("🔍 GPU: Executing batch simulation for %d puzzles\n", len(puzzles))
+	fmt.Printf("🔍 GPU: Using Python: %s\n", c.pythonPath)
+	fmt.Printf("🔍 GPU: Script path: %s\n", c.pythonScript)
+
 	// Create context with timeout to prevent hanging
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	// Execute Python script with timeout and interrupt handling
-	cmd := exec.CommandContext(ctx, "python", c.pythonScript, string(inputJSON))
-	output, err := cmd.Output()
+	cmd := exec.CommandContext(ctx, c.pythonPath, c.pythonScript, string(inputJSON))
+	
+	// Capture both stdout and stderr
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	
+	err = cmd.Run()
+
+	// Get output and error output
+	outputStr := stdout.String()
+	errorStr := stderr.String()
+
+	// Log all output for debugging
+	if errorStr != "" {
+		fmt.Printf("🔍 GPU: Python stderr output:\n%s\n", errorStr)
+	}
+	if outputStr != "" {
+		fmt.Printf("🔍 GPU: Python stdout output (first 500 chars):\n%.500s\n", outputStr)
+	}
 
 	if err != nil {
 		// Handle timeout
@@ -151,13 +324,29 @@ func (c *CupyGPUSimulator) BatchSimulateQuantumPuzzles(puzzles []map[string]inte
 				return nil, fmt.Errorf("simulation interrupted")
 			}
 		}
-		return nil, fmt.Errorf("CuPy batch simulation failed: %v", err)
+		
+		// Provide detailed error information
+		errorMsg := fmt.Sprintf("CuPy batch simulation failed: %v", err)
+		if errorStr != "" {
+			errorMsg += fmt.Sprintf("\nStderr: %s", errorStr)
+		}
+		if outputStr != "" {
+			errorMsg += fmt.Sprintf("\nStdout: %s", outputStr)
+		}
+		return nil, fmt.Errorf(errorMsg)
 	}
 
-	// Parse result
+	// Parse result from stdout
 	var result map[string]interface{}
-	if err := json.Unmarshal(output, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse result: %v", err)
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		errorMsg := fmt.Sprintf("failed to parse result: %v", err)
+		if outputStr != "" {
+			errorMsg += fmt.Sprintf("\nRaw output: %s", outputStr)
+		}
+		if errorStr != "" {
+			errorMsg += fmt.Sprintf("\nError output: %s", errorStr)
+		}
+		return nil, fmt.Errorf(errorMsg)
 	}
 
 	// Check for errors
@@ -178,6 +367,7 @@ func (c *CupyGPUSimulator) BatchSimulateQuantumPuzzles(puzzles []map[string]inte
 				return nil, fmt.Errorf("invalid result format at index %d", i)
 			}
 		}
+		fmt.Printf("✅ GPU: Batch simulation completed successfully (%d results)\n", len(results))
 		return results, nil
 	}
 
@@ -287,4 +477,10 @@ func findCupyScript() string {
 
 	// Default fallback
 	return filepath.Join("pkg", "quantum", "cupy_gpu.py")
+}
+
+// fileExists checks if a file exists
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }

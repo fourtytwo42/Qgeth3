@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -51,9 +52,15 @@ type QiskitBenchmarkResult struct {
 // NewQiskitGPUSimulator creates a CUDA 12.9 GPU-accelerated quantum simulator
 func NewQiskitGPUSimulator(deviceID int) (*QiskitGPUSimulator, error) {
 	sim := &QiskitGPUSimulator{
-		deviceID:   deviceID,
-		pythonPath: "python", // Assumes python is in PATH
+		deviceID: deviceID,
 	}
+
+	// Find Python executable (embedded first, then system)
+	pythonPath, err := findPython()
+	if err != nil {
+		return nil, fmt.Errorf("Python executable not found: %w", err)
+	}
+	sim.pythonPath = pythonPath
 
 	// Find the Qiskit GPU script
 	scriptPath, err := findQiskitScript()
@@ -72,19 +79,38 @@ func NewQiskitGPUSimulator(deviceID int) (*QiskitGPUSimulator, error) {
 
 func (q *QiskitGPUSimulator) initialize() error {
 	log.Printf("🔍 Initializing CUDA 12.9 GPU quantum simulator...")
+	log.Printf("🐍 Using Python: %s", q.pythonPath)
+	log.Printf("📄 Script path: %s", q.scriptPath)
 
 	// Test if Qiskit-Aer GPU is available
 	cmd := exec.Command(q.pythonPath, q.scriptPath, "test_gpu")
-	output, err := cmd.CombinedOutput()
+	output, err := cmd.CombinedOutput() // Use CombinedOutput to get both stdout and stderr
 
 	if err != nil {
 		log.Printf("⚠️  GPU initialization failed: %v", err)
-		log.Printf("📝 Output: %s", string(output))
+		log.Printf("📝 Full output: %s", string(output))
+		log.Printf("💡 Diagnosis:")
+		
+		outputStr := string(output)
+		if strings.Contains(outputStr, "ModuleNotFoundError") {
+			log.Printf("   • Missing Python packages (qiskit, qiskit-aer, etc.)")
+			log.Printf("   • Install with: pip install qiskit qiskit-aer")
+		} else if strings.Contains(outputStr, "CUDA") {
+			log.Printf("   • CUDA driver/runtime issue")
+			log.Printf("   • Check NVIDIA drivers and CUDA installation")
+		} else if strings.Contains(err.Error(), "cannot run executable") {
+			log.Printf("   • Python executable not found or not accessible")
+			log.Printf("   • Trying Python: %s", q.pythonPath)
+		} else {
+			log.Printf("   • Unknown GPU initialization error")
+			log.Printf("   • Check Python and GPU drivers")
+		}
+		
 		log.Printf("💡 Falling back to CPU mode")
 		q.gpuAvailable = false
 	} else {
 		log.Printf("✅ GPU quantum simulator initialized!")
-		log.Printf("🚀 Output: %s", string(output))
+		log.Printf("📊 GPU Test Output: %s", string(output))
 		q.gpuAvailable = true
 	}
 
@@ -169,34 +195,67 @@ func (q *QiskitGPUSimulator) IsGPUAvailable() bool {
 	return q.gpuAvailable
 }
 
-// findPython locates the Python executable
+// findPython locates the Python executable (embedded first, then system)
 func findPython() (string, error) {
-	// Try common Python executable names, prioritizing actual installations
+	fmt.Println("🔍 Searching for Python executable for Qiskit...")
+	
+	// Get executable directory for embedded Python check
+	exePath, err := os.Executable()
+	if err != nil {
+		fmt.Printf("⚠️  Could not get executable path: %v\n", err)
+	} else {
+		exeDir := filepath.Dir(exePath)
+		
+		// Check for embedded python.bat in same directory as executable
+		embeddedPython := filepath.Join(exeDir, "python.bat")
+		if fileExists(embeddedPython) {
+			fmt.Printf("✅ Found embedded Python for Qiskit: %s\n", embeddedPython)
+			return embeddedPython, nil
+		}
+		
+		// Check for python.exe in embedded directory
+		embeddedPythonExe := filepath.Join(exeDir, "python.exe")
+		if fileExists(embeddedPythonExe) {
+			fmt.Printf("✅ Found embedded Python executable: %s\n", embeddedPythonExe)
+			return embeddedPythonExe, nil
+		}
+		
+		fmt.Printf("ℹ️  No embedded Python found in: %s\n", exeDir)
+	}
+	
+	// Try system Python
+	fmt.Println("🔍 Checking system Python for Qiskit...")
 	pythonCommands := []string{"python", "python3", "py"}
 
 	for _, cmd := range pythonCommands {
 		path, err := exec.LookPath(cmd)
 		if err == nil {
 			// Skip Windows Store stub executables
-			if !strings.Contains(path, "WindowsApps") {
-				return path, nil
+			if runtime.GOOS == "windows" && strings.Contains(path, "WindowsApps") {
+				fmt.Printf("⚠️  Skipping Windows Store Python stub: %s\n", path)
+				continue
 			}
+			fmt.Printf("✅ Found system Python: %s\n", path)
+			return path, nil
 		}
 	}
 
 	// If we only found Windows Store stubs, try to find the real Python installation
-	possiblePaths := []string{
-		"C:\\Users\\" + os.Getenv("USERNAME") + "\\AppData\\Local\\Programs\\Python\\Python311\\python.exe",
-		"C:\\Users\\" + os.Getenv("USERNAME") + "\\AppData\\Local\\Programs\\Python\\Python310\\python.exe",
-		"C:\\Users\\" + os.Getenv("USERNAME") + "\\AppData\\Local\\Programs\\Python\\Python39\\python.exe",
-		"C:\\Python311\\python.exe",
-		"C:\\Python310\\python.exe",
-		"C:\\Python39\\python.exe",
-	}
+	if runtime.GOOS == "windows" {
+		possiblePaths := []string{
+			"C:\\Users\\" + os.Getenv("USERNAME") + "\\AppData\\Local\\Programs\\Python\\Python311\\python.exe",
+			"C:\\Users\\" + os.Getenv("USERNAME") + "\\AppData\\Local\\Programs\\Python\\Python310\\python.exe",
+			"C:\\Users\\" + os.Getenv("USERNAME") + "\\AppData\\Local\\Programs\\Python\\Python39\\python.exe",
+			"C:\\Python311\\python.exe",
+			"C:\\Python310\\python.exe",
+			"C:\\Python39\\python.exe",
+		}
 
-	for _, path := range possiblePaths {
-		if fileExists(path) {
-			return path, nil
+		for _, path := range possiblePaths {
+			if fileExists(path) {
+				fmt.Printf("✅ Found Python installation: %s\n", path)
+				return path, nil
+			}
 		}
 	}
 
@@ -242,8 +301,4 @@ func findQiskitScript() (string, error) {
 	return "", fmt.Errorf("qiskit_gpu.py script not found in any expected location")
 }
 
-// fileExists checks if a file exists
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
-}
+

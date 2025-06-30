@@ -7,8 +7,24 @@ Provides real GPU acceleration for quantum circuit simulation
 import sys
 import json
 import time
+import traceback
 import numpy as np
 from typing import List, Dict, Any, Tuple, Optional
+
+def log_error(message: str, exception: Exception = None):
+    """Log error messages to stderr for better debugging"""
+    error_info = {
+        "timestamp": time.time(),
+        "error": message,
+        "exception_type": type(exception).__name__ if exception else None,
+        "exception_message": str(exception) if exception else None,
+        "traceback": traceback.format_exc() if exception else None
+    }
+    print(f"ERROR: {json.dumps(error_info)}", file=sys.stderr)
+
+def log_info(message: str):
+    """Log info messages to stderr for debugging"""
+    print(f"INFO: {message}", file=sys.stderr)
 
 class CupyGPUSimulator:
     """GPU-accelerated quantum circuit simulator using CuPy"""
@@ -22,16 +38,23 @@ class CupyGPUSimulator:
     def _init_gpu(self):
         """Initialize GPU computing environment"""
         try:
+            log_info("Attempting to import CuPy...")
             import cupy as cp
             self.cp = cp
+            log_info("CuPy imported successfully")
             
             # Test GPU access
+            log_info("Testing CUDA device access...")
             device = cp.cuda.Device()
+            
             try:
                 device_name = device.name()
-            except:
+                log_info(f"GPU device name: {device_name}")
+            except Exception as e:
+                log_error(f"Could not get device name: {e}", e)
                 device_name = "Unknown CUDA Device"
             
+            log_info("Getting memory information...")
             mem_info = cp.cuda.Device().mem_info
             self.device_info = {
                 'name': device_name,
@@ -40,18 +63,27 @@ class CupyGPUSimulator:
                 'total_memory_gb': mem_info[1] / (1024**3),
                 'free_memory_gb': mem_info[0] / (1024**3)
             }
+            log_info(f"Memory info: {self.device_info['free_memory_gb']:.1f}GB / {self.device_info['total_memory_gb']:.1f}GB")
             
             # Test basic operation
+            log_info("Testing basic CuPy operations...")
             test_array = cp.array([1, 2, 3])
-            _ = test_array * 2
+            result = test_array * 2
+            log_info(f"Basic operation test result: {cp.asnumpy(result)}")
             
             self.cupy_available = True
             print(f"GPU Acceleration Available: {self.device_info['name']}")
             print(f"   Memory: {self.device_info['free_memory_gb']:.1f}GB / {self.device_info['total_memory_gb']:.1f}GB")
             
+        except ImportError as e:
+            log_error(f"CuPy not installed or not available: {e}", e)
+            print(f"GPU acceleration not available: CuPy not installed")
+            print("   Install with: pip install cupy-cuda12x")
+            self.cupy_available = False
         except Exception as e:
+            log_error(f"GPU initialization failed: {e}", e)
             print(f"GPU acceleration not available: {e}")
-            print("   Falling back to CPU simulation")
+            print("   Check CUDA drivers and GPU setup")
             self.cupy_available = False
     
     def simulate_quantum_puzzle(self, puzzle_config: Dict[str, Any]) -> Dict[str, Any]:
@@ -67,12 +99,17 @@ class CupyGPUSimulator:
         start_time = time.time()
         
         try:
+            log_info(f"Starting quantum puzzle simulation: {puzzle_config}")
+            
             if not self.cupy_available:
+                log_info("GPU not available, using CPU fallback")
                 return self._cpu_fallback_simulation(puzzle_config)
             
             num_qubits = puzzle_config.get('num_qubits', 8)
             target_state = puzzle_config.get('target_state', 'superposition')
             measurement_basis = puzzle_config.get('measurement_basis', 'computational')
+            
+            log_info(f"GPU simulation parameters: qubits={num_qubits}, target={target_state}, basis={measurement_basis}")
             
             # Create quantum circuit simulation
             result = self._gpu_quantum_simulation(num_qubits, target_state, measurement_basis)
@@ -82,68 +119,84 @@ class CupyGPUSimulator:
             result['backend'] = 'cupy_gpu'
             result['device'] = self.device_info.get('name', 'Unknown GPU')
             
+            log_info(f"GPU simulation completed successfully in {result['simulation_time']:.3f}s")
             return result
             
         except Exception as e:
-            print(f"❌ GPU simulation failed: {e}")
+            log_error(f"GPU simulation failed, falling back to CPU: {e}", e)
             return self._cpu_fallback_simulation(puzzle_config)
     
     def _gpu_quantum_simulation(self, num_qubits: int, target_state: str, basis: str) -> Dict[str, Any]:
         """Execute optimized quantum simulation on GPU using CuPy"""
-        cp = self.cp
-        
-        # For mining efficiency, use simplified but fast quantum-like simulation
-        state_size = 2 ** min(num_qubits, 12)  # Cap at 12 qubits for speed
-        
-        # Create initial state on GPU - much faster initialization
-        state_vector = cp.zeros(state_size, dtype=cp.complex64)
-        state_vector[0] = 1.0
-        
-        # Fast quantum-like evolution using vectorized operations
-        if target_state == 'superposition':
-            # Fast superposition: just normalize all elements
-            state_vector = cp.ones(state_size, dtype=cp.complex64) / cp.sqrt(state_size)
+        try:
+            log_info(f"Starting GPU quantum simulation: {num_qubits} qubits")
+            cp = self.cp
             
-        elif target_state == 'entangled':
-            # Fast entanglement: set specific patterns
-            state_vector[0] = 1.0 / cp.sqrt(2)
-            state_vector[-1] = 1.0 / cp.sqrt(2)
+            # For mining efficiency, use simplified but fast quantum-like simulation
+            state_size = 2 ** min(num_qubits, 12)  # Cap at 12 qubits for speed
+            log_info(f"State vector size: {state_size} elements")
             
-        elif target_state == 'random':
-            # Fast randomization using GPU random
-            real_part = cp.random.normal(0, 1, state_size)
-            imag_part = cp.random.normal(0, 1, state_size)
-            state_vector = (real_part + 1j * imag_part).astype(cp.complex64)
-            # Normalize
-            norm = cp.sqrt(cp.sum(cp.abs(state_vector) ** 2))
-            state_vector = state_vector / norm
-        
-        # Apply fast random evolution for quantum-like behavior
-        phases = cp.random.random(state_size) * 2 * cp.pi * 0.1
-        state_vector = state_vector * cp.exp(1j * phases)
-        
-        # Fast measurement
-        probabilities = cp.abs(state_vector) ** 2
-        
-        # Convert to CPU once at the end
-        probabilities_cpu = cp.asnumpy(probabilities)
-        
-        # Fast entropy calculation
-        entropy_gpu = -cp.sum(probabilities * cp.log2(probabilities + 1e-16))
-        entropy = float(cp.asnumpy(entropy_gpu))
-        
-        # Fast fidelity (just random for mining purposes)
-        fidelity = float(cp.random.random())
-        
-        return {
-            'num_qubits': num_qubits,
-            'target_state': target_state,
-            'measurement_basis': basis,
-            'probabilities': probabilities_cpu.tolist(),
-            'entropy': entropy,
-            'fidelity': fidelity,
-            'success': True
-        }
+            # Create initial state on GPU - much faster initialization
+            log_info("Creating initial state vector on GPU...")
+            state_vector = cp.zeros(state_size, dtype=cp.complex64)
+            state_vector[0] = 1.0
+            
+            # Fast quantum-like evolution using vectorized operations
+            log_info(f"Applying quantum evolution for target state: {target_state}")
+            if target_state == 'superposition':
+                # Fast superposition: just normalize all elements
+                state_vector = cp.ones(state_size, dtype=cp.complex64) / cp.sqrt(state_size)
+                
+            elif target_state == 'entangled':
+                # Fast entanglement: set specific patterns
+                state_vector[0] = 1.0 / cp.sqrt(2)
+                state_vector[-1] = 1.0 / cp.sqrt(2)
+                
+            elif target_state == 'random':
+                # Fast randomization using GPU random
+                real_part = cp.random.normal(0, 1, state_size)
+                imag_part = cp.random.normal(0, 1, state_size)
+                state_vector = (real_part + 1j * imag_part).astype(cp.complex64)
+                # Normalize
+                norm = cp.sqrt(cp.sum(cp.abs(state_vector) ** 2))
+                state_vector = state_vector / norm
+            
+            # Apply fast random evolution for quantum-like behavior
+            log_info("Applying random quantum evolution...")
+            phases = cp.random.random(state_size) * 2 * cp.pi * 0.1
+            state_vector = state_vector * cp.exp(1j * phases)
+            
+            # Fast measurement
+            log_info("Computing measurement probabilities...")
+            probabilities = cp.abs(state_vector) ** 2
+            
+            # Convert to CPU once at the end
+            log_info("Converting results to CPU...")
+            probabilities_cpu = cp.asnumpy(probabilities)
+            
+            # Fast entropy calculation
+            log_info("Computing entropy...")
+            entropy_gpu = -cp.sum(probabilities * cp.log2(probabilities + 1e-16))
+            entropy = float(cp.asnumpy(entropy_gpu))
+            
+            # Fast fidelity (just random for mining purposes)
+            fidelity = float(cp.random.random())
+            
+            log_info("GPU quantum simulation completed successfully")
+            
+            return {
+                'num_qubits': num_qubits,
+                'target_state': target_state,
+                'measurement_basis': basis,
+                'probabilities': probabilities_cpu.tolist(),
+                'entropy': entropy,
+                'fidelity': fidelity,
+                'success': True
+            }
+            
+        except Exception as e:
+            log_error(f"GPU quantum simulation failed: {e}", e)
+            raise
     
     def _apply_hadamard_gpu(self, state_vector, qubit: int, num_qubits: int):
         """Apply Hadamard gate to specified qubit on GPU"""
@@ -391,60 +444,104 @@ def batch_simulate_quantum_puzzles_gpu(puzzles: List[Dict[str, Any]]) -> List[Di
 
 def main():
     """Main function for testing GPU simulation"""
-    if len(sys.argv) > 1:
-        try:
-            # Parse JSON input from command line
-            input_data = json.loads(sys.argv[1])
-            
-            if input_data.get('command') == 'batch_simulate':
-                puzzles = input_data.get('puzzles', [])
-                results = batch_simulate_quantum_puzzles_gpu(puzzles)
-                print(json.dumps({
-                    'status': 'success',
-                    'results': results
-                }))
-            
-            elif input_data.get('command') == 'single_simulate':
-                simulator = CupyGPUSimulator()
-                puzzle = input_data.get('puzzle', {})
-                result = simulator.simulate_quantum_puzzle(puzzle)
-                print(json.dumps({
-                    'status': 'success',
-                    'result': result
-                }))
+    try:
+        if len(sys.argv) > 1:
+            try:
+                log_info(f"Processing command with args: {sys.argv[1]}")
                 
-            else:
+                # Parse JSON input from command line
+                input_data = json.loads(sys.argv[1])
+                log_info(f"Parsed input data: {input_data}")
+                
+                if input_data.get('command') == 'batch_simulate':
+                    log_info("Starting batch simulation")
+                    puzzles = input_data.get('puzzles', [])
+                    log_info(f"Processing {len(puzzles)} puzzles")
+                    
+                    results = batch_simulate_quantum_puzzles_gpu(puzzles)
+                    
+                    output = {
+                        'status': 'success',
+                        'results': results
+                    }
+                    print(json.dumps(output))
+                    log_info("Batch simulation completed successfully")
+                
+                elif input_data.get('command') == 'single_simulate':
+                    log_info("Starting single simulation")
+                    simulator = CupyGPUSimulator()
+                    puzzle = input_data.get('puzzle', {})
+                    log_info(f"Processing puzzle: {puzzle}")
+                    
+                    result = simulator.simulate_quantum_puzzle(puzzle)
+                    
+                    output = {
+                        'status': 'success',
+                        'result': result
+                    }
+                    print(json.dumps(output))
+                    log_info("Single simulation completed successfully")
+                    
+                else:
+                    error_msg = f'Unknown command: {input_data.get("command")}'
+                    log_error(error_msg)
+                    print(json.dumps({
+                        'status': 'error',
+                        'message': error_msg
+                    }))
+                    sys.exit(1)
+                    
+            except json.JSONDecodeError as e:
+                error_msg = f'JSON decode error: {e}'
+                log_error(error_msg, e)
                 print(json.dumps({
                     'status': 'error',
-                    'message': 'Unknown command'
+                    'message': error_msg
                 }))
+                sys.exit(1)
                 
-        except json.JSONDecodeError as e:
-            print(json.dumps({
-                'status': 'error',
-                'message': f'JSON decode error: {e}'
-            }))
-        except Exception as e:
-            print(json.dumps({
-                'status': 'error',
-                'message': f'Simulation error: {e}'
-            }))
-    else:
-        # Test mode - called without arguments for availability testing
-        try:
-            simulator = CupyGPUSimulator()
-            if simulator.cupy_available:
-                print("GPU Acceleration Available: CuPy GPU Ready")
-                print(f"Backend: cupy_gpu")
-                device_info = simulator.device_info
-                print(f"Device: {device_info.get('name', 'Unknown')}")
-                print(f"Memory: {device_info.get('free_memory_gb', 0):.1f}GB")
-            else:
-                print("GPU Acceleration Not Available")
+            except Exception as e:
+                error_msg = f'Simulation error: {e}'
+                log_error(error_msg, e)
+                print(json.dumps({
+                    'status': 'error',
+                    'message': error_msg,
+                    'traceback': traceback.format_exc()
+                }))
+                sys.exit(1)
+        else:
+            # Test mode - called without arguments for availability testing
+            log_info("Running GPU availability test mode")
+            try:
+                simulator = CupyGPUSimulator()
+                if simulator.cupy_available:
+                    print("GPU Acceleration Available: CuPy GPU Ready")
+                    print(f"Backend: cupy_gpu")
+                    device_info = simulator.device_info
+                    print(f"Device: {device_info.get('name', 'Unknown')}")
+                    print(f"Memory: {device_info.get('free_memory_gb', 0):.1f}GB")
+                    log_info("GPU test completed - GPU available")
+                else:
+                    print("GPU Acceleration Not Available")
+                    print("Backend: cpu_fallback")
+                    log_info("GPU test completed - GPU not available")
+                    
+            except Exception as e:
+                error_msg = f"GPU Test Failed: {e}"
+                log_error(error_msg, e)
+                print(error_msg)
                 print("Backend: cpu_fallback")
-        except Exception as e:
-            print(f"GPU Test Failed: {e}")
-            print("Backend: cpu_fallback")
+                sys.exit(1)
+                
+    except Exception as e:
+        # Catch-all error handler
+        log_error(f"Unexpected error in main: {e}", e)
+        print(json.dumps({
+            'status': 'error',
+            'message': f'Unexpected error: {e}',
+            'traceback': traceback.format_exc()
+        }))
+        sys.exit(1)
 
 if __name__ == "__main__":
     main() 

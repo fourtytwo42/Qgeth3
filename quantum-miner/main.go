@@ -320,7 +320,7 @@ func main() {
 	// Display startup banner
 	fmt.Println("🚀 Quantum-Geth GPU/CPU Miner v" + VERSION)
 	fmt.Println("⚛️  16-qubit quantum circuit mining")
-	fmt.Println("🔗 Bitcoin-style difficulty with quantum proof-of-work")
+	fmt.Println("🔗 ASERT-Q difficulty adjustment with quantum proof-of-work")
 	if *gpu {
 		fmt.Printf("🎮 GPU Mining: ENABLED (CUDA device %d)\n", *gpuID)
 	} else {
@@ -450,6 +450,15 @@ func main() {
 		useSimulator:       *useSimulator,
 		quantumBudget:      *quantumBudget,
 		quantumSpent:       0.0,
+	}
+
+	// Log mining mode configuration
+	if *gpu && miner.multiGPUEnabled {
+		fmt.Printf("🚀 MINING MODE: Multi-GPU Acceleration (%d GPUs)\n", len(miner.availableGPUs))
+	} else if *gpu {
+		fmt.Printf("🚀 MINING MODE: GPU Acceleration (Device %d)\n", *gpuID)
+	} else {
+		fmt.Printf("🚀 MINING MODE: CPU Processing (%d Threads)\n", *threads)
 	}
 
 	// Initialize multi-GPU system if enabled
@@ -1252,11 +1261,65 @@ func (m *QuantumMiner) enhancedSolveQuantumPuzzles(ctx context.Context, blockNum
 		return m.solveQuantumPuzzlesCloud(ctx, blockNumber, puzzleHashes, qnonce, qbits, tcount, lnet)
 	}
 	
-	// Adaptive processing based on puzzle count (local simulation)
+	// FIXED: Use GPU when GPU mode is enabled
+	if m.gpuMode && m.multiGPUEnabled {
+		// Use GPU acceleration for quantum puzzle solving
+		return m.solveQuantumPuzzlesGPU(ctx, blockNumber, puzzleHashes, qnonce, qbits, tcount, lnet)
+	}
+	
+	// Fallback to CPU processing (local simulation)
 	if lnet > 64 {
 		return m.solveLargePuzzleSet(ctx, blockNumber, puzzleHashes, qnonce, qbits, tcount, lnet)
 	} else {
 		return m.solveStandardPuzzleSet(ctx, blockNumber, puzzleHashes, qnonce, qbits, tcount, lnet)
+	}
+}
+
+// Solve quantum puzzles using GPU acceleration
+func (m *QuantumMiner) solveQuantumPuzzlesGPU(ctx context.Context, blockNumber uint64, puzzleHashes []string, qnonce uint64, qbits, tcount, lnet int) (*QuantumProofSubmission, error) {
+	start := time.Now()
+	
+	// Submit work to GPU processing system
+	err := m.submitGPUWork(0, fmt.Sprintf("block_%d_qnonce_%d", blockNumber, qnonce), qnonce, qbits, tcount, lnet)
+	if err != nil {
+		logError("GPU work submission failed: %v, falling back to CPU", err)
+		// Fallback to CPU processing
+		if lnet > 64 {
+			return m.solveLargePuzzleSet(ctx, blockNumber, puzzleHashes, qnonce, qbits, tcount, lnet)
+		} else {
+			return m.solveStandardPuzzleSet(ctx, blockNumber, puzzleHashes, qnonce, qbits, tcount, lnet)
+		}
+	}
+	
+	// Wait for GPU result with timeout
+	select {
+	case result := <-m.gpuResultQueue:
+		if result.Error != nil {
+			logError("GPU processing failed: %v, falling back to CPU", result.Error)
+			// Fallback to CPU processing
+			if lnet > 64 {
+				return m.solveLargePuzzleSet(ctx, blockNumber, puzzleHashes, qnonce, qbits, tcount, lnet)
+			} else {
+				return m.solveStandardPuzzleSet(ctx, blockNumber, puzzleHashes, qnonce, qbits, tcount, lnet)
+			}
+		}
+		
+		processingTime := time.Since(start)
+		logInfo("✅ GPU quantum simulation completed in %v on GPU %d", processingTime, result.DeviceID)
+		
+		return &result.Result, nil
+		
+	case <-ctx.Done():
+		return nil, ctx.Err()
+		
+	case <-time.After(30 * time.Second):
+		logError("GPU processing timeout, falling back to CPU")
+		// Fallback to CPU processing
+		if lnet > 64 {
+			return m.solveLargePuzzleSet(ctx, blockNumber, puzzleHashes, qnonce, qbits, tcount, lnet)
+		} else {
+			return m.solveStandardPuzzleSet(ctx, blockNumber, puzzleHashes, qnonce, qbits, tcount, lnet)
+		}
 	}
 }
 
@@ -1629,7 +1692,10 @@ func (m *QuantumMiner) updateDashboard() {
 
 	// Live Dashboard Display
 	fmt.Println("┌─────────────────────────────────────────────────────────────────────────────────┐")
-	if m.gpuMode {
+	if m.gpuMode && m.multiGPUEnabled {
+		fmt.Printf("│ 🎮 QUANTUM GPU MINER │ Device %d │ %d GPUs │ Runtime: %-22s │\n",
+			m.gpuID, len(m.availableGPUs), formatDuration(totalDuration))
+	} else if m.gpuMode {
 		fmt.Printf("│ 🎮 QUANTUM GPU MINER │ Device %d │ %d Threads │ Runtime: %-20s │\n",
 			m.gpuID, m.threads, formatDuration(totalDuration))
 	} else {
@@ -1700,7 +1766,9 @@ func (m *QuantumMiner) showFinalReport() {
 	fmt.Println("🏁 FINAL QUANTUM MINING SESSION REPORT")
 	fmt.Println("📊 ═══════════════════════════════════════════════════════════════════════════════")
 	
-	if m.gpuMode {
+	if m.gpuMode && m.multiGPUEnabled {
+		fmt.Printf("🎮 Mining Mode    │ MULTI-GPU ACCELERATED │ %d GPUs (Primary: %d)\n", len(m.availableGPUs), m.gpuID)
+	} else if m.gpuMode {
 		fmt.Printf("🎮 Mining Mode    │ GPU ACCELERATED (Device %d) │ %d Parallel Threads\n", m.gpuID, m.threads)
 	} else {
 		fmt.Printf("💻 Mining Mode    │ CPU PROCESSING │ %d Threads\n", m.threads)
