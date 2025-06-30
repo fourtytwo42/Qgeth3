@@ -218,7 +218,9 @@ tar -C . -xzf "/tmp/${GO_TAR}"
 rm "/tmp/${GO_TAR}"
 echo "✅ Go ${GO_VERSION} installed for WSL2"
 '@
-                Set-Content -Path (Join-Path $goWSL2Dir "install-go.sh") -Value $goDownloadScript -Encoding UTF8
+                # CRITICAL: Use UTF8NoBOM with Unix line endings for WSL2 compatibility
+                $goDownloadScript = $goDownloadScript -replace "`r`n", "`n"
+                [System.IO.File]::WriteAllText((Join-Path $goWSL2Dir "install-go.sh"), $goDownloadScript, [System.Text.UTF8Encoding]::new($false))
             }
         }
         
@@ -244,7 +246,9 @@ tar -C . -xzf "/tmp/${GO_TAR}"
 rm "/tmp/${GO_TAR}"
 echo "✅ Go ${GO_VERSION} installed for WSL2"
 '@
-        Set-Content -Path (Join-Path $goWSL2Dir "install-go.sh") -Value $goDownloadScript -Encoding UTF8
+        # CRITICAL: Use UTF8NoBOM with Unix line endings for WSL2 compatibility
+        $goDownloadScript = $goDownloadScript -replace "`r`n", "`n"
+        [System.IO.File]::WriteAllText((Join-Path $goWSL2Dir "install-go.sh"), $goDownloadScript, [System.Text.UTF8Encoding]::new($false))
         return $true
     }
 
@@ -267,7 +271,9 @@ fi
 
 "${GO_ROOT}/bin/go" "$@"
 '@
-    Set-Content -Path (Join-Path $goWSL2Dir "go-wrapper.sh") -Value $goWrapperScript -Encoding UTF8
+    # CRITICAL: Use UTF8NoBOM with Unix line endings for WSL2 compatibility
+    $goWrapperScript = $goWrapperScript -replace "`r`n", "`n"
+    [System.IO.File]::WriteAllText((Join-Path $goWSL2Dir "go-wrapper.sh"), $goWrapperScript, [System.Text.UTF8Encoding]::new($false))
 
     # Create initialization script for WSL2
     $wsl2InitScript = @'
@@ -286,7 +292,9 @@ echo "   GOROOT: ${GOROOT}"
 echo "   GOPATH: ${GOPATH}"
 echo "   Go version: $(${GO_ROOT}/bin/go version 2>/dev/null || echo 'Not installed yet')"
 '@
-    Set-Content -Path (Join-Path $goWSL2Dir "init-go-env.sh") -Value $wsl2InitScript -Encoding UTF8
+    # CRITICAL: Use UTF8NoBOM with Unix line endings for WSL2 compatibility
+    $wsl2InitScript = $wsl2InitScript -replace "`r`n", "`n"
+    [System.IO.File]::WriteAllText((Join-Path $goWSL2Dir "init-go-env.sh"), $wsl2InitScript, [System.Text.UTF8Encoding]::new($false))
 
     Write-Host "  Go WSL2 wrapper created successfully" -ForegroundColor Green
     return $true
