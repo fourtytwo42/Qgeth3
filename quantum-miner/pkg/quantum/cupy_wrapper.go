@@ -199,10 +199,6 @@ func (c *CupyGPUSimulator) SimulateQuantumPuzzle(puzzleConfig map[string]interfa
 		return nil, fmt.Errorf("failed to marshal input: %v", err)
 	}
 
-	fmt.Printf("🔍 GPU: Executing Python script with command: single_simulate\n")
-	fmt.Printf("🔍 GPU: Using Python: %s\n", c.pythonPath)
-	fmt.Printf("🔍 GPU: Script path: %s\n", c.pythonScript)
-
 	// FIXED: Use stdin instead of command line arguments to avoid potential length issues
 	cmd := exec.Command(c.pythonPath, c.pythonScript, "--stdin")
 	
@@ -235,17 +231,13 @@ func (c *CupyGPUSimulator) SimulateQuantumPuzzle(puzzleConfig map[string]interfa
 	outputStr := stdout.String()
 	errorStr := stderr.String()
 
-	// Log all output for debugging
-	if errorStr != "" {
-		// Clean up any encoding issues in stderr
+	// Only log stderr if there are actual errors (not INFO messages)
+	if errorStr != "" && !contains(errorStr, "INFO:") {
 		cleanErrorStr := strings.ReplaceAll(errorStr, "\x00", "")
 		cleanErrorStr = strings.TrimSpace(cleanErrorStr)
 		if cleanErrorStr != "" {
 			fmt.Printf("🔍 GPU: Python stderr output:\n%s\n", cleanErrorStr)
 		}
-	}
-	if outputStr != "" {
-		fmt.Printf("🔍 GPU: Python stdout output (first 500 chars):\n%.500s\n", outputStr)
 	}
 
 	if err != nil {
@@ -283,7 +275,6 @@ func (c *CupyGPUSimulator) SimulateQuantumPuzzle(puzzleConfig map[string]interfa
 
 	// Extract simulation result
 	if simResult, ok := result["result"].(map[string]interface{}); ok {
-		fmt.Printf("✅ GPU: Single simulation completed successfully\n")
 		return simResult, nil
 	}
 
@@ -306,10 +297,6 @@ func (c *CupyGPUSimulator) BatchSimulateQuantumPuzzles(puzzles []map[string]inte
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal input: %v", err)
 	}
-
-	fmt.Printf("🔍 GPU: Executing batch simulation for %d puzzles\n", len(puzzles))
-	fmt.Printf("🔍 GPU: Using Python: %s\n", c.pythonPath)
-	fmt.Printf("🔍 GPU: Script path: %s\n", c.pythonScript)
 
 	// Create context with timeout to prevent hanging
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -347,9 +334,8 @@ func (c *CupyGPUSimulator) BatchSimulateQuantumPuzzles(puzzles []map[string]inte
 	outputStr := stdout.String()
 	errorStr := stderr.String()
 
-	// Log all output for debugging
-	if errorStr != "" {
-		// Clean up any encoding issues in stderr
+	// Only log stderr if there are actual errors (not INFO messages)
+	if errorStr != "" && !contains(errorStr, "INFO:") {
 		cleanErrorStr := strings.ReplaceAll(errorStr, "\x00", "")
 		cleanErrorStr = strings.TrimSpace(cleanErrorStr)
 		if cleanErrorStr != "" {
@@ -408,18 +394,9 @@ func (c *CupyGPUSimulator) BatchSimulateQuantumPuzzles(puzzles []map[string]inte
 				return nil, fmt.Errorf("invalid result format at index %d", i)
 			}
 		}
-		fmt.Printf("✅ GPU: Batch simulation completed successfully (%d results)\n", len(results))
 		
-		// Log GPU performance metrics for verification
-		if len(results) > 0 {
-			if backend, ok := results[0]["backend"].(string); ok {
-				if backend == "cupy_gpu_optimized" || backend == "cupy_gpu_pure" {
-					fmt.Printf("🎮 CONFIRMED: Using GPU acceleration (CuPy backend: %s)\n", backend)
-				} else if backend == "cpu_fallback" {
-					fmt.Printf("⚠️  WARNING: Fell back to CPU simulation (backend: %s)\n", backend)
-				}
-			}
-		}
+		// Only show a simple success message
+		fmt.Printf("✅ GPU: Batch completed (%d puzzles)\n", len(results))
 		return results, nil
 	}
 
