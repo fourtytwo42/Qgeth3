@@ -47,7 +47,7 @@ func DefaultSepoliaGenesisBlock() *genesisT.Genesis {
 		Nonce:      0,
 		ExtraData:  []byte("Sepolia, Athens, Attica, Greece!"),
 		GasLimit:   30000000,
-		Difficulty: big.NewInt(131072),
+		Difficulty: big.NewInt(200), // FIXED: Match quantum minimum difficulty
 		Timestamp:  1633267481,
 		Alloc:      genesisT.DecodePreAlloc(sepoliaAllocData),
 	}

@@ -286,8 +286,8 @@ var (
 	big12      = big.NewInt(12) // FIXED: Q-blockchain uses 12s intervals for consistency
 	bigMinus20 = big.NewInt(-20)
 
-	DifficultyBoundDivisor = big.NewInt(200)   // The bound divisor of the difficulty, used in the update calculations.
-	MinimumDifficulty      = big.NewInt(10000) // The minimum that the difficulty may ever be.
+	DifficultyBoundDivisor = big.NewInt(2048) // FIXED: Match global params for consistency
+	MinimumDifficulty      = big.NewInt(200)  // FIXED: Match QMPoW minimum difficulty for consistency
 )
 
 // CalcDifficulty is the difficulty adjustment algorithm. It returns
