@@ -530,16 +530,117 @@ create_systemd_service() {
         return 1
     fi
     
-    # Create service wrapper script that handles process cleanup
-    cat > "$PROJECT_DIR/scripts/linux/systemd-start-geth.sh" << 'WRAPPER_EOF'
+    # Create service wrapper script that handles process cleanup and ensures wrapper exists
+    cat > "$PROJECT_DIR/scripts/linux/systemd-start-geth.sh" << WRAPPER_EOF
 #!/bin/bash
 # Systemd Service Wrapper for Q Geth
-# Handles automatic process cleanup before starting
+# Handles automatic process cleanup and ensures geth wrapper exists before starting
 
-echo "[$(date)] Q Geth systemd service starting..."
+echo "[\$(date)] Q Geth systemd service starting..."
+
+# Change to the correct directory
+cd "$PROJECT_DIR/scripts/linux" || {
+    echo "[\$(date)] ERROR: Cannot change to project directory"
+    exit 1
+}
+
+# Ensure we have the right permissions and environment
+export PATH="/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+export HOME="$USER_HOME"
+
+# Check if geth wrapper exists, create if missing
+GETH_WRAPPER="../../geth"
+GETH_BINARY="../../geth.bin"
+
+echo "[\$(date)] Checking for Q Geth binaries..."
+
+# Verify geth binary exists
+if [ ! -f "\$GETH_BINARY" ]; then
+    echo "[\$(date)] ERROR: Q Geth binary not found at: \$GETH_BINARY"
+    echo "[\$(date)] Current directory: \$(pwd)"
+    echo "[\$(date)] Directory contents:"
+    ls -la ../../ 2>/dev/null || echo "Cannot list directory"
+    exit 127
+fi
+
+echo "[\$(date)] Found geth binary: \$GETH_BINARY"
+
+# Create geth wrapper if missing
+if [ ! -f "\$GETH_WRAPPER" ]; then
+    echo "[\$(date)] Creating missing geth wrapper..."
+    
+    cat > "\$GETH_WRAPPER" << 'GETH_WRAPPER_EOF'
+#!/bin/bash
+# Q Coin Geth Wrapper - Prevents accidental Ethereum connections
+# This wrapper ensures you're always connecting to Q Coin networks
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+GETH_BIN="$SCRIPT_DIR/geth.bin"
+
+# Check if geth.bin exists
+if [ ! -f "$GETH_BIN" ]; then
+    echo "❌ Error: Q Coin geth binary not found at: $GETH_BIN"
+    echo "Please build Q Coin first: cd scripts/linux && ./build-linux.sh"
+    exit 1
+fi
+
+# Allowed Q Coin network IDs (prevents Ethereum connections)
+ALLOWED_NETWORKS="73235 73234 73236"  # testnet, devnet, mainnet
+NETWORK_ID=""
+
+# Parse arguments to find --networkid
+for ((i=1; i<=$#; i++)); do
+    if [ "${!i}" = "--networkid" ]; then
+        ((i++))
+        NETWORK_ID="${!i}"
+        break
+    fi
+done
+
+# Verify network ID if provided
+if [ -n "$NETWORK_ID" ]; then
+    VALID_NETWORK=false
+    for allowed in $ALLOWED_NETWORKS; do
+        if [ "$NETWORK_ID" = "$allowed" ]; then
+            VALID_NETWORK=true
+            break
+        fi
+    done
+    
+    if [ "$VALID_NETWORK" = false ]; then
+        echo "❌ Error: Invalid network ID: $NETWORK_ID"
+        echo "✅ Allowed Q Coin networks: $ALLOWED_NETWORKS"
+        echo "   73235 = Q Coin Testnet"
+        echo "   73234 = Q Coin Devnet"  
+        echo "   73236 = Q Coin Mainnet"
+        exit 1
+    fi
+fi
+
+# Execute the real geth binary with all arguments
+exec "$GETH_BIN" "$@"
+GETH_WRAPPER_EOF
+
+    chmod +x "\$GETH_WRAPPER"
+    
+    if [ -f "\$GETH_WRAPPER" ] && [ -x "\$GETH_WRAPPER" ]; then
+        echo "[\$(date)] ✅ Successfully created geth wrapper"
+    else
+        echo "[\$(date)] ❌ Failed to create geth wrapper"
+        exit 1
+    fi
+else
+    echo "[\$(date)] Found existing geth wrapper: \$GETH_WRAPPER"
+fi
+
+# Verify wrapper is executable
+if [ ! -x "\$GETH_WRAPPER" ]; then
+    echo "[\$(date)] Making geth wrapper executable..."
+    chmod +x "\$GETH_WRAPPER"
+fi
 
 # Clean up any existing geth processes (but not this startup script)
-echo "[$(date)] Cleaning up existing geth processes..."
+echo "[\$(date)] Cleaning up existing geth processes..."
 pkill -f "geth.bin" >/dev/null 2>&1 || true
 pkill -f "geth --" >/dev/null 2>&1 || true
 
@@ -549,8 +650,21 @@ pgrep -x "geth" >/dev/null 2>&1 && pkill -x "geth" >/dev/null 2>&1 || true
 # Wait a moment for cleanup
 sleep 2
 
+# Final check before starting
+if [ ! -f "\$GETH_WRAPPER" ] || [ ! -x "\$GETH_WRAPPER" ]; then
+    echo "[\$(date)] ❌ ERROR: Geth wrapper not ready"
+    exit 1
+fi
+
+if [ ! -f "\$GETH_BINARY" ] || [ ! -x "\$GETH_BINARY" ]; then
+    echo "[\$(date)] ❌ ERROR: Geth binary not ready"
+    exit 1
+fi
+
+echo "[\$(date)] ✅ All checks passed, starting Q Geth..."
+
 # Start Q Geth
-echo "[$(date)] Starting Q Geth..."
+echo "[\$(date)] Starting Q Geth via start-geth.sh..."
 exec ./start-geth.sh testnet
 WRAPPER_EOF
     
