@@ -10,6 +10,9 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/params/types/ctypes"
+	"github.com/ethereum/go-ethereum/params/types/goethereum"
 )
 
 func TestQGCToWei(t *testing.T) {
@@ -166,15 +169,16 @@ func TestEstimateTimeUntilHalving(t *testing.T) {
 }
 
 func TestNewHalvingFeeModel(t *testing.T) {
-	chainConfig := &types.ChainConfig{}
-	model := NewHalvingFeeModel(chainConfig)
+	// Create a mock chain reader for testing
+	mockChain := &MockHalvingChainReader{}
+	model := NewHalvingFeeModel(mockChain)
 
 	if model == nil {
 		t.Fatal("Failed to create halving fee model")
 	}
 
-	if model.chainConfig != chainConfig {
-		t.Error("Chain config not set correctly")
+	if model.chainConfig != mockChain {
+		t.Error("Chain reader not set correctly")
 	}
 
 	stats := model.GetHalvingStats()
@@ -188,8 +192,8 @@ func TestNewHalvingFeeModel(t *testing.T) {
 }
 
 func TestCalculateBlockReward(t *testing.T) {
-	chainConfig := &types.ChainConfig{}
-	model := NewHalvingFeeModel(chainConfig)
+	mockChain := &MockHalvingChainReader{}
+	model := NewHalvingFeeModel(mockChain)
 
 	// Create test header
 	header := &types.Header{
@@ -242,8 +246,8 @@ func TestCalculateBlockReward(t *testing.T) {
 }
 
 func TestHalvingBlockDetection(t *testing.T) {
-	chainConfig := &types.ChainConfig{}
-	model := NewHalvingFeeModel(chainConfig)
+	mockChain := &MockHalvingChainReader{}
+	model := NewHalvingFeeModel(mockChain)
 
 	// Test non-halving blocks
 	for _, blockNum := range []uint64{1, 100, 599999} {
@@ -267,7 +271,7 @@ func TestHalvingBlockDetection(t *testing.T) {
 }
 
 func TestHalvingStatsTracking(t *testing.T) {
-	chainConfig := &types.ChainConfig{}
+	chainConfig := &params.ChainConfig{}
 	model := NewHalvingFeeModel(chainConfig)
 
 	// Process several blocks
@@ -338,6 +342,39 @@ func TestQMPoWGetHalvingInfo(t *testing.T) {
 			}
 		}
 	}
+}
+
+// MockHalvingChainReader implements the ChainHeaderReader interface for testing
+type MockHalvingChainReader struct{}
+
+func (m *MockHalvingChainReader) Config() ctypes.ChainConfigurator {
+	return &goethereum.ChainConfig{}
+}
+
+func (m *MockHalvingChainReader) CurrentHeader() *types.Header {
+	return &types.Header{
+		Number: big.NewInt(1),
+		Time:   uint64(time.Now().Unix()),
+	}
+}
+
+func (m *MockHalvingChainReader) GetHeader(hash common.Hash, number uint64) *types.Header {
+	return &types.Header{
+		Number: big.NewInt(int64(number)),
+		Time:   uint64(time.Now().Unix()),
+	}
+}
+
+func (m *MockHalvingChainReader) GetHeaderByNumber(number uint64) *types.Header {
+	return m.GetHeader(common.Hash{}, number)
+}
+
+func (m *MockHalvingChainReader) GetHeaderByHash(hash common.Hash) *types.Header {
+	return m.GetHeader(hash, 0)
+}
+
+func (m *MockHalvingChainReader) GetTd(hash common.Hash, number uint64) *big.Int {
+	return big.NewInt(1000000)
 }
 
 // Helper function to create test transactions

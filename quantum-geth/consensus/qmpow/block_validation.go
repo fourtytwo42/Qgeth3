@@ -542,11 +542,13 @@ func (bvp *BlockValidationPipeline) sha256Hash(input string) string {
 	return fmt.Sprintf("%x", hasher.Sum(nil))
 }
 
-// newCAPSSVerifier creates a new CAPSS proof verifier
+// newCAPSSVerifier creates a new CAPSS proof verifier with SNARK cryptography
 func (bvp *BlockValidationPipeline) newCAPSSVerifier() *CAPSSVerifier {
+	snarkVerifier := NewSNARKVerifier()
 	return &CAPSSVerifier{
-		name:      "CAPSSVerifier_v1.0",
-		available: true,
+		name:         "CAPSSVerifier_v1.0_SNARK",
+		available:    snarkVerifier.IsAvailable(),
+		snarkVerifier: snarkVerifier,
 	}
 }
 
@@ -558,10 +560,11 @@ func (bvp *BlockValidationPipeline) newNovaLiteVerifier() *NovaLiteVerifier {
 	}
 }
 
-// CAPSSVerifier handles CAPSS proof verification
+// CAPSSVerifier handles CAPSS proof verification with cryptographic SNARK verification
 type CAPSSVerifier struct {
-	name      string
-	available bool
+	name         string
+	available    bool
+	snarkVerifier *SNARKVerifier // Real SNARK verifier instance
 }
 
 // VerifyProof performs full cryptographic verification of a CAPSS proof
@@ -570,22 +573,14 @@ func (cv *CAPSSVerifier) VerifyProof(proof *CAPSSProof) (bool, error) {
 		return false, fmt.Errorf("CAPSS verifier not available")
 	}
 
-	// CRITICAL CRYPTOGRAPHIC VERIFICATION:
-	// In a full implementation, this would:
-	// 1. Parse the CAPSS proof structure (2.2 kB SNARK proof)
-	// 2. Extract the public inputs (quantum circuit description, initial state, final outcome)
-	// 3. Verify the CAPSS SNARK proof using the verification key
-	// 4. Validate that the proof demonstrates correct quantum computation execution
-	// 5. Check that the outcome matches the claimed measurement result
-
-	log.Debug("🔐 Performing CAPSS proof verification",
+	log.Debug("🔐 Performing CAPSS proof verification with SNARK cryptography",
 		"traceID", proof.TraceID,
 		"proofSize", len(proof.Proof),
 		"publicInputsSize", len(proof.PublicInputs))
 
-	// Verify proof is not empty or trivial
-	if len(proof.Proof) != 2200 {
-		return false, fmt.Errorf("invalid CAPSS proof size: %d", len(proof.Proof))
+	// Basic structural validation first
+	if len(proof.Proof) < 256 { // Minimum SNARK proof size
+		return false, fmt.Errorf("invalid CAPSS proof size: %d (minimum 256 bytes for SNARK)", len(proof.Proof))
 	}
 
 	// Check proof is not all zeros (trivial/fake proof)
@@ -605,19 +600,28 @@ func (cv *CAPSSVerifier) VerifyProof(proof *CAPSSProof) (bool, error) {
 		return false, fmt.Errorf("missing CAPSS public inputs")
 	}
 
-	// For now, we perform structural validation
-	// TODO: Implement full SNARK verification using libsnark or similar
-	// This would involve:
-	// - Parsing the proof as a SNARK proof
-	// - Loading the verification key for the CAPSS circuit
-	// - Calling the SNARK verifier with proof + public inputs
-	// - Returning the verification result
+	// CRITICAL: Perform cryptographic SNARK verification using gnark-crypto
+	if cv.snarkVerifier == nil {
+		return false, fmt.Errorf("SNARK verifier not initialized")
+	}
 
-	log.Debug("✅ CAPSS proof verification completed",
-		"traceID", proof.TraceID,
-		"valid", true)
+	valid, err := cv.snarkVerifier.VerifyCAPSSProof(proof)
+	if err != nil {
+		log.Warn("CAPSS SNARK verification failed", "error", err, "traceID", proof.TraceID)
+		return false, fmt.Errorf("SNARK verification error: %v", err)
+	}
 
-	return true, nil
+	if valid {
+		log.Debug("✅ CAPSS proof cryptographically verified",
+			"traceID", proof.TraceID,
+			"verifier", cv.snarkVerifier.GetName())
+	} else {
+		log.Warn("❌ CAPSS proof verification failed",
+			"traceID", proof.TraceID,
+			"verifier", cv.snarkVerifier.GetName())
+	}
+
+	return valid, nil
 }
 
 // NovaLiteVerifier handles Nova-Lite recursive proof verification

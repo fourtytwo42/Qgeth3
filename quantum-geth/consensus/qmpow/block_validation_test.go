@@ -11,6 +11,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/params/types/ctypes"
+	"github.com/ethereum/go-ethereum/params/types/goethereum"
 )
 
 func TestNewBlockValidationPipeline(t *testing.T) {
@@ -265,7 +267,7 @@ func TestValidateQuantumBlockPoWTargetError(t *testing.T) {
 	block := types.NewBlockWithWithdrawals(header, nil, nil, nil, nil, nil)
 
 	// Create mock chain reader that returns no parent (will cause error)
-	chain := &MockChainReader{
+	chain := &MockChainReaderValidation{
 		returnNilParent: true,
 	}
 	state := &state.StateDB{}
@@ -467,7 +469,7 @@ func TestValidatePoWTarget(t *testing.T) {
 	}
 
 	// Test with missing parent
-	chainNoParent := &MockChainReader{
+	chainNoParent := &MockChainReaderValidation{
 		returnNilParent: true,
 	}
 
@@ -524,7 +526,7 @@ func TestValidationStats(t *testing.T) {
 	}
 }
 
-func TestUpdateAverageTime(t *testing.T) {
+func TestUpdateAverageTimeValidation(t *testing.T) {
 	// Test with first measurement
 	avg := updateAverageTime(0, 100*time.Millisecond, 1)
 	if avg != 100*time.Millisecond {
@@ -546,19 +548,19 @@ func TestUpdateAverageTime(t *testing.T) {
 }
 
 // Enhanced MockChainReader for testing
-type MockChainReader struct {
+type MockChainReaderValidation struct {
 	returnNilParent bool
 }
 
-func (m *MockChainReader) Config() *params.ChainConfig {
-	return params.TestChainConfig
+func (m *MockChainReaderValidation) Config() ctypes.ChainConfigurator {
+	return &goethereum.ChainConfig{}
 }
 
-func (m *MockChainReader) CurrentHeader() *types.Header {
+func (m *MockChainReaderValidation) CurrentHeader() *types.Header {
 	return createTestQuantumHeader()
 }
 
-func (m *MockChainReader) GetHeader(hash common.Hash, number uint64) *types.Header {
+func (m *MockChainReaderValidation) GetHeader(hash common.Hash, number uint64) *types.Header {
 	if m.returnNilParent {
 		return nil
 	}
@@ -571,12 +573,20 @@ func (m *MockChainReader) GetHeader(hash common.Hash, number uint64) *types.Head
 	return parentHeader
 }
 
-func (m *MockChainReader) GetHeaderByHash(hash common.Hash) *types.Header {
+func (m *MockChainReaderValidation) GetHeaderByHash(hash common.Hash) *types.Header {
 	return m.GetHeader(hash, 0)
 }
 
-func (m *MockChainReader) GetHeaderByNumber(number uint64) *types.Header {
+func (m *MockChainReaderValidation) GetHeaderByNumber(number uint64) *types.Header {
 	return m.GetHeader(common.Hash{}, number)
+}
+
+func (m *MockChainReaderValidation) GetTd(hash common.Hash, number uint64) *big.Int {
+	// Return a mock total difficulty
+	if header := m.GetHeader(hash, number); header != nil {
+		return header.Difficulty
+	}
+	return big.NewInt(1000000) // Default mock total difficulty
 }
 
 // TestValidateNovaProofFakeProofRejection tests that fake proofs are properly rejected

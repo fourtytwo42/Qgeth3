@@ -1,13 +1,14 @@
 package qmpow
 
 import (
-	"fmt"
 	"math/big"
 	"testing"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/params/types/ctypes"
+	"github.com/ethereum/go-ethereum/params/types/goethereum"
 )
 
 // MockChainReader implements consensus.ChainHeaderReader for testing
@@ -21,8 +22,59 @@ func NewMockChainReader() *MockChainReader {
 	}
 }
 
+func (mcr *MockChainReader) Config() ctypes.ChainConfigurator {
+	return &goethereum.ChainConfig{}
+}
+
+func (mcr *MockChainReader) CurrentHeader() *types.Header {
+	// Return the latest header if any exist
+	for _, header := range mcr.headers {
+		return header
+	}
+	// Return a default header if none exist
+	return &types.Header{
+		Number: big.NewInt(0),
+		Time:   uint64(time.Now().Unix()),
+	}
+}
+
 func (mcr *MockChainReader) GetHeaderByHash(hash common.Hash) *types.Header {
 	return mcr.headers[hash]
+}
+
+func (mcr *MockChainReader) GetHeader(hash common.Hash, number uint64) *types.Header {
+	// First try to find by hash
+	if header := mcr.headers[hash]; header != nil {
+		return header
+	}
+	
+	// If not found by hash, search by number
+	for _, header := range mcr.headers {
+		if header.Number.Uint64() == number {
+			return header
+		}
+	}
+	
+	// Return nil if not found
+	return nil
+}
+
+func (mcr *MockChainReader) GetHeaderByNumber(number uint64) *types.Header {
+	// Search by number
+	for _, header := range mcr.headers {
+		if header.Number.Uint64() == number {
+			return header
+		}
+	}
+	return nil
+}
+
+func (mcr *MockChainReader) GetTd(hash common.Hash, number uint64) *big.Int {
+	// Return a mock total difficulty
+	if header := mcr.GetHeader(hash, number); header != nil {
+		return header.Difficulty
+	}
+	return big.NewInt(1000000) // Default mock total difficulty
 }
 
 func (mcr *MockChainReader) AddHeader(header *types.Header) {
@@ -100,7 +152,6 @@ func TestNormalDifficultyAdjustment(t *testing.T) {
 		Number:     big.NewInt(6000), // Beyond genesis protection
 		Time:       1000,
 		Difficulty: big.NewInt(1000000),
-		Hash:       func() common.Hash { return common.HexToHash("0x1234") },
 	}
 	chain.AddHeader(parentHeader)
 
@@ -148,7 +199,6 @@ func TestGenesisProtection(t *testing.T) {
 		Number:     big.NewInt(2000),
 		Time:       1000,
 		Difficulty: big.NewInt(1000000),
-		Hash:       func() common.Hash { return common.HexToHash("0x2000") },
 	}
 	chain.AddHeader(parentHeader)
 
@@ -324,7 +374,6 @@ func TestDifficultyStats(t *testing.T) {
 		Number:     big.NewInt(7000),
 		Time:       2000,
 		Difficulty: big.NewInt(5000000),
-		Hash:       func() common.Hash { return common.HexToHash("0x7000") },
 	}
 	chain.AddHeader(parentHeader)
 
@@ -418,7 +467,6 @@ func TestASERTQValidator(t *testing.T) {
 		Number:     big.NewInt(8000),
 		Time:       3000,
 		Difficulty: big.NewInt(2000000),
-		Hash:       func() common.Hash { return common.HexToHash("0x8000") },
 	}
 	chain.AddHeader(parentHeader)
 
@@ -472,8 +520,7 @@ func TestSequentialBlocks(t *testing.T) {
 	currentHeader := &types.Header{
 		Number:     big.NewInt(0),
 		Time:       1000,
-		Difficulty: big.NewInt(InitialDifficultyTarget),
-		Hash:       func() common.Hash { return common.HexToHash("0x0000") },
+		Difficulty: new(big.Int).SetUint64(InitialDifficultyTarget),
 	}
 	chain.AddHeader(currentHeader)
 
@@ -491,9 +538,6 @@ func TestSequentialBlocks(t *testing.T) {
 
 		adjustment := asert.CalculateNextDifficulty(chain, nextHeader)
 		nextHeader.Difficulty = adjustment.NewTarget
-		nextHeader.Hash = func() common.Hash {
-			return common.HexToHash(fmt.Sprintf("0x%04x", i+1))
-		}
 
 		chain.AddHeader(nextHeader)
 		currentHeader = nextHeader
