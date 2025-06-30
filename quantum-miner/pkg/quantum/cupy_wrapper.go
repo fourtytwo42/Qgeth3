@@ -203,15 +203,33 @@ func (c *CupyGPUSimulator) SimulateQuantumPuzzle(puzzleConfig map[string]interfa
 	fmt.Printf("🔍 GPU: Using Python: %s\n", c.pythonPath)
 	fmt.Printf("🔍 GPU: Script path: %s\n", c.pythonScript)
 
-	// Execute Python script with the resolved Python path
-	cmd := exec.Command(c.pythonPath, c.pythonScript, string(inputJSON))
+	// FIXED: Use stdin instead of command line arguments to avoid potential length issues
+	cmd := exec.Command(c.pythonPath, c.pythonScript, "--stdin")
+	
+	// Set up stdin pipe to send JSON data
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create stdin pipe: %v", err)
+	}
 	
 	// Capture both stdout and stderr
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	
-	err = cmd.Run()
+	// Start the command
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("failed to start command: %v", err)
+	}
+	
+	// Send JSON data via stdin
+	go func() {
+		defer stdin.Close()
+		stdin.Write(inputJSON)
+	}()
+	
+	// Wait for completion
+	err = cmd.Wait()
 
 	// Get output and error output
 	outputStr := stdout.String()
@@ -297,15 +315,33 @@ func (c *CupyGPUSimulator) BatchSimulateQuantumPuzzles(puzzles []map[string]inte
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Execute Python script with timeout and interrupt handling
-	cmd := exec.CommandContext(ctx, c.pythonPath, c.pythonScript, string(inputJSON))
+	// FIXED: Use stdin instead of command line arguments to avoid "command line too long" error
+	cmd := exec.CommandContext(ctx, c.pythonPath, c.pythonScript, "--stdin")
+	
+	// Set up stdin pipe to send JSON data
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create stdin pipe: %v", err)
+	}
 	
 	// Capture both stdout and stderr
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	
-	err = cmd.Run()
+	// Start the command
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("failed to start command: %v", err)
+	}
+	
+	// Send JSON data via stdin (this avoids command line length limits)
+	go func() {
+		defer stdin.Close()
+		stdin.Write(inputJSON)
+	}()
+	
+	// Wait for completion
+	err = cmd.Wait()
 
 	// Get output and error output
 	outputStr := stdout.String()
@@ -319,9 +355,6 @@ func (c *CupyGPUSimulator) BatchSimulateQuantumPuzzles(puzzles []map[string]inte
 		if cleanErrorStr != "" {
 			fmt.Printf("🔍 GPU: Python stderr output:\n%s\n", cleanErrorStr)
 		}
-	}
-	if outputStr != "" {
-		fmt.Printf("🔍 GPU: Python stdout output (first 500 chars):\n%.500s\n", outputStr)
 	}
 
 	if err != nil {
@@ -340,9 +373,6 @@ func (c *CupyGPUSimulator) BatchSimulateQuantumPuzzles(puzzles []map[string]inte
 		errorMsg := fmt.Sprintf("CuPy batch simulation failed: %v", err)
 		if errorStr != "" {
 			errorMsg += fmt.Sprintf("\nStderr: %s", errorStr)
-		}
-		if outputStr != "" {
-			errorMsg += fmt.Sprintf("\nStdout: %s", outputStr)
 		}
 		return nil, fmt.Errorf(errorMsg)
 	}

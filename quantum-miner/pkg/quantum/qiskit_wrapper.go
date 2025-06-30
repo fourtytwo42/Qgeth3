@@ -145,8 +145,27 @@ func (q *QiskitGPUSimulator) BatchSimulateQuantumPuzzles(workHash string, qnonce
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	// Execute batch simulation
-	cmd := exec.Command(q.pythonPath, q.scriptPath, string(requestJSON))
+	// FIXED: Use stdin instead of command line arguments to avoid "command line too long" error
+	cmd := exec.Command(q.pythonPath, q.scriptPath, "--stdin")
+	
+	// Set up stdin pipe to send JSON data
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create stdin pipe: %v", err)
+	}
+	
+	// Start the command
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("failed to start command: %v", err)
+	}
+	
+	// Send JSON data via stdin (this avoids command line length limits)
+	go func() {
+		defer stdin.Close()
+		stdin.Write(requestJSON)
+	}()
+	
+	// Wait for completion and get output
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("batch simulation failed: %w", err)

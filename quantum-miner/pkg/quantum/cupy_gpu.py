@@ -509,54 +509,19 @@ def batch_simulate_quantum_puzzles_gpu(puzzles: List[Dict[str, Any]]) -> List[Di
 def main():
     """Main function for testing GPU simulation"""
     try:
-        if len(sys.argv) > 1:
+        # Check if we should read from stdin
+        if len(sys.argv) > 1 and sys.argv[1] == '--stdin':
+            log_info("Reading input from stdin")
             try:
-                log_info(f"Processing command with args: {sys.argv[1]}")
+                # Read JSON input from stdin
+                input_data_str = sys.stdin.read()
+                log_info(f"Read {len(input_data_str)} characters from stdin")
                 
-                # Parse JSON input from command line
-                input_data = json.loads(sys.argv[1])
-                log_info(f"Parsed input data: {input_data}")
+                input_data = json.loads(input_data_str)
+                log_info(f"Parsed input data: {type(input_data)}")
                 
-                if input_data.get('command') == 'batch_simulate':
-                    log_info("Starting batch simulation")
-                    puzzles = input_data.get('puzzles', [])
-                    log_info(f"Processing {len(puzzles)} puzzles")
-                    
-                    results = batch_simulate_quantum_puzzles_gpu(puzzles)
-                    
-                    output = {
-                        'status': 'success',
-                        'results': results
-                    }
-                    print(json.dumps(output))
-                    log_info("Batch simulation completed successfully")
-                
-                elif input_data.get('command') == 'single_simulate':
-                    log_info("Starting single simulation")
-                    simulator = CupyGPUSimulator()
-                    puzzle = input_data.get('puzzle', {})
-                    log_info(f"Processing puzzle: {puzzle}")
-                    
-                    result = simulator.simulate_quantum_puzzle(puzzle)
-                    
-                    output = {
-                        'status': 'success',
-                        'result': result
-                    }
-                    print(json.dumps(output))
-                    log_info("Single simulation completed successfully")
-                    
-                else:
-                    error_msg = f'Unknown command: {input_data.get("command")}'
-                    log_error(error_msg)
-                    print(json.dumps({
-                        'status': 'error',
-                        'message': error_msg
-                    }))
-                    sys.exit(1)
-                    
             except json.JSONDecodeError as e:
-                error_msg = f'JSON decode error: {e}'
+                error_msg = f'JSON decode error from stdin: {e}'
                 log_error(error_msg, e)
                 print(json.dumps({
                     'status': 'error',
@@ -564,13 +529,20 @@ def main():
                 }))
                 sys.exit(1)
                 
-            except Exception as e:
-                error_msg = f'Simulation error: {e}'
+        elif len(sys.argv) > 1:
+            try:
+                log_info(f"Processing command with args: {sys.argv[1]}")
+                
+                # Parse JSON input from command line (legacy support)
+                input_data = json.loads(sys.argv[1])
+                log_info(f"Parsed input data: {input_data}")
+                
+            except json.JSONDecodeError as e:
+                error_msg = f'JSON decode error: {e}'
                 log_error(error_msg, e)
                 print(json.dumps({
                     'status': 'error',
-                    'message': error_msg,
-                    'traceback': traceback.format_exc()
+                    'message': error_msg
                 }))
                 sys.exit(1)
         else:
@@ -596,6 +568,57 @@ def main():
                 print(error_msg)
                 print("Backend: cpu_fallback")
                 sys.exit(1)
+            return  # Exit early for test mode
+                
+        # Process commands (both stdin and command line)
+        try:
+            if input_data.get('command') == 'batch_simulate':
+                log_info("Starting batch simulation")
+                puzzles = input_data.get('puzzles', [])
+                log_info(f"Processing {len(puzzles)} puzzles")
+                
+                results = batch_simulate_quantum_puzzles_gpu(puzzles)
+                
+                output = {
+                    'status': 'success',
+                    'results': results
+                }
+                print(json.dumps(output))
+                log_info("Batch simulation completed successfully")
+            
+            elif input_data.get('command') == 'single_simulate':
+                log_info("Starting single simulation")
+                simulator = CupyGPUSimulator()
+                puzzle = input_data.get('puzzle', {})
+                log_info(f"Processing puzzle: {puzzle}")
+                
+                result = simulator.simulate_quantum_puzzle(puzzle)
+                
+                output = {
+                    'status': 'success',
+                    'result': result
+                }
+                print(json.dumps(output))
+                log_info("Single simulation completed successfully")
+                
+            else:
+                error_msg = f'Unknown command: {input_data.get("command")}'
+                log_error(error_msg)
+                print(json.dumps({
+                    'status': 'error',
+                    'message': error_msg
+                }))
+                sys.exit(1)
+                
+        except Exception as e:
+            error_msg = f'Simulation error: {e}'
+            log_error(error_msg, e)
+            print(json.dumps({
+                'status': 'error',
+                'message': error_msg,
+                'traceback': traceback.format_exc()
+            }))
+            sys.exit(1)
                 
     except Exception as e:
         # Catch-all error handler

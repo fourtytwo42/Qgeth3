@@ -320,68 +320,79 @@ class QiskitGPUBackend:
 
 def main():
     """Main entry point for command-line usage"""
-    if len(sys.argv) < 2:
-        print(json.dumps({"success": False, "error": "No command provided"}))
-        sys.exit(1)
-    
-    command = sys.argv[1]
-    
     try:
-        if command == "test_gpu":
-            # Test GPU availability
-            backend = QiskitGPUBackend()
-            result = backend.benchmark_performance(2)
-            print(json.dumps({
-                "success": True,
-                "gpu_available": backend.gpu_available,
-                "benchmark": result
-            }))
+        # Check if we should read from stdin
+        if len(sys.argv) > 1 and sys.argv[1] == '--stdin':
+            # Read JSON input from stdin
+            input_data_str = sys.stdin.read()
+            request = json.loads(input_data_str)
             
-        elif command.startswith("{"):
-            # JSON command from Go
-            request = json.loads(command)
+        elif len(sys.argv) > 1:
+            command = sys.argv[1]
             
-            if request["command"] == "batch_simulate":
+            if command == "test_gpu":
+                # Test GPU availability
                 backend = QiskitGPUBackend()
-                
-                outcomes, sim_time = backend.batch_simulate_quantum_puzzles(
-                    request["work_hash"],
-                    request["qnonce"],
-                    request["n_qubits"],
-                    request["n_gates"],
-                    request["n_puzzles"]
-                )
-                
-                # Convert outcomes to list for JSON serialization
-                outcome_list = [list(outcome) for outcome in outcomes]
-                
+                result = backend.benchmark_performance(2)
                 print(json.dumps({
                     "success": True,
-                    "outcomes": outcome_list,
-                    "time": sim_time,
-                    "gpu_used": backend.gpu_available,
-                    "n_puzzles": request["n_puzzles"]
+                    "gpu_available": backend.gpu_available,
+                    "benchmark": result
                 }))
-            else:
-                print(json.dumps({"success": False, "error": f"Unknown command: {request['command']}"}))
+                return
                 
+            elif command.startswith("{"):
+                # JSON command from Go (legacy)
+                request = json.loads(command)
+                
+            else:
+                # Legacy command handling
+                if command == "test":
+                    backend = QiskitGPUBackend()
+                    result = backend.benchmark_performance(1)
+                    print(json.dumps({"success": True, "benchmark": result}))
+                    return
+                    
+                elif command == "benchmark":
+                    device_id = int(sys.argv[2]) if len(sys.argv) > 2 else 0
+                    n_trials = int(sys.argv[3]) if len(sys.argv) > 3 else 10
+                    
+                    backend = QiskitGPUBackend(device_id)
+                    result = backend.benchmark_performance(n_trials)
+                    print(json.dumps({"success": True, "benchmark": result}))
+                    return
+                    
+                else:
+                    print(json.dumps({"success": False, "error": f"Unknown command: {command}"}))
+                    return
         else:
-            # Legacy command handling
-            if command == "test":
-                backend = QiskitGPUBackend()
-                result = backend.benchmark_performance(1)
-                print(json.dumps({"success": True, "benchmark": result}))
-                
-            elif command == "benchmark":
-                device_id = int(sys.argv[2]) if len(sys.argv) > 2 else 0
-                n_trials = int(sys.argv[3]) if len(sys.argv) > 3 else 10
-                
-                backend = QiskitGPUBackend(device_id)
-                result = backend.benchmark_performance(n_trials)
-                print(json.dumps({"success": True, "benchmark": result}))
-                
-            else:
-                print(json.dumps({"success": False, "error": f"Unknown command: {command}"}))
+            print(json.dumps({"success": False, "error": "No command provided"}))
+            sys.exit(1)
+        
+        # Process JSON request (both stdin and command line)
+        if request["command"] == "batch_simulate":
+            backend = QiskitGPUBackend()
+            
+            outcomes, sim_time = backend.batch_simulate_quantum_puzzles(
+                request["work_hash"],
+                request["qnonce"],
+                request["n_qubits"],
+                request["n_gates"],
+                request["n_puzzles"]
+            )
+            
+            # Convert outcomes to list for JSON serialization
+            outcome_list = [list(outcome) for outcome in outcomes]
+            
+            print(json.dumps({
+                "success": True,
+                "outcomes": outcome_list,
+                "time": sim_time,
+                "gpu_used": backend.gpu_available,
+                "n_puzzles": request["n_puzzles"]
+            }))
+        else:
+            print(json.dumps({"success": False, "error": f"Unknown command: {request['command']}"}))
                 
     except Exception as e:
         print(json.dumps({
