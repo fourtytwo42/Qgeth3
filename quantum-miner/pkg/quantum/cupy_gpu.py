@@ -48,11 +48,26 @@ class CupyGPUSimulator:
             device = cp.cuda.Device()
             
             try:
-                device_name = device.name()
+                # Try different methods to get device name based on CuPy version
+                if hasattr(device, 'name'):
+                    device_name = device.name()
+                elif hasattr(cp.cuda.runtime, 'getDeviceProperties'):
+                    props = cp.cuda.runtime.getDeviceProperties(device.id)
+                    device_name = props['name'].decode() if isinstance(props['name'], bytes) else str(props['name'])
+                else:
+                    # Fallback: try to get device name through different API
+                    try:
+                        import pynvml
+                        pynvml.nvmlInit()
+                        handle = pynvml.nvmlDeviceGetHandleByIndex(device.id)
+                        device_name = pynvml.nvmlDeviceGetName(handle).decode()
+                    except:
+                        device_name = f"CUDA Device {device.id}"
+                        
                 log_info(f"GPU device name: {device_name}")
             except Exception as e:
                 log_error(f"Could not get device name: {e}", e)
-                device_name = "Unknown CUDA Device"
+                device_name = f"CUDA Device {getattr(device, 'id', 0)}"
             
             log_info("Getting memory information...")
             mem_info = cp.cuda.Device().mem_info

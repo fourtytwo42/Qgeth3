@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"time"
 	"bytes"
+	"strings"
 )
 
 // CupyGPUSimulator wraps the CuPy-based GPU quantum simulator
@@ -218,10 +219,15 @@ func (c *CupyGPUSimulator) SimulateQuantumPuzzle(puzzleConfig map[string]interfa
 
 	// Log all output for debugging
 	if errorStr != "" {
-		fmt.Printf("🔍 GPU: Python stderr output:\n%s\n", errorStr)
+		// Clean up any encoding issues in stderr
+		cleanErrorStr := strings.ReplaceAll(errorStr, "\x00", "")
+		cleanErrorStr = strings.TrimSpace(cleanErrorStr)
+		if cleanErrorStr != "" {
+			fmt.Printf("🔍 GPU: Python stderr output:\n%s\n", cleanErrorStr)
+		}
 	}
 	if outputStr != "" {
-		fmt.Printf("🔍 GPU: Python stdout output:\n%s\n", outputStr)
+		fmt.Printf("🔍 GPU: Python stdout output (first 500 chars):\n%.500s\n", outputStr)
 	}
 
 	if err != nil {
@@ -307,7 +313,12 @@ func (c *CupyGPUSimulator) BatchSimulateQuantumPuzzles(puzzles []map[string]inte
 
 	// Log all output for debugging
 	if errorStr != "" {
-		fmt.Printf("🔍 GPU: Python stderr output:\n%s\n", errorStr)
+		// Clean up any encoding issues in stderr
+		cleanErrorStr := strings.ReplaceAll(errorStr, "\x00", "")
+		cleanErrorStr = strings.TrimSpace(cleanErrorStr)
+		if cleanErrorStr != "" {
+			fmt.Printf("🔍 GPU: Python stderr output:\n%s\n", cleanErrorStr)
+		}
 	}
 	if outputStr != "" {
 		fmt.Printf("🔍 GPU: Python stdout output (first 500 chars):\n%.500s\n", outputStr)
@@ -368,6 +379,13 @@ func (c *CupyGPUSimulator) BatchSimulateQuantumPuzzles(puzzles []map[string]inte
 			}
 		}
 		fmt.Printf("✅ GPU: Batch simulation completed successfully (%d results)\n", len(results))
+		
+		// Log GPU performance metrics for verification
+		if len(results) > 0 {
+			if backend, ok := results[0]["backend"].(string); ok && backend == "cupy_gpu_optimized" {
+				fmt.Printf("🎮 CONFIRMED: Using GPU acceleration (CuPy backend)\n")
+			}
+		}
 		return results, nil
 	}
 
