@@ -382,8 +382,12 @@ func (c *CupyGPUSimulator) BatchSimulateQuantumPuzzles(puzzles []map[string]inte
 		
 		// Log GPU performance metrics for verification
 		if len(results) > 0 {
-			if backend, ok := results[0]["backend"].(string); ok && backend == "cupy_gpu_optimized" {
-				fmt.Printf("🎮 CONFIRMED: Using GPU acceleration (CuPy backend)\n")
+			if backend, ok := results[0]["backend"].(string); ok {
+				if backend == "cupy_gpu_optimized" || backend == "cupy_gpu_pure" {
+					fmt.Printf("🎮 CONFIRMED: Using GPU acceleration (CuPy backend: %s)\n", backend)
+				} else if backend == "cpu_fallback" {
+					fmt.Printf("⚠️  WARNING: Fell back to CPU simulation (backend: %s)\n", backend)
+				}
 			}
 		}
 		return results, nil
