@@ -1,0 +1,1 @@
+geth.exe --datadir "%DATADIR%" --networkid %CHAINID% --http --http.addr 0.0.0.0 --http.port 8545 --http.corsdomain "*" --http.api "eth,net,web3,personal,admin,txpool,miner,qmpow" --miner.etherbase 0x0000000000000000000000000000000000000001 
