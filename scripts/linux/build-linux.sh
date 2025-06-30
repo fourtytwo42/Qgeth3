@@ -1152,6 +1152,76 @@ create_linux_miner_script() {
     echo "✅ Linux miner script created: ../../start-linux-miner.sh"
 }
 
+# Function to clean up after build to save disk space
+cleanup_after_build() {
+    echo "🧹 Performing post-build cleanup to save disk space..."
+    
+    # Clean Go build cache - keep only essential cache
+    if command -v go >/dev/null 2>&1; then
+        echo "🔧 Cleaning Go build cache..."
+        go clean -cache -testcache 2>/dev/null || true
+        # Keep module cache but clean downloads cache
+        go clean -modcache 2>/dev/null || true
+        echo "✅ Go build cache cleaned"
+    fi
+    
+    # Clean temporary build directory
+    if [ -n "$BUILD_TEMP_DIR" ] && [ -d "$BUILD_TEMP_DIR" ]; then
+        echo "🔧 Cleaning temporary build directory: $BUILD_TEMP_DIR"
+        rm -rf "$BUILD_TEMP_DIR" 2>/dev/null || true
+        echo "✅ Temporary build directory cleaned"
+    fi
+    
+    # Clean any build-temp directories in project
+    echo "🔧 Cleaning any remaining build temp directories..."
+    find ../.. -name "build-temp-*" -type d -exec rm -rf {} \; 2>/dev/null || true
+    
+    # Clean system temp files related to the build
+    echo "🔧 Cleaning system temp files..."
+    find /tmp -name "*qgeth*" -mtime +0 -delete 2>/dev/null || true
+    find /tmp -name "*quantum*" -mtime +0 -delete 2>/dev/null || true
+    find /tmp -name "*go-build*" -type d -mtime +0 -exec rm -rf {} \; 2>/dev/null || true
+    
+    # Clean old object files and build artifacts
+    echo "🔧 Cleaning build artifacts..."
+    find ../.. -name "*.o" -delete 2>/dev/null || true
+    find ../.. -name "*.a" -delete 2>/dev/null || true
+    find ../.. -name "*.so" -delete 2>/dev/null || true
+    
+    # Remove duplicate binaries if they exist (keep only the latest)
+    if [ -f "../../geth.bin" ] && [ -f "../../geth.bin.bak" ]; then
+        rm -f "../../geth.bin.bak" 2>/dev/null || true
+    fi
+    
+    if [ -f "../../quantum-miner" ] && [ -f "../../quantum-miner.bak" ]; then
+        rm -f "../../quantum-miner.bak" 2>/dev/null || true  
+    fi
+    
+    echo "✅ Post-build cleanup completed"
+    echo ""
+}
+
+# Function to show disk space saved
+show_disk_usage() {
+    echo "💾 Disk Space Summary:"
+    
+    # Show current directory size
+    if command -v du >/dev/null 2>&1; then
+        local project_size=$(du -sh ../.. 2>/dev/null | cut -f1 || echo "unknown")
+        echo "  Project directory: $project_size"
+    fi
+    
+    # Show available disk space
+    if command -v df >/dev/null 2>&1; then
+        local disk_usage=$(df / 2>/dev/null | awk 'NR==2 {print $5}' || echo "unknown")
+        local disk_available=$(df -h / 2>/dev/null | awk 'NR==2 {print $4}' || echo "unknown")
+        echo "  Disk usage: $disk_usage"
+        echo "  Available space: $disk_available"
+    fi
+    
+    echo ""
+}
+
 # Main build logic
 case $TARGET in
     "geth")
@@ -1217,4 +1287,8 @@ if [ "$TARGET" = "miner" ] || [ "$TARGET" = "both" ]; then
     echo "                  -address 0x742d35C6C4e6d8de6f10E7FF75DD98dd25b02C3A"
 fi
 echo ""
-echo "✅ All builds use CGO_ENABLED=0 for geth - quantum field compatibility guaranteed!" 
+echo "✅ All builds use CGO_ENABLED=0 for geth - quantum field compatibility guaranteed!"
+
+# Clean up after build
+cleanup_after_build
+show_disk_usage 

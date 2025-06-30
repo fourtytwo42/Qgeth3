@@ -556,6 +556,12 @@ WRAPPER_EOF
     
     chmod +x "$PROJECT_DIR/scripts/linux/systemd-start-geth.sh"
     
+    # Create logs directory
+    mkdir -p "$PROJECT_DIR/logs" 2>/dev/null || true
+    if [ -n "$SUDO_USER" ] && [ "$SUDO_USER" != "root" ]; then
+        chown -R "$SUDO_USER:$SUDO_USER" "$PROJECT_DIR/logs" 2>/dev/null || true
+    fi
+    
     $SUDO_CMD tee /etc/systemd/system/qgeth.service > /dev/null << EOF
 [Unit]
 Description=Q Geth Quantum Blockchain Node
@@ -574,6 +580,23 @@ TimeoutStartSec=60s
 TimeoutStopSec=30s
 StandardOutput=journal
 StandardError=journal
+SyslogIdentifier=qgeth
+SyslogLevel=info
+SyslogLevelPrefix=true
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=$USER_HOME
+ReadWritePaths=/tmp
+ReadWritePaths=/var/tmp
+ReadWritePaths=$PROJECT_DIR/logs
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
 
 # Environment
 Environment=HOME=$USER_HOME
@@ -1184,6 +1207,320 @@ start_system_service() {
     esac
 }
 
+# ENHANCED LOG MANAGEMENT AND CLEANUP FUNCTIONS
+
+# Setup log rotation for Q Geth
+setup_log_rotation() {
+    log_info "Setting up log rotation for Q Geth..."
+    
+    # Determine if we need sudo for log rotation setup
+    SUDO_CMD=""
+    if [ "$EUID" -ne 0 ]; then
+        SUDO_CMD="sudo"
+    fi
+    
+    # Create logrotate config for Q Geth
+    $SUDO_CMD tee /etc/logrotate.d/qgeth > /dev/null << 'EOF'
+# Q Geth log rotation configuration
+
+# Q Geth user directory logs
+/home/*/qgeth/logs/*.log {
+    daily
+    rotate 7
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0644 $(stat -c %U:%G %)
+    maxsize 100M
+    su $(stat -c %U) $(stat -c %G)
+}
+
+# Q Geth data directory logs
+/home/*/.qcoin/*/logs/*.log {
+    daily
+    rotate 7
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0644 $(stat -c %U:%G %)
+    maxsize 100M
+    su $(stat -c %U) $(stat -c %G)
+}
+EOF
+    
+    log_success "✅ Log rotation configured for Q Geth"
+}
+
+# Setup systemd journal limits to prevent log explosion
+setup_systemd_journal_limits() {
+    log_info "Configuring systemd journal limits..."
+    
+    # Determine if we need sudo
+    SUDO_CMD=""
+    if [ "$EUID" -ne 0 ]; then
+        SUDO_CMD="sudo"
+    fi
+    
+    # Configure journald limits
+    $SUDO_CMD mkdir -p /etc/systemd/journald.conf.d
+    
+    $SUDO_CMD tee /etc/systemd/journald.conf.d/qgeth-limits.conf > /dev/null << 'EOF'
+# Q Geth systemd journal limits to prevent disk space issues
+[Journal]
+SystemMaxUse=500M
+SystemMaxFileSize=50M
+MaxRetentionSec=1week
+MaxFileSec=1day
+ForwardToSyslog=no
+Compress=yes
+EOF
+    
+    # Apply the changes
+    if command -v systemctl >/dev/null 2>&1; then
+        $SUDO_CMD systemctl restart systemd-journald
+        log_success "✅ Systemd journal limits configured and applied"
+    else
+        log_success "✅ Systemd journal limits configured (restart required)"
+    fi
+}
+
+# Create disk monitoring and cleanup script
+create_disk_monitor() {
+    log_info "Creating disk monitoring and cleanup system..."
+    
+    # Use project directory for monitoring
+    MONITOR_DIR="$PROJECT_DIR"
+    
+    # Create disk monitor script
+    cat > "$MONITOR_DIR/disk-monitor.sh" << 'EOF'
+#!/bin/bash
+# Q Geth Disk Space Monitor and Emergency Cleanup
+# Automatically cleans up logs and temp files when disk usage is high
+
+LOG_TAG="qgeth-disk-monitor"
+CRITICAL_THRESHOLD=90
+WARNING_THRESHOLD=80
+
+# Function to log messages
+log_msg() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [$LOG_TAG] $1" | logger -t "$LOG_TAG"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [$LOG_TAG] $1"
+}
+
+# Get disk usage percentage
+get_disk_usage() {
+    df / | awk 'NR==2 {print $5}' | sed 's/%//'
+}
+
+# Emergency cleanup function
+emergency_cleanup() {
+    local usage=$1
+    log_msg "CRITICAL: Disk usage at ${usage}% - performing emergency cleanup"
+    
+    # 1. Clean systemd journal logs (keep last 3 days)
+    if command -v journalctl >/dev/null 2>&1; then
+        journalctl --vacuum-time=3d >/dev/null 2>&1
+        log_msg "Cleaned systemd journal logs"
+    fi
+    
+    # 2. Clean Q Geth logs older than 3 days
+    find /home/*/qgeth/logs -name "*.log" -mtime +3 -delete 2>/dev/null || true
+    find /home/*/.qcoin/*/logs -name "*.log" -mtime +3 -delete 2>/dev/null || true
+    log_msg "Cleaned old Q Geth logs"
+    
+    # 3. Truncate large active log files (>100MB)
+    find /home/*/qgeth/logs -name "*.log" -size +100M -exec truncate -s 50M {} \; 2>/dev/null || true
+    find /home/*/.qcoin -name "*.log" -size +100M -exec truncate -s 50M {} \; 2>/dev/null || true
+    log_msg "Truncated large log files"
+    
+    # 4. Clean Go build cache and temp files
+    if command -v go >/dev/null 2>&1; then
+        go clean -cache -modcache -testcache >/dev/null 2>&1 || true
+        log_msg "Cleaned Go build cache"
+    fi
+    
+    # 5. Clean system temp files
+    find /tmp -name "*qgeth*" -mtime +1 -delete 2>/dev/null || true
+    find /tmp -name "*quantum*" -mtime +1 -delete 2>/dev/null || true
+    log_msg "Cleaned temp files"
+    
+    # 6. Clean apt cache if available
+    if command -v apt >/dev/null 2>&1; then
+        apt clean >/dev/null 2>&1 || true
+        log_msg "Cleaned package cache"
+    fi
+    
+    # 7. Force log rotation
+    if command -v logrotate >/dev/null 2>&1; then
+        logrotate -f /etc/logrotate.d/qgeth >/dev/null 2>&1 || true
+        log_msg "Forced log rotation"
+    fi
+}
+
+# Warning cleanup function  
+warning_cleanup() {
+    local usage=$1
+    log_msg "WARNING: Disk usage at ${usage}% - performing routine cleanup"
+    
+    # 1. Clean journal logs (keep last week)
+    if command -v journalctl >/dev/null 2>&1; then
+        journalctl --vacuum-time=1week >/dev/null 2>&1
+    fi
+    
+    # 2. Clean old logs (>7 days)
+    find /home/*/qgeth/logs -name "*.log" -mtime +7 -delete 2>/dev/null || true
+    find /home/*/.qcoin/*/logs -name "*.log" -mtime +7 -delete 2>/dev/null || true
+    
+    # 3. Clean old temp files
+    find /tmp -name "*qgeth*" -mtime +7 -delete 2>/dev/null || true
+    find /tmp -name "*quantum*" -mtime +7 -delete 2>/dev/null || true
+    
+    log_msg "Routine cleanup completed"
+}
+
+# Main monitoring logic
+main() {
+    local usage=$(get_disk_usage)
+    
+    if [ "$usage" -ge "$CRITICAL_THRESHOLD" ]; then
+        emergency_cleanup "$usage"
+        
+        # Check if cleanup helped
+        local new_usage=$(get_disk_usage)
+        local saved=$((usage - new_usage))
+        log_msg "Emergency cleanup completed: ${usage}% -> ${new_usage}% (saved ${saved}%)"
+        
+        # If still critical, send alert
+        if [ "$new_usage" -ge "$CRITICAL_THRESHOLD" ]; then
+            log_msg "ALERT: Disk usage still critical at ${new_usage}% after cleanup!"
+        fi
+        
+    elif [ "$usage" -ge "$WARNING_THRESHOLD" ]; then
+        warning_cleanup "$usage"
+        
+        local new_usage=$(get_disk_usage)
+        local saved=$((usage - new_usage))
+        log_msg "Warning cleanup completed: ${usage}% -> ${new_usage}% (saved ${saved}%)"
+        
+    else
+        # Normal operation - just log status
+        log_msg "Disk usage normal: ${usage}%"
+    fi
+}
+
+# Run the monitor
+main "$@"
+EOF
+
+    chmod +x "$MONITOR_DIR/disk-monitor.sh"
+    
+    # Create systemd timer for disk monitoring (if systemd is available)
+    if [ "$INIT_SYSTEM" = "systemd" ]; then
+        log_info "Creating systemd timer for disk monitoring..."
+        
+        # Determine if we need sudo
+        SUDO_CMD=""
+        if [ "$EUID" -ne 0 ]; then
+            SUDO_CMD="sudo"
+        fi
+        
+        # Create service file
+        $SUDO_CMD tee /etc/systemd/system/qgeth-disk-monitor.service > /dev/null << EOF
+[Unit]
+Description=Q Geth Disk Space Monitor
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=$MONITOR_DIR/disk-monitor.sh
+User=root
+StandardOutput=journal
+StandardError=journal
+EOF
+
+        # Create timer file  
+        $SUDO_CMD tee /etc/systemd/system/qgeth-disk-monitor.timer > /dev/null << EOF
+[Unit]
+Description=Q Geth Disk Monitor Timer
+Requires=qgeth-disk-monitor.service
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+
+        # Enable and start timer
+        $SUDO_CMD systemctl daemon-reload
+        $SUDO_CMD systemctl enable qgeth-disk-monitor.timer
+        $SUDO_CMD systemctl start qgeth-disk-monitor.timer
+        
+        log_success "✅ Disk monitoring timer created and started"
+    else
+        # For non-systemd systems, add to crontab
+        log_info "Adding disk monitor to crontab..."
+        
+        # Add hourly disk monitoring to root crontab
+        (crontab -l 2>/dev/null || true; echo "0 * * * * $MONITOR_DIR/disk-monitor.sh") | crontab -
+        
+        log_success "✅ Disk monitoring added to crontab"
+    fi
+    
+    log_success "✅ Disk monitoring system created"
+}
+
+# Initial cleanup function to remove unnecessary files after installation
+initial_cleanup() {
+    log_info "Performing initial cleanup after installation..."
+    
+    # Clean Go build cache and temp files  
+    if command -v go >/dev/null 2>&1; then
+        log_info "Cleaning Go build cache..."
+        go clean -cache -modcache -testcache 2>/dev/null || true
+        
+        # Remove downloaded Go modules cache if not needed
+        if [ -d "/root/go/pkg/mod/cache" ]; then
+            rm -rf "/root/go/pkg/mod/cache" 2>/dev/null || true
+        fi
+        if [ -d "$HOME/go/pkg/mod/cache" ]; then
+            rm -rf "$HOME/go/pkg/mod/cache" 2>/dev/null || true
+        fi
+    fi
+    
+    # Remove duplicate project directories if they exist
+    if [ -d "/root/Qgeth3" ] && [ "/root/Qgeth3" != "$PROJECT_DIR" ]; then
+        log_info "Removing duplicate project directory: /root/Qgeth3"
+        rm -rf "/root/Qgeth3" 2>/dev/null || true
+    fi
+    
+    if [ -d "/root/qgeth" ] && [ "/root/qgeth" != "$INSTALL_DIR" ]; then
+        log_info "Removing old project directory: /root/qgeth"
+        rm -rf "/root/qgeth" 2>/dev/null || true
+    fi
+    
+    if [ -d "$HOME/Qgeth3" ] && [ "$HOME/Qgeth3" != "$PROJECT_DIR" ]; then
+        log_info "Removing duplicate project directory in home"
+        rm -rf "$HOME/Qgeth3" 2>/dev/null || true
+    fi
+    
+    # Clean up any temporary build files
+    find "$PROJECT_DIR" -name "build-temp-*" -type d -exec rm -rf {} \; 2>/dev/null || true
+    find /tmp -name "*qgeth*" -mtime +0 -delete 2>/dev/null || true
+    find /tmp -name "*quantum*" -mtime +0 -delete 2>/dev/null || true
+    
+    # Clean apt cache to save space
+    if command -v apt >/dev/null 2>&1 && [ "$EUID" -eq 0 ]; then
+        apt clean 2>/dev/null || true
+        apt autoremove -y 2>/dev/null || true
+    fi
+    
+    log_success "✅ Initial cleanup completed"
+}
+
 # Main installation
 main() {
     echo ""
@@ -1316,6 +1653,12 @@ main() {
             log_info "  ./start-geth.sh testnet"
             exit 1
         fi
+        
+        # Setup log management and monitoring
+        log_info "Setting up log management and monitoring..."
+        setup_log_rotation
+        setup_systemd_journal_limits  
+        create_disk_monitor
     fi
     
     if [ "$DOCKER_MODE" != true ]; then
@@ -1565,6 +1908,9 @@ EOF
         # Start the service
         start_system_service
     fi
+    
+    # Perform initial cleanup to save disk space
+    initial_cleanup
     
     # Fix ownership if installed with sudo
     if [ -n "$SUDO_USER" ] && [ "$SUDO_USER" != "root" ]; then
