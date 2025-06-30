@@ -202,13 +202,13 @@ REM Test GPU support (optional)
 echo Testing GPU support...
 call python.bat -c "try: import cupy; print('GPU available:', cupy.cuda.is_available()); except: print('GPU not available')" 2>nul
 
-REM Set defaults
-set THREADS=%1
-set NODE=%2  
-set COINBASE=%3
-if "%THREADS%"=="" set THREADS=8
-if "%NODE%"=="" set NODE=http://localhost:8545
-if "%COINBASE%"=="" set COINBASE=0x0000000000000000000000000000000000000001
+REM Set defaults (ensure no trailing spaces)
+set "THREADS=%1"
+set "NODE=%2"
+set "COINBASE=%3"
+if "%THREADS%"=="" set "THREADS=8"
+if "%NODE%"=="" set "NODE=http://localhost:8545"
+if "%COINBASE%"=="" set "COINBASE=0x0000000000000000000000000000000000000001"
 
 echo.
 echo Starting quantum miner...
@@ -217,7 +217,7 @@ echo Node: %NODE%
 echo Coinbase: %COINBASE%
 echo.
 
-quantum-miner.exe -node %NODE% -coinbase %COINBASE% -threads %THREADS%
+quantum-miner.exe -node "%NODE%" -coinbase "%COINBASE%" -threads %THREADS%
 '@
 Set-Content -Path (Join-Path $releaseDir "start-miner.bat") -Value $minerLauncherContent -Encoding ASCII
 
