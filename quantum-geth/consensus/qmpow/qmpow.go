@@ -1380,9 +1380,18 @@ func (s *remoteSealer) loop() {
 func (s *remoteSealer) submitWork(block *types.Block, results chan<- *types.Block) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	
+	// CRITICAL: This sets up REAL mining work with a results channel
+	// This is different from template work which has s.results = nil
 	s.currentBlock = block
 	s.results = results
 	s.makeQuantumWorkUnsafe(block)
+	
+	log.Info("🚀 Real mining work prepared for external miners",
+		"block", block.Number().Uint64(),
+		"difficulty", FormatDifficulty(block.Header().Difficulty),
+		"hasResultsChannel", results != nil,
+		"type", "real")
 }
 
 // makeQuantumWork creates a quantum work package for external miners (thread-safe)
@@ -1511,17 +1520,19 @@ func (s *remoteSealer) submitQuantumWork(qnonce uint64, blockHash common.Hash, q
 
 	// Submit successful block if we have a result channel
 	if s.results != nil {
-		log.Debug("🔬 DEBUG: Submitting external miner block via result channel", 
+		log.Info("🔬 Processing REAL mining work with results channel", 
 			"qnonce", qnonce, 
 			"blockNumber", header.Number.Uint64(),
 			"stateRoot", header.Root.Hex(),
-			"parentHash", header.ParentHash.Hex())
+			"type", "real")
 
 		select {
 		case s.results <- sealedBlock:
-			log.Info("✅ External miner found valid block",
+			log.Info("✅ REAL quantum block submitted successfully!",
 				"block", header.Number.Uint64(),
-				"qnonce", qnonce)
+				"qnonce", qnonce,
+				"type", "real",
+				"miner", "external")
 			return true
 		default:
 			log.Warn("Could not submit quantum block - channel full")
@@ -1530,9 +1541,10 @@ func (s *remoteSealer) submitQuantumWork(qnonce uint64, blockHash common.Hash, q
 	} else {
 		// This was template work - we need to create a proper result channel
 		// and try to submit via the miner subsystem
-		log.Info("✅ Quantum block found by external miner (template work)",
+		log.Warn("⚠️  TEMPLATE WORK DETECTED - This should not happen with proper mining setup!",
 			"number", header.Number.Uint64(),
 			"qnonce", qnonce,
+			"type", "template",
 			"miner", "external",
 			"stateRoot", header.Root.Hex())
 
@@ -1885,9 +1897,20 @@ func (s *remoteSealer) tryPrepareWork() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Skip if we already have recent work
-	if s.currentBlock != nil {
+	// CRITICAL FIX: Don't create template work if we already have real work with results channel
+	// Real mining work (with results channel) should never be overridden by template work
+	if s.results != nil && s.currentBlock != nil {
+		log.Debug("🔗 Skipping template work - real mining work already active", 
+			"block", s.currentBlock.Number().Uint64(),
+			"hasResultsChannel", s.results != nil)
 		return
+	}
+
+	// Skip if we already have recent work (but no results channel - template work)
+	if s.currentBlock != nil && s.results == nil {
+		// This is template work - allow refresh for external miners
+		log.Debug("🔄 Refreshing template work for external miners", 
+			"block", s.currentBlock.Number().Uint64())
 	}
 
 	// Skip if no chain reference available
@@ -1944,14 +1967,23 @@ func (s *remoteSealer) tryPrepareWork() {
 	// Create template block with empty transactions and receipts
 	block := types.NewBlock(header, nil, nil, nil, nil)
 
-	// Prepare work for external miners
-	s.currentBlock = block
-	s.results = nil // No result channel for template work
-	s.makeQuantumWorkUnsafe(block)
+	// CRITICAL FIX: Only set template work if we don't have real work
+	// This ensures real mining work is never overridden by template work
+	if s.results == nil {
+		// Prepare work for external miners (template work only)
+		s.currentBlock = block
+		s.results = nil // Explicitly set to nil for template work
+		s.makeQuantumWorkUnsafe(block)
 
-	log.Info("🔗 Work automatically prepared for miners",
-		"block", header.Number.Uint64(),
-		"difficulty", FormatDifficulty(header.Difficulty))
+		log.Info("🔗 Template work prepared for external miners",
+			"block", header.Number.Uint64(),
+			"difficulty", FormatDifficulty(header.Difficulty),
+			"type", "template")
+	} else {
+		log.Debug("🚫 Skipping template work preparation - real work active", 
+			"realBlock", s.currentBlock.Number().Uint64(),
+			"templateBlock", header.Number.Uint64())
+	}
 }
 
 // invalidateOldWork immediately clears all work templates to force external miners
