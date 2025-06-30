@@ -557,15 +557,25 @@ func main() {
 func checkCuQuantumSupport() error {
 	fmt.Printf("🔍 Checking for NVIDIA cuQuantum Appliance Docker...\n")
 
+	// Detect operating system for Windows-specific checks
+	isWindows := detectWindowsEnvironment()
+	
+	if isWindows {
+		fmt.Printf("🪟 Windows environment detected\n")
+		if err := checkWindowsDockerRequirements(); err != nil {
+			return fmt.Errorf("Windows Docker requirements not met: %v", err)
+		}
+	}
+
 	// Check if Docker is available
 	if err := exec.Command("docker", "--version").Run(); err != nil {
-		return fmt.Errorf("Docker not found: %v", err)
+		return fmt.Errorf("Docker not found: %v\n\nFor Windows users:\n  - Install Docker Desktop from https://docker.com/products/docker-desktop/\n  - Ensure WSL2 backend is enabled in Docker Desktop settings\n  - Restart Docker Desktop after installation", err)
 	}
 	fmt.Printf("✅ Docker runtime available\n")
 
-	// Check if NVIDIA Container Toolkit is available
-	if err := exec.Command("docker", "run", "--rm", "--gpus", "all", "nvidia/cuda:11.2-base-ubuntu20.04", "nvidia-smi").Run(); err != nil {
-		return fmt.Errorf("NVIDIA Container Toolkit not available: %v", err)
+	// Check if NVIDIA Container Toolkit is available with enhanced Windows support
+	if err := checkNVIDIAContainerToolkit(isWindows); err != nil {
+		return err
 	}
 	fmt.Printf("✅ NVIDIA Container Toolkit available\n")
 
@@ -577,7 +587,7 @@ func checkCuQuantumSupport() error {
 	
 	if err := testCmd.Run(); err != nil {
 		// Try to pull the container if it fails
-		fmt.Printf("🔄 Pulling cuQuantum Appliance container (this may take a while)...\n")
+		fmt.Printf("🔄 Pulling cuQuantum Appliance container (5.7GB - this may take a while)...\n")
 		pullCmd := exec.Command("docker", "pull", "nvcr.io/nvidia/cuquantum-appliance:25.03-x86_64")
 		if err := pullCmd.Run(); err != nil {
 			return fmt.Errorf("failed to pull cuQuantum container: %v", err)
@@ -585,12 +595,103 @@ func checkCuQuantumSupport() error {
 		
 		// Test again after pulling
 		if err := testCmd.Run(); err != nil {
+			if isWindows {
+				return fmt.Errorf("cuQuantum container test failed: %v\n\nWindows Troubleshooting:\n  - Ensure WSL2 is properly installed: wsl --update\n  - Verify Docker Desktop uses WSL2 backend (Settings > General > Use WSL2)\n  - Check NVIDIA drivers support WSL2 GPU Paravirtualization\n  - Try: docker run --rm --gpus all nvidia/cuda:11.2-base-ubuntu20.04 nvidia-smi", err)
+			}
 			return fmt.Errorf("cuQuantum container test failed: %v", err)
 		}
 	}
 	
 	fmt.Printf("✅ cuQuantum Appliance container ready\n")
 	fmt.Printf("🚀 Enterprise-grade quantum simulation available\n")
+	return nil
+}
+
+// detectWindowsEnvironment checks if running on Windows
+func detectWindowsEnvironment() bool {
+	// Check environment variables that indicate Windows
+	if os.Getenv("OS") == "Windows_NT" || os.Getenv("WINDIR") != "" {
+		return true
+	}
+	
+	// Check if running in WSL (Windows Subsystem for Linux)
+	if _, err := os.Stat("/proc/version"); err == nil {
+		if data, err := os.ReadFile("/proc/version"); err == nil {
+			if strings.Contains(strings.ToLower(string(data)), "microsoft") || 
+			   strings.Contains(strings.ToLower(string(data)), "wsl") {
+				return true // WSL environment
+			}
+		}
+	}
+	
+	return false
+}
+
+// checkWindowsDockerRequirements validates Windows-specific Docker requirements
+func checkWindowsDockerRequirements() error {
+	// Check if running in WSL2 environment
+	isWSL2 := checkWSL2Environment()
+	
+	if !isWSL2 {
+		return fmt.Errorf("WSL2 environment required for GPU acceleration on Windows\n\nSetup Instructions:\n  1. Install WSL2: wsl --install\n  2. Update WSL kernel: wsl --update\n  3. Install Docker Desktop with WSL2 backend enabled\n  4. Install NVIDIA drivers that support WSL2 GPU Paravirtualization")
+	}
+	
+	fmt.Printf("✅ WSL2 environment detected\n")
+	
+	// Check if Docker Desktop is running with WSL2 backend
+	if err := checkDockerDesktopWSL2(); err != nil {
+		return fmt.Errorf("Docker Desktop WSL2 integration issue: %v\n\nTroubleshooting:\n  - Open Docker Desktop Settings > General\n  - Ensure 'Use the WSL2 based engine' is checked\n  - Restart Docker Desktop\n  - Try: docker run hello-world", err)
+	}
+	
+	return nil
+}
+
+// checkWSL2Environment detects if running in WSL2
+func checkWSL2Environment() bool {
+	// Check for WSL2 specific indicators
+	if _, err := os.Stat("/proc/version"); err == nil {
+		if data, err := os.ReadFile("/proc/version"); err == nil {
+			versionStr := strings.ToLower(string(data))
+			// WSL2 typically contains "microsoft" and version info
+			if strings.Contains(versionStr, "microsoft") && strings.Contains(versionStr, "wsl2") {
+				return true
+			}
+		}
+	}
+	
+	// Check WSL environment variable
+	if os.Getenv("WSL_DISTRO_NAME") != "" {
+		return true
+	}
+	
+	return false
+}
+
+// checkDockerDesktopWSL2 verifies Docker Desktop WSL2 integration
+func checkDockerDesktopWSL2() error {
+	// Test basic Docker functionality
+	testCmd := exec.Command("docker", "run", "--rm", "hello-world")
+	if err := testCmd.Run(); err != nil {
+		return fmt.Errorf("Docker basic test failed: %v", err)
+	}
+	
+	return nil
+}
+
+// checkNVIDIAContainerToolkit validates NVIDIA Container Toolkit with Windows support
+func checkNVIDIAContainerToolkit(isWindows bool) error {
+	// Test NVIDIA Container Toolkit
+	testCmd := exec.Command("docker", "run", "--rm", "--gpus", "all", 
+		"nvidia/cuda:11.2-base-ubuntu20.04", "nvidia-smi")
+	
+	if err := testCmd.Run(); err != nil {
+		if isWindows {
+			return fmt.Errorf("NVIDIA Container Toolkit not available: %v\n\nWindows GPU Setup:\n  1. Install latest NVIDIA drivers with WSL2 support\n  2. Install Docker Desktop (includes NVIDIA Container Toolkit)\n  3. Enable WSL2 backend in Docker Desktop settings\n  4. NVIDIA Container Toolkit is included in Docker Desktop for Windows\n  5. Test with: docker run --rm --gpus all nvidia/cuda:11.2-base-ubuntu20.04 nvidia-smi", err)
+		} else {
+			return fmt.Errorf("NVIDIA Container Toolkit not available: %v\n\nLinux Installation:\n  1. Install NVIDIA drivers\n  2. Install NVIDIA Container Toolkit: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html\n  3. Restart Docker daemon", err)
+		}
+	}
+	
 	return nil
 }
 
@@ -2137,7 +2238,7 @@ func showHelp() {
 	fmt.Println("  -quantum-cloud       Enable IBM Quantum Cloud mining")
 	fmt.Println("  -ibm-token TOKEN     IBM Cloud API key (or set IBM_QUANTUM_TOKEN env var)")
 	fmt.Println("  -ibm-instance CRN    IBM Quantum service instance CRN (or set IBM_QUANTUM_INSTANCE env var)")
-	fmt.Println("  -use-simulator       Use IBM Cloud simulator (free) instead of real hardware (default: true)")
+	fmt.Println("  -use-simulator       Use IBM Cloud simulator (free) instead of real quantum hardware (default: true)")
 	fmt.Println("  -quantum-budget N    Maximum budget for real quantum hardware mining in USD (default: 10.0)")
 	fmt.Println("")
 	fmt.Println("MINING MODES (auto-selected in order of preference):")
@@ -2186,6 +2287,45 @@ func showHelp() {
 	fmt.Println("  - Running quantum-geth node with --mine enabled")
 	fmt.Println("  - Valid Ethereum address for coinbase")
 	fmt.Println("  - Network connectivity to the quantum-geth node")
+	fmt.Println("")
+	fmt.Println("cuQuantum DOCKER SETUP:")
+	fmt.Println("")
+	fmt.Println("  LINUX:")
+	fmt.Println("    1. Install Docker: https://docs.docker.com/engine/install/")
+	fmt.Println("    2. Install NVIDIA Container Toolkit:")
+	fmt.Println("       https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html")
+	fmt.Println("    3. Restart Docker daemon: sudo systemctl restart docker")
+	fmt.Println("    4. Test: docker run --rm --gpus all nvidia/cuda:11.2-base-ubuntu20.04 nvidia-smi")
+	fmt.Println("")
+	fmt.Println("  WINDOWS:")
+	fmt.Println("    PREREQUISITES:")
+	fmt.Println("      - Windows 10/11 with NVIDIA GPU")
+	fmt.Println("      - NVIDIA drivers with WSL2 GPU Paravirtualization support")
+	fmt.Println("      - WSL2 properly installed and updated")
+	fmt.Println("")
+	fmt.Println("    SETUP STEPS:")
+	fmt.Println("      1. Install/Update WSL2:")
+	fmt.Println("         wsl --install")
+	fmt.Println("         wsl --update")
+	fmt.Println("")
+	fmt.Println("      2. Install Docker Desktop:")
+	fmt.Println("         - Download from: https://docker.com/products/docker-desktop/")
+	fmt.Println("         - During installation, ensure WSL2 backend is enabled")
+	fmt.Println("         - In Docker Desktop Settings > General:")
+	fmt.Println("           ✓ Use the WSL2 based engine")
+	fmt.Println("")
+	fmt.Println("      3. Verify GPU Access:")
+	fmt.Println("         docker run --rm --gpus all nvidia/cuda:11.2-base-ubuntu20.04 nvidia-smi")
+	fmt.Println("")
+	fmt.Println("      4. IMPORTANT: Run miner from WSL2 environment, not Windows PowerShell")
+	fmt.Println("         - Open WSL2 terminal (Ubuntu, Debian, etc.)")
+	fmt.Println("         - Build and run quantum-miner from within WSL2")
+	fmt.Println("")
+	fmt.Println("    TROUBLESHOOTING WINDOWS:")
+	fmt.Println("      - If 'docker: command not found': restart WSL2 after Docker Desktop install")
+	fmt.Println("      - If GPU not detected: ensure NVIDIA drivers support WSL2 GPU-PV")
+	fmt.Println("      - If cuQuantum fails: verify Docker Desktop WSL2 integration is enabled")
+	fmt.Println("      - Container size: 5.7GB - ensure sufficient disk space")
 	fmt.Println("")
 	fmt.Println("IBM QUANTUM CLOUD SETUP:")
 	fmt.Println("  1. Create IBM Cloud account: https://cloud.ibm.com/quantum")

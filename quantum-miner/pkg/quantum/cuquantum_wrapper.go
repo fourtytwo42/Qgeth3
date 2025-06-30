@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 )
 
@@ -72,6 +74,25 @@ func NewCuQuantumSimulator() (*CuQuantumSimulator, error) {
 
 // testAvailability checks if cuQuantum Docker container is available and working
 func (sim *CuQuantumSimulator) testAvailability() error {
+	// Check if running on Windows and provide specific guidance
+	if runtime.GOOS == "windows" {
+		return fmt.Errorf("cuQuantum Docker requires WSL2 environment on Windows\n\nTo use cuQuantum on Windows:\n1. Install WSL2: wsl --install\n2. Install Docker Desktop with WSL2 backend\n3. Run quantum-miner from WSL2 terminal, not Windows PowerShell\n4. Ensure NVIDIA drivers support WSL2 GPU Paravirtualization")
+	}
+	
+	// Enhanced Windows detection for WSL environments
+	isWSL := false
+	if runtime.GOOS == "linux" {
+		// Check if running in WSL
+		if _, err := os.Stat("/proc/version"); err == nil {
+			if data, err := os.ReadFile("/proc/version"); err == nil {
+				if strings.Contains(strings.ToLower(string(data)), "microsoft") || 
+				   strings.Contains(strings.ToLower(string(data)), "wsl") {
+					isWSL = true
+				}
+			}
+		}
+	}
+	
 	// Test basic container functionality
 	cmd := exec.Command("docker", "run", "--rm", "--gpus", sim.gpuDevices,
 		sim.containerImage,
@@ -79,11 +100,14 @@ func (sim *CuQuantumSimulator) testAvailability() error {
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		if isWSL {
+			return fmt.Errorf("cuQuantum test failed in WSL2: %v\n\nWSL2 Troubleshooting:\n- Ensure Docker Desktop is running\n- Verify WSL2 integration is enabled in Docker Desktop settings\n- Check NVIDIA drivers support WSL2 GPU Paravirtualization\n- Test basic GPU access: docker run --rm --gpus all nvidia/cuda:11.2-base-ubuntu20.04 nvidia-smi\n\nOutput: %s", err, string(output))
+		}
 		return fmt.Errorf("cuQuantum test failed: %v, output: %s", err, string(output))
 	}
 
 	if !strings.Contains(string(output), "cuQuantum ready") {
-		return fmt.Errorf("cuQuantum container not responding correctly")
+		return fmt.Errorf("cuQuantum container not responding correctly, output: %s", string(output))
 	}
 
 	return nil
