@@ -197,7 +197,6 @@ class CupyGPUSimulator:
                 'num_qubits': num_qubits,
                 'target_state': target_state,
                 'measurement_basis': basis,
-                'probabilities': probabilities_cpu.tolist(),
                 'entropy': entropy,
                 'fidelity': fidelity,
                 'success': True
@@ -382,7 +381,6 @@ class CupyGPUSimulator:
             'num_qubits': num_qubits,
             'target_state': puzzle_config.get('target_state', 'random'),
             'measurement_basis': puzzle_config.get('measurement_basis', 'computational'),
-            'probabilities': probabilities.tolist(),
             'entropy': float(-np.sum(probabilities * np.log2(probabilities + 1e-16))),
             'fidelity': np.random.random(),
             'backend': 'cpu_fallback',
@@ -465,11 +463,10 @@ def batch_simulate_quantum_puzzles_gpu(puzzles: List[Dict[str, Any]]) -> List[Di
                 'num_qubits': num_qubits,
                 'target_state': target_state,
                 'measurement_basis': 'computational',
-                'probabilities': probabilities_cpu.tolist(),
                 'entropy': entropy_cpu,
                 'fidelity': float(cp.random.random()),
-                'backend': 'cupy_gpu_pure',  # Different backend name
-                'simulation_time': 0.001,  # Very fast
+                'backend': 'cupy_gpu_pure',
+                'simulation_time': 0.001,
                 'success': True
             }
             
