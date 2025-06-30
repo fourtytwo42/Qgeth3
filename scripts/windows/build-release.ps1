@@ -1,8 +1,10 @@
 #!/usr/bin/env pwsh
 
 # Q Coin Build Script - Creates timestamped releases
-# Usage: ./build-release.ps1 [component]
+# Usage: ./build-release.ps1 [component] [-NoEmbeddedPython]
 # Components: geth, miner, both (default: both)
+# Default: Miner releases include embedded Python (self-contained)
+# -NoEmbeddedPython: Create smaller releases requiring manual Python setup
 
 param(
     [Parameter(Position=0)]
@@ -402,10 +404,10 @@ if ($Component -eq "miner" -or $Component -eq "both") {
             
             # Create timestamped release directly in releases directory
             if ($NoEmbeddedPython) {
-                $releaseDir = Join-Path $ReleasesDir "quantum-miner-$timestamp"
-                Write-Host "Creating standard release (manual Python setup required)..." -ForegroundColor Yellow
+                $releaseDir = Join-Path $ReleasesDir "quantum-miner-manual-$timestamp"
+                Write-Host "Creating manual setup release (Python setup required)..." -ForegroundColor Yellow
             } else {
-                $releaseDir = Join-Path $ReleasesDir "quantum-miner-embedded-$timestamp"
+                $releaseDir = Join-Path $ReleasesDir "quantum-miner-$timestamp"
                 Write-Host "Creating self-contained release (embedded Python)..." -ForegroundColor Yellow
             }
             New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
@@ -527,7 +529,7 @@ quantum-miner.exe -node "%NODE%" -coinbase "%COINBASE%" -threads %THREADS%
 
             # Create self-contained README
             @"
-# Q Coin Self-Contained Quantum Miner Release $timestamp
+# Q Coin Quantum Miner Release $timestamp
 
 Built: $(Get-Date)
 Component: Quantum-Miner (Self-Contained Mining Software)
@@ -649,6 +651,11 @@ if ($Component -eq "geth" -or $Component -eq "both") {
     Write-Host "  Geth: $ReleasesDir\quantum-geth-*\" -ForegroundColor White
 }
 if ($Component -eq "miner" -or $Component -eq "both") {
-    Write-Host "  Miner (Self-Contained): $ReleasesDir\quantum-miner-embedded-*\" -ForegroundColor White
-    Write-Host "  -> ZERO installation required - embedded Python included!" -ForegroundColor Green
+    if ($NoEmbeddedPython) {
+        Write-Host "  Miner (Manual Setup): $ReleasesDir\quantum-miner-manual-*\" -ForegroundColor White
+        Write-Host "  -> Python installation required by user" -ForegroundColor Yellow
+    } else {
+        Write-Host "  Miner: $ReleasesDir\quantum-miner-*\" -ForegroundColor White
+        Write-Host "  -> ZERO installation required - embedded Python included!" -ForegroundColor Green
+    }
 } 

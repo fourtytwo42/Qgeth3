@@ -81,18 +81,18 @@ class CupyGPUSimulator:
             result = test_array * 2
             
             self.cupy_available = True
-            print(f"GPU Acceleration Available: {self.device_info['name']}")
-            print(f"   Memory: {self.device_info['free_memory_gb']:.1f}GB / {self.device_info['total_memory_gb']:.1f}GB")
+            print(f"GPU Acceleration Available: {self.device_info['name']}", file=sys.stderr)
+            print(f"   Memory: {self.device_info['free_memory_gb']:.1f}GB / {self.device_info['total_memory_gb']:.1f}GB", file=sys.stderr)
             
         except ImportError as e:
             log_error(f"CuPy not installed or not available: {e}", e)
-            print(f"GPU acceleration not available: CuPy not installed")
-            print("   Install with: pip install cupy-cuda12x")
+            print(f"GPU acceleration not available: CuPy not installed", file=sys.stderr)
+            print("   Install with: pip install cupy-cuda12x", file=sys.stderr)
             self.cupy_available = False
         except Exception as e:
             log_error(f"GPU initialization failed: {e}", e)
-            print(f"GPU acceleration not available: {e}")
-            print("   Check CUDA drivers and GPU setup")
+            print(f"GPU acceleration not available: {e}", file=sys.stderr)
+            print("   Check CUDA drivers and GPU setup", file=sys.stderr)
             self.cupy_available = False
     
     def simulate_quantum_puzzle(self, puzzle_config: Dict[str, Any]) -> Dict[str, Any]:
@@ -531,20 +531,20 @@ def main():
             try:
                 simulator = CupyGPUSimulator()
                 if simulator.cupy_available:
-                    print("GPU Acceleration Available: CuPy GPU Ready")
-                    print(f"Backend: cupy_gpu")
+                    print("GPU Acceleration Available: CuPy GPU Ready", file=sys.stderr)
+                    print(f"Backend: cupy_gpu", file=sys.stderr)
                     device_info = simulator.device_info
-                    print(f"Device: {device_info.get('name', 'Unknown')}")
-                    print(f"Memory: {device_info.get('free_memory_gb', 0):.1f}GB")
+                    print(f"Device: {device_info.get('name', 'Unknown')}", file=sys.stderr)
+                    print(f"Memory: {device_info.get('free_memory_gb', 0):.1f}GB", file=sys.stderr)
                 else:
-                    print("GPU Acceleration Not Available")
-                    print("Backend: cpu_fallback")
+                    print("GPU Acceleration Not Available", file=sys.stderr)
+                    print("Backend: cpu_fallback", file=sys.stderr)
                     
             except Exception as e:
                 error_msg = f"GPU Test Failed: {e}"
                 log_error(error_msg, e)
-                print(error_msg)
-                print("Backend: cpu_fallback")
+                print(error_msg, file=sys.stderr)
+                print("Backend: cpu_fallback", file=sys.stderr)
                 sys.exit(1)
             return  # Exit early for test mode
                 
