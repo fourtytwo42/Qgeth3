@@ -212,9 +212,9 @@ if "%COINBASE%"=="" set COINBASE=0x0000000000000000000000000000000000000001
 
 echo.
 echo Starting quantum miner...
-echo    Threads: %THREADS%
-echo    Node: %NODE%
-echo    Coinbase: %COINBASE%
+echo Threads: %THREADS%
+echo Node: %NODE%
+echo Coinbase: %COINBASE%
 echo.
 
 quantum-miner.exe -node %NODE% -coinbase %COINBASE% -threads %THREADS%
