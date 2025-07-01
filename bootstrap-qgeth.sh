@@ -1239,9 +1239,13 @@ start_system_service() {
                 log_warning "⚠️ Service created but failed to start"
                 log_info "Troubleshooting commands:"
                 log_info "  Check status: sudo systemctl status qgeth.service"
-                log_info "  View logs: sudo journalctl -xeu qgeth.service -f"
+                if journalctl --version >/dev/null 2>&1; then
+                    log_info "  View logs: sudo journalctl -xeu qgeth.service -f"
+                else
+                    log_info "  View logs: Check service status or $PROJECT_DIR/logs/"
+                fi
                 log_info "  Restart service: sudo systemctl restart qgeth.service"
-                log_info "  Or run manually: cd $PROJECT_DIR/scripts/linux && ./start-geth.sh testnet"
+                log_info "  Or run manually: cd $PROJECT_DIR/scripts/linux && ./start-geth.sh planck"
             fi
             ;;
         "openrc")
@@ -1337,8 +1341,20 @@ setup_systemd_journal_limits() {
         SUDO_CMD="sudo"
     fi
     
-    # Configure journald limits
-    $SUDO_CMD mkdir -p /etc/systemd/journald.conf.d
+    # Skip journal configuration if systemd-journald is already failing
+    if command -v systemctl >/dev/null 2>&1; then
+        if ! $SUDO_CMD systemctl is-active --quiet systemd-journald 2>/dev/null; then
+            log_warning "⚠️ systemd-journald service is not running, skipping journal configuration"
+            log_info "This may be due to system library issues - Q Geth will use alternative logging"
+            return 0
+        fi
+    fi
+    
+    # Configure journald limits only if journald is working
+    if ! $SUDO_CMD mkdir -p /etc/systemd/journald.conf.d 2>/dev/null; then
+        log_warning "⚠️ Cannot create journald config directory, skipping journal configuration"
+        return 0
+    fi
     
     $SUDO_CMD tee /etc/systemd/journald.conf.d/qgeth-limits.conf > /dev/null << 'EOF'
 # Q Geth systemd journal limits to prevent disk space issues
@@ -1351,10 +1367,20 @@ ForwardToSyslog=no
 Compress=yes
 EOF
     
-    # Apply the changes
+    # Test if journald config is valid before applying
     if command -v systemctl >/dev/null 2>&1; then
-        $SUDO_CMD systemctl restart systemd-journald
-        log_success "✅ Systemd journal limits configured and applied"
+        # Check if systemd-journald is currently running before attempting restart
+        if $SUDO_CMD systemctl is-active --quiet systemd-journald 2>/dev/null; then
+            # Try to reload configuration without full restart first
+            if $SUDO_CMD systemctl reload-or-restart systemd-journald 2>/dev/null; then
+                log_success "✅ Systemd journal limits configured and applied"
+            else
+                log_warning "⚠️ Journal configuration saved but could not be applied (will take effect on next boot)"
+                log_info "This is safe - Q Geth logging will work normally"
+            fi
+        else
+            log_warning "⚠️ Systemd journald service not available, configuration saved for next boot"
+        fi
     else
         log_success "✅ Systemd journal limits configured (restart required)"
     fi
@@ -1393,10 +1419,14 @@ emergency_cleanup() {
     local usage=$1
     log_msg "CRITICAL: Disk usage at ${usage}% - performing emergency cleanup"
     
-    # 1. Clean systemd journal logs (keep last 3 days)
+    # 1. Clean systemd journal logs (keep last 3 days) - only if journalctl works
     if command -v journalctl >/dev/null 2>&1; then
-        journalctl --vacuum-time=3d >/dev/null 2>&1
-        log_msg "Cleaned systemd journal logs"
+        if journalctl --version >/dev/null 2>&1; then
+            journalctl --vacuum-time=3d >/dev/null 2>&1
+            log_msg "Cleaned systemd journal logs"
+        else
+            log_msg "Skipped journal cleanup (journalctl unavailable)"
+        fi
     fi
     
     # 2. Clean Q Geth logs older than 3 days
@@ -1438,9 +1468,11 @@ warning_cleanup() {
     local usage=$1
     log_msg "WARNING: Disk usage at ${usage}% - performing routine cleanup"
     
-    # 1. Clean journal logs (keep last week)
+    # 1. Clean journal logs (keep last week) - only if journalctl works
     if command -v journalctl >/dev/null 2>&1; then
-        journalctl --vacuum-time=1week >/dev/null 2>&1
+        if journalctl --version >/dev/null 2>&1; then
+            journalctl --vacuum-time=1week >/dev/null 2>&1
+        fi
     fi
     
     # 2. Clean old logs (>7 days)
@@ -1751,7 +1783,11 @@ case "$INIT_SYSTEM" in
             echo "✅ Q Geth service started successfully"
         else
             echo "❌ Failed to start Q Geth service"
-            echo "Check logs: sudo journalctl -u qgeth.service -f"
+            if journalctl --version >/dev/null 2>&1; then
+                echo "Check logs: sudo journalctl -u qgeth.service -f"
+            else
+                echo "Check logs: $INSTALL_DIR/logs-qgeth.sh -f"
+            fi
             exit 1
         fi
         ;;
@@ -1817,7 +1853,11 @@ case "$INIT_SYSTEM" in
         echo "  Start:   sudo systemctl start qgeth.service"
         echo "  Stop:    sudo systemctl stop qgeth.service"
         echo "  Restart: sudo systemctl restart qgeth.service"
-        echo "  Logs:    sudo journalctl -u qgeth.service -f"
+        if journalctl --version >/dev/null 2>&1; then
+            echo "  Logs:    sudo journalctl -u qgeth.service -f"
+        else
+            echo "  Logs:    Check $PROJECT_DIR/logs/ or service status"
+        fi
         echo "  Enable:  sudo systemctl enable qgeth.service"
         echo "  Disable: sudo systemctl disable qgeth.service"
         ;;
@@ -1928,12 +1968,46 @@ echo ""
 
 case "$INIT_SYSTEM" in
     "systemd")
-        if [ "\$FOLLOW_MODE" = true ]; then
-            echo "Following Q Geth service logs (press Ctrl+C to exit)..."
-            sudo journalctl -u qgeth.service -f
+        # Check if journalctl is working before using it
+        if journalctl --version >/dev/null 2>&1; then
+            if [ "\$FOLLOW_MODE" = true ]; then
+                echo "Following Q Geth service logs (press Ctrl+C to exit)..."
+                sudo journalctl -u qgeth.service -f
+            else
+                echo "Last \$LINE_COUNT lines from Q Geth service:"
+                sudo journalctl -u qgeth.service --no-pager -l -n "\$LINE_COUNT"
+            fi
         else
-            echo "Last \$LINE_COUNT lines from Q Geth service:"
-            sudo journalctl -u qgeth.service --no-pager -l -n "\$LINE_COUNT"
+            echo "⚠️ journalctl is not available (system library issues)"
+            echo "Falling back to log files..."
+            # Fall back to file-based logging
+            LOG_FILES=(
+                "$PROJECT_DIR/logs/qgeth.log"
+                "$USER_HOME/.qcoin/planck/geth.log"
+                "$USER_HOME/.qcoin/testnet/geth.log"
+                "/var/log/qgeth.log"
+            )
+            
+            FOUND_LOG=false
+            for LOG_FILE in "\${LOG_FILES[@]}"; do
+                if [ -f "\$LOG_FILE" ]; then
+                    echo "Using log file: \$LOG_FILE"
+                    if [ "\$FOLLOW_MODE" = true ]; then
+                        echo "Following Q Geth logs (press Ctrl+C to exit)..."
+                        tail -f "\$LOG_FILE"
+                    else
+                        echo "Last \$LINE_COUNT lines from Q Geth:"
+                        tail -n "\$LINE_COUNT" "\$LOG_FILE"
+                    fi
+                    FOUND_LOG=true
+                    break
+                fi
+            done
+            
+            if [ "\$FOUND_LOG" = false ]; then
+                echo "❌ No log files found. Try checking service status:"
+                echo "  sudo systemctl status qgeth.service"
+            fi
         fi
         ;;
     "openrc"|"sysv"|"upstart")
@@ -2040,7 +2114,11 @@ EOF
                 echo "  Stop:    sudo systemctl stop qgeth.service"
                 echo "  Restart: sudo systemctl restart qgeth.service"
                 echo "  Status:  sudo systemctl status qgeth.service"
-                echo "  Logs:    sudo journalctl -u qgeth.service -f"
+                if journalctl --version >/dev/null 2>&1; then
+                    echo "  Logs:    sudo journalctl -u qgeth.service -f"
+                else
+                    echo "  Logs:    $INSTALL_DIR/logs-qgeth.sh -f"
+                fi
                 echo "  Enable:  sudo systemctl enable qgeth.service"
                 echo "  Disable: sudo systemctl disable qgeth.service"
                 ;;
