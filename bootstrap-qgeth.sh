@@ -723,391 +723,6 @@ EOF
     return 0
 }
 
-# Create systemd service
-create_systemd_service() {
-    log_info "Creating systemd service..."
-    
-    # Ensure start script is executable 
-    if [ -f "$PROJECT_DIR/scripts/linux/start-geth.sh" ]; then
-        chmod +x "$PROJECT_DIR/scripts/linux/start-geth.sh"
-    else
-        log_error "Start script not found: $PROJECT_DIR/scripts/linux/start-geth.sh"
-        return 1
-    fi
-    
-    # Create service wrapper script that handles process cleanup and ensures wrapper exists
-    cat > "$PROJECT_DIR/scripts/linux/systemd-start-geth.sh" << 'WRAPPER_EOF'
-#!/bin/bash
-# Systemd Service Wrapper for Q Geth
-# Handles automatic process cleanup and ensures geth wrapper exists before starting
-
-echo "[$(date)] Q Geth systemd service starting..."
-
-# Change to the correct directory
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR" || {
-    echo "[$(date)] ERROR: Cannot change to script directory: $SCRIPT_DIR"
-    exit 1
-}
-
-# Ensure we have the right permissions and environment
-export PATH="/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-
-# Check if geth wrapper exists, create if missing
-GETH_WRAPPER="../../geth"
-GETH_BINARY="../../geth.bin"
-
-echo "[$(date)] Checking for Q Geth binaries..."
-
-# Verify geth binary exists
-if [ ! -f "$GETH_BINARY" ]; then
-    echo "[$(date)] ERROR: Q Geth binary not found at: $GETH_BINARY"
-    echo "[$(date)] Current directory: $(pwd)"
-    echo "[$(date)] Directory contents:"
-    ls -la ../../ 2>/dev/null || echo "Cannot list directory"
-    exit 127
-fi
-
-echo "[$(date)] Found geth binary: $GETH_BINARY"
-
-# Create simple geth wrapper if missing
-if [ ! -f "$GETH_WRAPPER" ]; then
-    echo "[$(date)] Creating missing geth wrapper..."
-    
-    cat > "$GETH_WRAPPER" << 'GETH_WRAPPER_EOF'
-#!/bin/bash
-# Q Coin Geth Wrapper - Simple version for systemd
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-GETH_BIN="$SCRIPT_DIR/geth.bin"
-
-if [ ! -f "$GETH_BIN" ]; then
-    echo "ERROR: Q Coin geth binary not found at: $GETH_BIN"
-    exit 1
-fi
-
-# Execute the real geth binary with all arguments
-exec "$GETH_BIN" "$@"
-GETH_WRAPPER_EOF
-
-    chmod +x "$GETH_WRAPPER"
-    
-    if [ -f "$GETH_WRAPPER" ] && [ -x "$GETH_WRAPPER" ]; then
-        echo "[$(date)] ✅ Successfully created geth wrapper"
-    else
-        echo "[$(date)] ❌ Failed to create geth wrapper"
-        exit 1
-    fi
-else
-    echo "[$(date)] Found existing geth wrapper: $GETH_WRAPPER"
-fi
-
-# Verify wrapper is executable
-if [ ! -x "$GETH_WRAPPER" ]; then
-    echo "[$(date)] Making geth wrapper executable..."
-    chmod +x "$GETH_WRAPPER"
-fi
-
-# Clean up any existing geth processes (but not this startup script)
-echo "[$(date)] Cleaning up existing geth processes..."
-pkill -f "geth.bin" >/dev/null 2>&1 || true
-pkill -f "geth --" >/dev/null 2>&1 || true
-
-# Wait a moment for cleanup
-sleep 2
-
-# Final check before starting
-if [ ! -f "$GETH_WRAPPER" ] || [ ! -x "$GETH_WRAPPER" ]; then
-    echo "[$(date)] ❌ ERROR: Geth wrapper not ready"
-    exit 1
-fi
-
-if [ ! -f "$GETH_BINARY" ] || [ ! -x "$GETH_BINARY" ]; then
-    echo "[$(date)] ❌ ERROR: Geth binary not ready"
-    exit 1
-fi
-
-echo "[$(date)] ✅ All checks passed, starting Q Geth..."
-
-# Start Q Geth - use planck as default network
-echo "[$(date)] Starting Q Geth via start-geth.sh..."
-exec ./start-geth.sh planck
-WRAPPER_EOF
-    
-    chmod +x "$PROJECT_DIR/scripts/linux/systemd-start-geth.sh"
-    
-    # Create logs directory
-    mkdir -p "$PROJECT_DIR/logs" 2>/dev/null || true
-    if [ -n "$SUDO_USER" ] && [ "$SUDO_USER" != "root" ]; then
-        chown -R "$SUDO_USER:$SUDO_USER" "$PROJECT_DIR/logs" 2>/dev/null || true
-    fi
-    
-    $SUDO_CMD tee /etc/systemd/system/qgeth.service > /dev/null << EOF
-[Unit]
-Description=Q Geth Quantum Blockchain Node
-Documentation=https://github.com/fourtytwo42/Qgeth3
-After=network.target
-Wants=network.target
-
-[Service]
-Type=simple
-User=$ACTUAL_USER
-WorkingDirectory=$PROJECT_DIR/scripts/linux
-ExecStart=/bin/bash $PROJECT_DIR/scripts/linux/systemd-start-geth.sh
-Restart=on-failure
-RestartSec=10s
-TimeoutStartSec=60s
-TimeoutStopSec=30s
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=qgeth
-SyslogLevel=info
-SyslogLevelPrefix=true
-
-# Security settings
-NoNewPrivileges=true
-PrivateTmp=true
-ProtectSystem=strict
-ProtectHome=read-only
-ReadWritePaths=$USER_HOME
-ReadWritePaths=/tmp
-ReadWritePaths=/var/tmp
-ReadWritePaths=$PROJECT_DIR/logs
-
-# Resource limits
-LimitNOFILE=65536
-LimitNPROC=4096
-
-# Environment
-Environment=HOME=$USER_HOME
-Environment=PATH=/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-    # Validate service file was created correctly
-    if [ ! -f "/etc/systemd/system/qgeth.service" ]; then
-        log_error "Failed to create systemd service file"
-        return 1
-    fi
-    
-    # Check if ExecStart path exists and is executable
-    local exec_start_script="$PROJECT_DIR/scripts/linux/systemd-start-geth.sh"
-    if [ ! -f "$exec_start_script" ]; then
-        log_error "ExecStart script missing: $exec_start_script"
-        return 1
-    fi
-    
-    if [ ! -x "$exec_start_script" ]; then
-        log_warning "ExecStart script not executable, fixing..."
-        chmod +x "$exec_start_script"
-        if [ ! -x "$exec_start_script" ]; then
-            log_error "Cannot make ExecStart script executable: $exec_start_script"
-            return 1
-        fi
-    fi
-    
-    # Reload systemd and enable service
-    if ! $SUDO_CMD systemctl daemon-reload; then
-        log_error "Failed to reload systemd"
-        return 1
-    fi
-    
-    if ! $SUDO_CMD systemctl enable qgeth.service; then
-        log_error "Failed to enable systemd service"
-        return 1
-    fi
-    
-    log_success "✅ Systemd service created and enabled"
-    return 0
-}
-
-# Create OpenRC service
-create_openrc_service() {
-    log_info "Creating OpenRC service..."
-    
-    $SUDO_CMD tee /etc/init.d/qgeth > /dev/null << EOF
-#!/sbin/openrc-run
-# Q Geth Quantum Blockchain Node
-
-name="Q Geth"
-description="Quantum Blockchain Node"
-
-user="$ACTUAL_USER"
-group="$ACTUAL_USER"
-directory="$PROJECT_DIR/scripts/linux"
-command="$PROJECT_DIR/scripts/linux/start-geth.sh"
-command_args=""
-command_background="yes"
-pidfile="/var/run/qgeth.pid"
-output_log="/var/log/qgeth.log"
-error_log="/var/log/qgeth.error.log"
-
-depend() {
-    need net
-    after firewall
-}
-
-start_pre() {
-    checkpath --directory --owner \$user:\$group --mode 0755 \$(dirname \$pidfile)
-    checkpath --file --owner \$user:\$group --mode 0644 \$output_log \$error_log
-}
-EOF
-    
-    $SUDO_CMD chmod +x /etc/init.d/qgeth
-    
-    if ! $SUDO_CMD rc-update add qgeth default; then
-        log_error "Failed to enable OpenRC service"
-        return 1
-    fi
-    
-    log_success "✅ OpenRC service created and enabled"
-    return 0
-}
-
-# Create SysV init script
-create_sysv_service() {
-    log_info "Creating SysV init script..."
-    
-    $SUDO_CMD tee /etc/init.d/qgeth > /dev/null << EOF
-#!/bin/bash
-# Q Geth        Quantum Blockchain Node
-# chkconfig: 35 80 20
-# description: Q Geth Quantum Blockchain Node
-#
-
-. /etc/rc.d/init.d/functions
-
-USER="$ACTUAL_USER"
-DAEMON="Q Geth"
-ROOT_DIR="$PROJECT_DIR/scripts/linux"
-
-DAEMON_PATH="\$ROOT_DIR/start-geth.sh"
-DAEMON_ARGS=""
-PIDFILE="/var/run/qgeth.pid"
-LOCKFILE="/var/lock/subsys/qgeth"
-
-start() {
-    printf "%-50s" "Starting \$DAEMON: "
-    if [ -f \$PIDFILE ] && kill -0 \$(cat \$PIDFILE); then
-        printf '%s\n' "Already running [\$(cat \$PIDFILE)]"
-        return 1
-    fi
-    daemon --user "\$USER" --pidfile="\$PIDFILE" "\$DAEMON_PATH \$DAEMON_ARGS" && echo_success || echo_failure
-    RETVAL=\$?
-    echo
-    [ \$RETVAL -eq 0 ] && touch \$LOCKFILE
-    return \$RETVAL
-}
-
-stop() {
-    printf "%-50s" "Shutting down \$DAEMON: "
-    pid=\$(ps -aefw | grep "\$DAEMON" | grep -v " grep " | awk '{print \$2}')
-    kill -9 \$pid > /dev/null 2>&1
-    [ \$? -eq 0 ] && echo_success || echo_failure
-    RETVAL=\$?
-    echo
-    [ \$RETVAL -eq 0 ] && rm -f \$LOCKFILE \$PIDFILE
-    return \$RETVAL
-}
-
-restart() {
-    stop
-    start
-}
-
-status() {
-    if [ -f \$PIDFILE ] && kill -0 \$(cat \$PIDFILE); then
-        echo "\$DAEMON is running [\$(cat \$PIDFILE)]"
-    else
-        echo "\$DAEMON is stopped"
-        RETVAL=1
-    fi
-}
-
-case "\$1" in
-    start)
-        start
-        ;;
-    stop)
-        stop
-        ;;
-    status)
-        status
-        ;;
-    restart)
-        restart
-        ;;
-    *)
-        echo "Usage: {\$0} {start|stop|status|restart}"
-        exit 1
-        ;;
-esac
-
-exit \$RETVAL
-EOF
-    
-    $SUDO_CMD chmod +x /etc/init.d/qgeth
-    
-    # Enable service for different runlevels
-    SERVICE_CREATED=true
-    for runlevel in 3 4 5; do
-        if ! $SUDO_CMD ln -sf /etc/init.d/qgeth "/etc/rc${runlevel}.d/S80qgeth" 2>/dev/null; then
-            log_warning "Failed to create start link for runlevel $runlevel"
-            SERVICE_CREATED=false
-        fi
-    done
-    for runlevel in 0 1 2 6; do
-        if ! $SUDO_CMD ln -sf /etc/init.d/qgeth "/etc/rc${runlevel}.d/K20qgeth" 2>/dev/null; then
-            log_warning "Failed to create stop link for runlevel $runlevel"
-        fi
-    done
-    
-    if [ "$SERVICE_CREATED" = true ]; then
-        log_success "✅ SysV init script created and enabled"
-        return 0
-    else
-        log_error "Failed to fully enable SysV service"
-        return 1
-    fi
-}
-
-# Create Upstart service
-create_upstart_service() {
-    log_info "Creating Upstart service..."
-    
-    $SUDO_CMD tee /etc/init/qgeth.conf > /dev/null << EOF
-# Q Geth Quantum Blockchain Node
-
-description "Quantum Blockchain Node"
-author "Q Geth Team"
-
-start on runlevel [2345]
-stop on runlevel [!2345]
-
-setuid $ACTUAL_USER
-setgid $ACTUAL_USER
-
-chdir $PROJECT_DIR/scripts/linux
-
-respawn
-respawn limit 10 5
-
-exec $PROJECT_DIR/scripts/linux/start-geth.sh
-
-pre-start script
-    echo "[\$(date)] Starting Q Geth" >> /var/log/qgeth.log
-end script
-
-pre-stop script
-    echo "[\$(date)] Stopping Q Geth" >> /var/log/qgeth.log
-end script
-EOF
-    
-    log_success "✅ Upstart service created"
-    return 0
-}
-
 # Install Docker and Docker Compose
 install_docker() {
     log_info "Installing Docker and Docker Compose..."
@@ -1425,69 +1040,31 @@ EOF
     log_success "✅ Docker management scripts created"
 }
 
-# Start and enable the system service
+# Start the simple process management system
 start_system_service() {
-    log_info "Starting Q Geth system service..."
+    log_info "Starting Q Geth with simple process management..."
     
-    # Determine if we need sudo for service management
-    SUDO_CMD=""
-    if [ "$EUID" -ne 0 ]; then
-        SUDO_CMD="sudo"
+    # Start Q Geth using the new PID-based scripts
+    if [ -f "$INSTALL_DIR/start-qgeth.sh" ]; then
+        if "$INSTALL_DIR/start-qgeth.sh"; then
+            log_success "✅ Q Geth started successfully with PID-based management"
+            log_info "Management commands:"
+            log_info "  Status: $INSTALL_DIR/status-qgeth.sh" 
+            log_info "  Stop:   $INSTALL_DIR/stop-qgeth.sh"
+            log_info "  Logs:   tail -f $INSTALL_DIR/qgeth.log"
+        else
+            log_warning "⚠️ Q Geth process management created but failed to start"
+            log_info "You can start it manually:"
+            log_info "  $INSTALL_DIR/start-qgeth.sh"
+            log_info "Or run directly:"
+            log_info "  cd $PROJECT_DIR/scripts/linux && ./start-geth.sh testnet"
+        fi
+    else
+        log_error "Start script not found: $INSTALL_DIR/start-qgeth.sh"
+        log_info "You can run Q Geth manually:"
+        log_info "  cd $PROJECT_DIR/scripts/linux && ./start-geth.sh testnet"
+        return 1
     fi
-    
-    case $INIT_SYSTEM in
-        "systemd")
-            $SUDO_CMD systemctl start qgeth.service
-            if $SUDO_CMD systemctl is-active --quiet qgeth.service; then
-                log_success "✅ Q Geth service started successfully"
-            else
-                log_warning "⚠️ Service created but failed to start"
-                log_info "Troubleshooting commands:"
-                log_info "  Check status: sudo systemctl status qgeth.service"
-                if journalctl --version >/dev/null 2>&1; then
-                    log_info "  View logs: sudo journalctl -xeu qgeth.service -f"
-                else
-                    log_info "  View logs: Check service status or $PROJECT_DIR/logs/"
-                fi
-                log_info "  Restart service: sudo systemctl restart qgeth.service"
-                log_info "  Or run manually: cd $PROJECT_DIR/scripts/linux && ./start-geth.sh planck"
-            fi
-            ;;
-        "openrc")
-            $SUDO_CMD rc-service qgeth start
-            if $SUDO_CMD rc-service qgeth status >/dev/null 2>&1; then
-                log_success "✅ Q Geth service started successfully"
-            else
-                log_warning "⚠️ Service created but failed to start"
-                log_info "Check status: sudo rc-service qgeth status"
-                log_info "Or run manually: cd $PROJECT_DIR/scripts/linux && ./start-geth.sh testnet"
-            fi
-            ;;
-        "sysv")
-            $SUDO_CMD service qgeth start
-            if $SUDO_CMD service qgeth status >/dev/null 2>&1; then
-                log_success "✅ Q Geth service started successfully"
-            else
-                log_warning "⚠️ Service created but failed to start"
-                log_info "Check status: sudo service qgeth status"
-                log_info "Or run manually: cd $PROJECT_DIR/scripts/linux && ./start-geth.sh testnet"
-            fi
-            ;;
-        "upstart")
-            $SUDO_CMD initctl start qgeth
-            if $SUDO_CMD initctl status qgeth | grep -q "start/running"; then
-                log_success "✅ Q Geth service started successfully"
-            else
-                log_warning "⚠️ Service created but failed to start"
-                log_info "Check status: sudo initctl status qgeth"
-                log_info "Or run manually: cd $PROJECT_DIR/scripts/linux && ./start-geth.sh testnet"
-            fi
-            ;;
-        *)
-            log_error "Cannot start service for init system: $INIT_SYSTEM"
-            return 1
-            ;;
-    esac
 }
 
 # ENHANCED LOG MANAGEMENT AND CLEANUP FUNCTIONS
@@ -1742,8 +1319,8 @@ main() {
         echo "  Deployment: Docker containers"
         echo "  Management: Docker Compose + scripts"
     else
-        echo "  Init System: $INIT_SYSTEM"
-        echo "  Service: qgeth ($INIT_SYSTEM service)"
+        echo "  Process Management: PID-based (avoiding systemd issues)"
+        echo "  Service: Q Geth background process"
         echo "  Management: $INSTALL_DIR/*.sh"
     fi
     echo ""
@@ -1764,77 +1341,13 @@ main() {
         echo "  Logs:     $INSTALL_DIR/logs-qgeth-docker.sh [-f] [-n 100]"
         echo "  Mining:   $INSTALL_DIR/mining-qgeth-docker.sh"
     else
-        echo -e "${BLUE}🔧 System Service Commands:${NC}"
-        case $INIT_SYSTEM in
-            "systemd")
-                echo "  Start:   sudo systemctl start qgeth.service"
-                echo "  Stop:    sudo systemctl stop qgeth.service"
-                echo "  Restart: sudo systemctl restart qgeth.service"
-                echo "  Status:  sudo systemctl status qgeth.service"
-                if journalctl --version >/dev/null 2>&1; then
-                    echo "  Logs:    sudo journalctl -u qgeth.service -f"
-                else
-                    echo "  Logs:    $INSTALL_DIR/logs-qgeth.sh -f"
-                fi
-                echo "  Enable:  sudo systemctl enable qgeth.service"
-                echo "  Disable: sudo systemctl disable qgeth.service"
-                ;;
-            "openrc")
-                echo "  Start:   sudo rc-service qgeth start"
-                echo "  Stop:    sudo rc-service qgeth stop"
-                echo "  Restart: sudo rc-service qgeth restart" 
-                echo "  Status:  sudo rc-service qgeth status"
-                echo "  Logs:    tail -f /var/log/qgeth.log"
-                ;;
-            "sysv")
-                echo "  Start:   sudo service qgeth start"
-                echo "  Stop:    sudo service qgeth stop"
-                echo "  Restart: sudo service qgeth restart"
-                echo "  Status:  sudo service qgeth status"
-                echo "  Logs:    tail -f /var/log/qgeth.log"
-                ;;
-            "upstart")
-                echo "  Start:   sudo initctl start qgeth"
-                echo "  Stop:    sudo initctl stop qgeth"
-                echo "  Restart: sudo initctl restart qgeth"
-                echo "  Status:  sudo initctl status qgeth"
-                echo "  Logs:    tail -f /var/log/qgeth.log"
-                ;;
-        esac
-        echo ""
-        echo -e "${BLUE}🔧 Universal Management Scripts:${NC}"
+        echo -e "${BLUE}🔧 PID-Based Management Commands:${NC}"
         echo "  Start:   $INSTALL_DIR/start-qgeth.sh"
         echo "  Stop:    $INSTALL_DIR/stop-qgeth.sh"
         echo "  Restart: $INSTALL_DIR/restart-qgeth.sh"
         echo "  Status:  $INSTALL_DIR/status-qgeth.sh"
-        echo "  Logs:    $INSTALL_DIR/logs-qgeth.sh [-f] [-n 100]"
-    fi
-}
-
-# Start the simple process management system
-start_system_service() {
-    log_info "Starting Q Geth with simple process management..."
-    
-    # Start Q Geth using the new PID-based scripts
-    if [ -f "$INSTALL_DIR/start-qgeth.sh" ]; then
-        if "$INSTALL_DIR/start-qgeth.sh"; then
-            log_success "✅ Q Geth started successfully with PID-based management"
-            log_info "Management commands:"
-            log_info "  Status: $INSTALL_DIR/status-qgeth.sh" 
-            log_info "  Stop:   $INSTALL_DIR/stop-qgeth.sh"
-            log_info "  Logs:   tail -f $INSTALL_DIR/qgeth.log"
-        else
-            log_warning "⚠️ Q Geth process management created but failed to start"
-            log_info "You can start it manually:"
-            log_info "  $INSTALL_DIR/start-qgeth.sh"
-            log_info "Or run directly:"
-            log_info "  cd $PROJECT_DIR/scripts/linux && ./start-geth.sh testnet"
-        fi
-    else
-        log_error "Start script not found: $INSTALL_DIR/start-qgeth.sh"
-        log_info "You can run Q Geth manually:"
-        log_info "  cd $PROJECT_DIR/scripts/linux && ./start-geth.sh testnet"
-        return 1
+        echo "  Update:  $INSTALL_DIR/update-qgeth.sh"
+        echo "  Logs:    tail -f $INSTALL_DIR/qgeth.log"
     fi
 }
 
