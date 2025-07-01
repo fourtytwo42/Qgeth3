@@ -585,7 +585,7 @@ if [ ! -f "$GETH_BIN" ]; then
 fi
 
 # Allowed Q Coin network IDs (prevents Ethereum connections)
-ALLOWED_NETWORKS="73235 73234 73236"  # testnet, devnet, mainnet
+ALLOWED_NETWORKS="73237 73235 73234 73236"  # planck, testnet, devnet, mainnet
 NETWORK_ID=""
 
 # Parse arguments to find --networkid
@@ -610,6 +610,7 @@ if [ -n "$NETWORK_ID" ]; then
     if [ "$VALID_NETWORK" = false ]; then
         echo "❌ Error: Invalid network ID: $NETWORK_ID"
         echo "✅ Allowed Q Coin networks: $ALLOWED_NETWORKS"
+        echo "   73237 = Q Coin Planck Network (Default)"
         echo "   73235 = Q Coin Testnet"
         echo "   73234 = Q Coin Devnet"  
         echo "   73236 = Q Coin Mainnet"
@@ -665,7 +666,7 @@ echo "[\$(date)] ✅ All checks passed, starting Q Geth..."
 
 # Start Q Geth
 echo "[\$(date)] Starting Q Geth via start-geth.sh..."
-exec ./start-geth.sh testnet
+exec ./start-geth.sh
 WRAPPER_EOF
     
     chmod +x "$PROJECT_DIR/scripts/linux/systemd-start-geth.sh"
@@ -772,7 +773,7 @@ user="$ACTUAL_USER"
 group="$ACTUAL_USER"
 directory="$PROJECT_DIR/scripts/linux"
 command="$PROJECT_DIR/scripts/linux/start-geth.sh"
-command_args="testnet"
+command_args=""
 command_background="yes"
 pidfile="/var/run/qgeth.pid"
 output_log="/var/log/qgeth.log"
@@ -818,7 +819,7 @@ DAEMON="Q Geth"
 ROOT_DIR="$PROJECT_DIR/scripts/linux"
 
 DAEMON_PATH="\$ROOT_DIR/start-geth.sh"
-DAEMON_ARGS="testnet"
+DAEMON_ARGS=""
 PIDFILE="/var/run/qgeth.pid"
 LOCKFILE="/var/lock/subsys/qgeth"
 
@@ -928,7 +929,7 @@ chdir $PROJECT_DIR/scripts/linux
 respawn
 respawn limit 10 5
 
-exec $PROJECT_DIR/scripts/linux/start-geth.sh testnet
+exec $PROJECT_DIR/scripts/linux/start-geth.sh
 
 pre-start script
     echo "[\$(date)] Starting Q Geth" >> /var/log/qgeth.log
