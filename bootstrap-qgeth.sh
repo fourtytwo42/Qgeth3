@@ -117,6 +117,13 @@ detect_system() {
     
     log_info "Detected: $OS (using $PKG_MANAGER)"
     
+    # Special handling for problematic Ubuntu versions
+    if [ "$OS" = "ubuntu" ] && [ "$VERSION" = "24.10" ]; then
+        log_warning "⚠️ Ubuntu 24.10 detected - applying special protections for system stability"
+        log_info "This version has known issues with systemd libraries that can corrupt sudo"
+        log_info "Bootstrap will apply extra protection during package installation"
+    fi
+    
     # Special note for Fedora users
     if [ "$OS" = "fedora" ]; then
         log_warning "⚠️ Fedora Detected"
@@ -191,7 +198,91 @@ detect_init_system() {
     SERVICE_CMD="systemctl"
 }
 
-# Install dependencies
+# Check if system is Ubuntu 24.10 (problematic version)
+is_ubuntu_24_10() {
+    [ "$OS" = "ubuntu" ] && [ "$VERSION" = "24.10" ]
+}
+
+# Protect Ubuntu 24.10 sudo before package operations
+protect_ubuntu_24_10_sudo() {
+    if is_ubuntu_24_10; then
+        log_info "Backing up sudo for Ubuntu 24.10 protection..."
+        
+        # Create backup directory
+        mkdir -p /tmp/qgeth-sudo-backup 2>/dev/null || true
+        
+        # Try to backup critical sudo files if they exist
+        for file in /usr/bin/sudo /usr/libexec/sudo/sudoers.so /etc/sudoers /etc/sudo.conf; do
+            if [ -f "$file" ]; then
+                cp "$file" "/tmp/qgeth-sudo-backup/$(basename "$file").backup" 2>/dev/null || true
+            fi
+        done
+        
+        # Also backup libsudo if it exists
+        find /usr/lib* -name "*sudo*" -type f 2>/dev/null | while read -r lib; do
+            cp "$lib" "/tmp/qgeth-sudo-backup/$(basename "$lib").backup" 2>/dev/null || true
+        done 2>/dev/null || true
+        
+        log_info "Ubuntu 24.10 sudo backup completed"
+    fi
+}
+
+# Restore Ubuntu 24.10 sudo if corrupted
+restore_ubuntu_24_10_sudo() {
+    if is_ubuntu_24_10 && [ -d "/tmp/qgeth-sudo-backup" ]; then
+        log_info "Attempting to restore sudo from backup..."
+        
+        # Try to restore from package first
+        if command -v apt >/dev/null 2>&1; then
+            log_info "Attempting to reinstall sudo package..."
+            apt purge -y sudo 2>/dev/null || true
+            apt install -y sudo 2>/dev/null || {
+                log_warning "Package restoration failed, trying manual restoration..."
+                
+                # Manual file restoration
+                for backup in /tmp/qgeth-sudo-backup/*.backup; do
+                    if [ -f "$backup" ]; then
+                        original_name=$(basename "$backup" .backup)
+                        case "$original_name" in
+                            sudo)
+                                cp "$backup" /usr/bin/sudo 2>/dev/null || true
+                                chmod 4755 /usr/bin/sudo 2>/dev/null || true
+                                ;;
+                            sudoers.so)
+                                cp "$backup" /usr/libexec/sudo/sudoers.so 2>/dev/null || true
+                                chmod 644 /usr/libexec/sudo/sudoers.so 2>/dev/null || true
+                                ;;
+                            sudoers)
+                                cp "$backup" /etc/sudoers 2>/dev/null || true
+                                chmod 440 /etc/sudoers 2>/dev/null || true
+                                ;;
+                            sudo.conf)
+                                cp "$backup" /etc/sudo.conf 2>/dev/null || true
+                                chmod 644 /etc/sudo.conf 2>/dev/null || true
+                                ;;
+                        esac
+                    fi
+                done
+            }
+        fi
+        
+        # Test if sudo is working
+        if command -v sudo >/dev/null 2>&1 && sudo echo "sudo test" >/dev/null 2>&1; then
+            log_success "✅ Sudo restoration successful"
+        else
+            log_error "❌ Sudo restoration failed - manual intervention required"
+            log_info "Manual recovery steps:"
+            log_info "  1. Reboot the system"
+            log_info "  2. Run: apt update && apt install --reinstall sudo"
+            log_info "  3. Or restore from backup files in /tmp/qgeth-sudo-backup/"
+        fi
+        
+        # Clean up backup
+        rm -rf /tmp/qgeth-sudo-backup 2>/dev/null || true
+    fi
+}
+
+# Install dependencies with Ubuntu 24.10 protection
 install_dependencies() {
     log_info "Installing dependencies..."
     
@@ -199,17 +290,67 @@ install_dependencies() {
     if [ "$EUID" -ne 0 ]; then
         log_info "Installing dependencies (may require sudo password)..."
         SUDO="sudo"
+        
+        # Check if sudo is already broken (common on Ubuntu 24.10)
+        if ! $SUDO echo "sudo test" >/dev/null 2>&1; then
+            log_error "❌ CRITICAL: Sudo is already broken on this system!"
+            log_error "This is a known issue with Ubuntu 24.10 VPS installations"
+            log_info "Since you're running this as root, we can fix it..."
+            
+            # Attempt to fix sudo first
+            if is_ubuntu_24_10; then
+                log_info "Attempting to fix sudo on Ubuntu 24.10..."
+                if apt update && apt install --reinstall sudo 2>/dev/null; then
+                    log_success "✅ Sudo restoration successful"
+                else
+                    log_error "❌ Cannot fix sudo automatically"
+                    log_info "Please reboot the system and try again"
+                    exit 1
+                fi
+            else
+                log_error "Cannot proceed without working sudo"
+                exit 1
+            fi
+        fi
     else
         SUDO=""
     fi
     
+    # CRITICAL: Ubuntu 24.10 protection - backup sudo before package operations
+    protect_ubuntu_24_10_sudo
+    
     # Update package lists
     $SUDO $PKG_UPDATE
     
-    # Install base dependencies
+    # Install base dependencies with protection
     case $PKG_MANAGER in
         apt)
-            $SUDO $PKG_INSTALL git curl build-essential wget
+            # Ubuntu 24.10 specific protection
+            if is_ubuntu_24_10; then
+                log_info "Applying Ubuntu 24.10 protection during package installation..."
+                # Install packages one by one to avoid sudo corruption
+                for pkg in git curl build-essential wget; do
+                    if ! dpkg -l | grep -q "^ii  $pkg "; then
+                        log_info "Installing $pkg..."
+                        $SUDO $PKG_INSTALL "$pkg" || {
+                            log_error "Failed to install $pkg"
+                            restore_ubuntu_24_10_sudo
+                            exit 1
+                        }
+                        # Verify sudo still works after each package
+                        if [ -n "$SUDO" ] && ! $SUDO echo "sudo test" >/dev/null 2>&1; then
+                            log_error "Sudo corrupted during $pkg installation"
+                            restore_ubuntu_24_10_sudo
+                            exit 1
+                        fi
+                    else
+                        log_info "$pkg already installed"
+                    fi
+                done
+            else
+                # Standard installation for other systems
+                $SUDO $PKG_INSTALL git curl build-essential wget
+            fi
             ;;
         dnf|yum)
             $SUDO $PKG_INSTALL git curl gcc gcc-c++ make wget
@@ -218,6 +359,13 @@ install_dependencies() {
             $SUDO $PKG_INSTALL git curl base-devel wget
             ;;
     esac
+    
+    # Verify sudo still works after dependency installation
+    if [ -n "$SUDO" ] && ! $SUDO echo "sudo verification" >/dev/null 2>&1; then
+        log_error "CRITICAL: Sudo corrupted during dependency installation!"
+        restore_ubuntu_24_10_sudo
+        exit 1
+    fi
     
     # Install Go 1.24.4 specifically (required for quantum consensus compatibility)
     install_go_1_24
@@ -1333,6 +1481,13 @@ EOF
 
 # Setup systemd journal limits to prevent log explosion
 setup_systemd_journal_limits() {
+    # CRITICAL: Skip journal configuration entirely on Ubuntu 24.10 to prevent sudo corruption
+    if is_ubuntu_24_10; then
+        log_info "Skipping systemd journal configuration on Ubuntu 24.10 (system stability protection)"
+        log_info "This prevents potential sudo corruption from broken systemd libraries"
+        return 0
+    fi
+    
     log_info "Configuring systemd journal limits..."
     
     # Determine if we need sudo
