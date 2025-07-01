@@ -12,7 +12,7 @@ EXTRA_ARGS=()
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
-        testnet|devnet)
+        testnet|devnet|planck)
             NETWORK="$1"
             shift
             ;;
@@ -50,6 +50,7 @@ if [ "$HELP" = true ]; then
     echo -e "\033[1;33mNetworks:\033[0m"
     echo "  testnet   - Q Coin Testnet (Chain ID 73235) [DEFAULT]"
     echo "  devnet    - Q Coin Dev Network (Chain ID 73234)"
+    echo "  planck    - Q Coin Planck Network (Chain ID 73237)"
     echo ""
     echo -e "\033[1;33mOptions:\033[0m"
     echo "  --mining  - Enable mining with single thread"
@@ -63,6 +64,7 @@ if [ "$HELP" = true ]; then
     echo -e "\033[1;32mExamples:\033[0m"
     echo "  ./start-geth.sh                  # Start testnet node"
     echo "  ./start-geth.sh devnet --mining  # Start dev node with mining"
+    echo "  ./start-geth.sh planck           # Start planck network node"
     exit 0
 fi
 
@@ -146,8 +148,16 @@ case $NETWORK in
         NAME="Q Coin Dev Network"
         BOOTNODE_PORT=30305
         ;;
+    planck)
+        CHAINID=73237
+        DATADIR="$HOME/.qcoin/planck"
+        GENESIS="../../configs/genesis_quantum_planck.json"
+        PORT=30307
+        NAME="Q Coin Planck Network"
+        BOOTNODE_PORT=30307
+        ;;
     *)
-        echo -e "\033[1;31m[ERROR] Invalid network '$NETWORK'. Use: testnet, devnet\033[0m"
+        echo -e "\033[1;31m[ERROR] Invalid network '$NETWORK'. Use: testnet, devnet, planck\033[0m"
         exit 1
         ;;
 esac

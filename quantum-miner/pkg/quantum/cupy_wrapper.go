@@ -31,7 +31,14 @@ func NewCupyGPUSimulator() *CupyGPUSimulator {
 	// Find Python executable (embedded first, then system)
 	simulator.pythonPath = findPythonExecutable()
 
-	// Test if CuPy GPU is available
+	// Check if WSL2 mode is enabled - skip CuPy testing in WSL2 mode
+	if os.Getenv("WSL2_MODE") == "true" {
+		fmt.Println("🐧 WSL2 Mode: Skipping CuPy testing, using Qiskit native GPU backend")
+		simulator.available = false
+		return simulator
+	}
+
+	// Test if CuPy GPU is available (only in non-WSL2 mode)
 	simulator.testAvailability()
 
 	return simulator
@@ -40,6 +47,34 @@ func NewCupyGPUSimulator() *CupyGPUSimulator {
 // findPythonExecutable finds the best Python executable to use
 func findPythonExecutable() string {
 	fmt.Println("🔍 Searching for Python executable...")
+	
+	// Check for WSL2 mode first
+	if os.Getenv("WSL2_MODE") == "true" {
+		if pythonExec := os.Getenv("PYTHON_EXEC"); pythonExec != "" {
+			fmt.Printf("🐧 WSL2 Mode: Using Linux Python: %s\n", pythonExec)
+			if fileExists(pythonExec) {
+				return pythonExec
+			} else {
+				fmt.Printf("⚠️  WSL2 Python not found at: %s\n", pythonExec)
+			}
+		}
+		
+		// Try WSL2 Python fallback locations
+		wsl2Paths := []string{
+			"./go-wsl2/python-linux.sh",
+			"../go-wsl2/python-linux.sh",
+			"go-wsl2/python-linux.sh",
+		}
+		
+		for _, path := range wsl2Paths {
+			if fileExists(path) {
+				fmt.Printf("🐧 Found WSL2 Python: %s\n", path)
+				return path
+			}
+		}
+		
+		fmt.Println("⚠️  WSL2 mode enabled but Linux Python not found, trying system...")
+	}
 	
 	// Get executable directory for embedded Python check
 	exePath, err := os.Executable()
@@ -525,8 +560,4 @@ func findCupyScript() string {
 	return filepath.Join("pkg", "quantum", "cupy_gpu.py")
 }
 
-// fileExists checks if a file exists
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
-}
+

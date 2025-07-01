@@ -218,6 +218,34 @@ func (q *QiskitGPUSimulator) IsGPUAvailable() bool {
 func findPython() (string, error) {
 	fmt.Println("🔍 Searching for Python executable for Qiskit...")
 	
+	// Check for WSL2 mode first
+	if os.Getenv("WSL2_MODE") == "true" {
+		if pythonExec := os.Getenv("PYTHON_EXEC"); pythonExec != "" {
+			fmt.Printf("🐧 WSL2 Mode: Using Linux Python: %s\n", pythonExec)
+			if fileExists(pythonExec) {
+				return pythonExec, nil
+			} else {
+				fmt.Printf("⚠️  WSL2 Python not found at: %s\n", pythonExec)
+			}
+		}
+		
+		// Try WSL2 Python fallback locations
+		wsl2Paths := []string{
+			"./go-wsl2/python-linux.sh",
+			"../go-wsl2/python-linux.sh",
+			"go-wsl2/python-linux.sh",
+		}
+		
+		for _, path := range wsl2Paths {
+			if fileExists(path) {
+				fmt.Printf("🐧 Found WSL2 Python: %s\n", path)
+				return path, nil
+			}
+		}
+		
+		fmt.Println("⚠️  WSL2 mode enabled but Linux Python not found, trying system...")
+	}
+	
 	// Get executable directory for embedded Python check
 	exePath, err := os.Executable()
 	if err != nil {
@@ -318,6 +346,12 @@ func findQiskitScript() (string, error) {
 	}
 
 	return "", fmt.Errorf("qiskit_gpu.py script not found in any expected location")
+}
+
+// fileExists checks if a file exists and is accessible
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 
