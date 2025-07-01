@@ -520,34 +520,207 @@ create_swap_file() {
     log_success "✅ Total memory now: ${combined_mb}MB (sufficient for building)"
 }
 
-# Create system service based on detected init system
+# Create simple process management scripts (avoiding systemd issues)
 create_system_service() {
-    log_info "Creating Q Geth system service ($INIT_SYSTEM)..."
+    log_info "Creating simple process management (avoiding systemd complexity)..."
     
-    # Determine if we need sudo for service creation
-    SUDO_CMD=""
-    if [ "$EUID" -ne 0 ]; then
-        SUDO_CMD="sudo"
+    # Determine installation paths
+    if [ "$INSTALL_MODE" = "system" ]; then
+        SCRIPT_DIR="/opt/qgeth"
+        QGETH_HOME="/opt/qgeth"
+    else
+        SCRIPT_DIR="$INSTALL_DIR"
+        QGETH_HOME="$INSTALL_DIR"
     fi
     
-    case $INIT_SYSTEM in
-        "systemd")
-            create_systemd_service
-            ;;
-        "openrc")
-            create_openrc_service
-            ;;
-        "sysv")
-            create_sysv_service
-            ;;
-        "upstart")
-            create_upstart_service
-            ;;
-        *)
-            log_error "Unsupported init system: $INIT_SYSTEM"
-            return 1
-            ;;
-    esac
+    log_info "✅ Using reliable PID-based process management instead of systemd"
+    log_info "This avoids systemd library issues on problematic distributions"
+    
+    # Create start script
+    cat > "$SCRIPT_DIR/start-qgeth.sh" << EOF
+#!/bin/bash
+# Start Q Geth Node
+set -e
+
+QGETH_HOME="$QGETH_HOME"
+PID_FILE="\$QGETH_HOME/qgeth.pid"
+LOG_FILE="\$QGETH_HOME/qgeth.log"
+
+# Check if already running
+if [ -f "\$PID_FILE" ]; then
+    PID=\$(cat "\$PID_FILE")
+    if kill -0 \$PID 2>/dev/null; then
+        echo "Q Geth is already running (PID: \$PID)"
+        echo "Use \$QGETH_HOME/status-qgeth.sh to check status"
+        exit 1
+    else
+        echo "Removing stale PID file"
+        rm -f "\$PID_FILE"
+    fi
+fi
+
+# Start Q Geth in background
+echo "Starting Q Geth..."
+cd "\$QGETH_HOME/Qgeth3/scripts/linux"
+nohup ./start-geth.sh testnet > "\$LOG_FILE" 2>&1 &
+echo \$! > "\$PID_FILE"
+
+echo "Q Geth started successfully!"
+echo "PID: \$(cat "\$PID_FILE")"
+echo "Logs: tail -f \$LOG_FILE"
+echo "Status: \$QGETH_HOME/status-qgeth.sh"
+EOF
+
+    # Create stop script
+    cat > "$SCRIPT_DIR/stop-qgeth.sh" << EOF
+#!/bin/bash
+# Stop Q Geth Node
+set -e
+
+QGETH_HOME="$QGETH_HOME"
+PID_FILE="\$QGETH_HOME/qgeth.pid"
+
+if [ -f "\$PID_FILE" ]; then
+    PID=\$(cat "\$PID_FILE")
+    if kill -0 \$PID 2>/dev/null; then
+        echo "Stopping Q Geth (PID: \$PID)..."
+        kill \$PID
+        
+        # Wait for graceful shutdown
+        for i in {1..10}; do
+            if ! kill -0 \$PID 2>/dev/null; then
+                break
+            fi
+            sleep 1
+        done
+        
+        # Force kill if still running
+        if kill -0 \$PID 2>/dev/null; then
+            echo "Force stopping Q Geth..."
+            kill -9 \$PID 2>/dev/null || true
+        fi
+        
+        rm -f "\$PID_FILE"
+        echo "Q Geth stopped successfully"
+    else
+        echo "Q Geth not running (removing stale PID file)"
+        rm -f "\$PID_FILE"
+    fi
+else
+    echo "Q Geth is not running"
+fi
+EOF
+
+    # Create status script
+    cat > "$SCRIPT_DIR/status-qgeth.sh" << EOF
+#!/bin/bash
+# Check Q Geth Status
+set -e
+
+QGETH_HOME="$QGETH_HOME"
+PID_FILE="\$QGETH_HOME/qgeth.pid"
+LOG_FILE="\$QGETH_HOME/qgeth.log"
+
+echo "=== Q Geth Status ==="
+if [ -f "\$PID_FILE" ]; then
+    PID=\$(cat "\$PID_FILE")
+    if kill -0 \$PID 2>/dev/null; then
+        echo "Status: RUNNING (PID: \$PID)"
+        echo "Started: \$(ps -o lstart= -p \$PID 2>/dev/null || echo 'Unknown')"
+        echo "Memory: \$(ps -o rss= -p \$PID 2>/dev/null | awk '{print int(\$1/1024) " MB"}' || echo 'Unknown')"
+    else
+        echo "Status: NOT RUNNING (stale PID file)"
+        rm -f "\$PID_FILE"
+    fi
+else
+    echo "Status: NOT RUNNING"
+fi
+
+echo ""
+echo "=== Files ==="
+echo "Config: \$QGETH_HOME/Qgeth3/scripts/linux/"
+echo "Logs: \$LOG_FILE"
+echo "PID File: \$PID_FILE"
+
+if [ -f "\$LOG_FILE" ]; then
+    echo ""
+    echo "=== Recent Logs ==="
+    tail -10 "\$LOG_FILE" 2>/dev/null || echo "No logs available"
+fi
+
+echo ""
+echo "=== Management Commands ==="
+echo "Start:  \$QGETH_HOME/start-qgeth.sh"
+echo "Stop:   \$QGETH_HOME/stop-qgeth.sh"
+echo "Status: \$QGETH_HOME/status-qgeth.sh"
+echo "Logs:   tail -f \$LOG_FILE"
+EOF
+
+    # Create restart script
+    cat > "$SCRIPT_DIR/restart-qgeth.sh" << EOF
+#!/bin/bash
+# Restart Q Geth Node
+set -e
+
+QGETH_HOME="$QGETH_HOME"
+
+echo "Restarting Q Geth..."
+"\$QGETH_HOME/stop-qgeth.sh"
+sleep 2
+"\$QGETH_HOME/start-qgeth.sh"
+EOF
+
+    # Create update script
+    cat > "$SCRIPT_DIR/update-qgeth.sh" << EOF
+#!/bin/bash
+# Update Q Geth
+set -e
+
+QGETH_HOME="$QGETH_HOME"
+
+echo "Updating Q Geth..."
+
+# Stop if running
+if [ -f "\$QGETH_HOME/qgeth.pid" ]; then
+    echo "Stopping Q Geth for update..."
+    "\$QGETH_HOME/stop-qgeth.sh"
+    WAS_RUNNING=true
+else
+    WAS_RUNNING=false
+fi
+
+# Update repository
+cd "\$QGETH_HOME/Qgeth3"
+echo "Pulling latest changes..."
+git pull origin main
+
+# Rebuild
+echo "Rebuilding Q Geth..."
+cd scripts/linux
+./build-linux.sh geth -y
+
+# Restart if was running
+if [ "\$WAS_RUNNING" = true ]; then
+    echo "Restarting Q Geth..."
+    "\$QGETH_HOME/start-qgeth.sh"
+fi
+
+echo "Update complete!"
+EOF
+
+    # Make all scripts executable
+    chmod +x "$SCRIPT_DIR"/*.sh
+    
+    # Set proper ownership
+    if [ "$INSTALL_MODE" = "system" ]; then
+        if [ "$EUID" -eq 0 ]; then
+            chown -R qgeth:qgeth "$SCRIPT_DIR" 2>/dev/null || true
+        fi
+    fi
+    
+    log_success "✅ Simple process management created"
+    log_info "Management scripts: $SCRIPT_DIR/*.sh"
+    return 0
 }
 
 # Create systemd service
@@ -1915,6 +2088,33 @@ EOF
         echo "  Restart: $INSTALL_DIR/restart-qgeth.sh"
         echo "  Status:  $INSTALL_DIR/status-qgeth.sh"
         echo "  Logs:    $INSTALL_DIR/logs-qgeth.sh [-f] [-n 100]"
+    fi
+}
+
+# Start the simple process management system
+start_system_service() {
+    log_info "Starting Q Geth with simple process management..."
+    
+    # Start Q Geth using the new PID-based scripts
+    if [ -f "$INSTALL_DIR/start-qgeth.sh" ]; then
+        if "$INSTALL_DIR/start-qgeth.sh"; then
+            log_success "✅ Q Geth started successfully with PID-based management"
+            log_info "Management commands:"
+            log_info "  Status: $INSTALL_DIR/status-qgeth.sh" 
+            log_info "  Stop:   $INSTALL_DIR/stop-qgeth.sh"
+            log_info "  Logs:   tail -f $INSTALL_DIR/qgeth.log"
+        else
+            log_warning "⚠️ Q Geth process management created but failed to start"
+            log_info "You can start it manually:"
+            log_info "  $INSTALL_DIR/start-qgeth.sh"
+            log_info "Or run directly:"
+            log_info "  cd $PROJECT_DIR/scripts/linux && ./start-geth.sh testnet"
+        fi
+    else
+        log_error "Start script not found: $INSTALL_DIR/start-qgeth.sh"
+        log_info "You can run Q Geth manually:"
+        log_info "  cd $PROJECT_DIR/scripts/linux && ./start-geth.sh testnet"
+        return 1
     fi
 }
 
