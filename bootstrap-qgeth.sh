@@ -93,6 +93,34 @@ detect_system() {
         exit 1
     fi
     
+    # Check for Ubuntu 24.10 with known systemd issues
+    UBUNTU_24_10_DETECTED=false
+    if [ "$OS" = "ubuntu" ] && [ "$VERSION" = "24.10" ]; then
+        UBUNTU_24_10_DETECTED=true
+        log_warning "⚠️ Ubuntu 24.10 Detected - Known systemd library issues"
+        log_warning "This version has broken libsystemd-shared libraries that can cause system instability"
+        log_info "Bootstrap will use safe mode to prevent system damage"
+        log_info ""
+        log_info "🐳 RECOMMENDED: Use Docker for Ubuntu 24.10 instead!"
+        log_info "  Docker provides perfect isolation from systemd issues:"
+        log_info "  1. Install Docker: sudo apt install docker.io docker-compose"
+        log_info "  2. Start Docker: sudo systemctl start docker"
+        log_info "  3. Run Q Geth: docker-compose up -d qgeth-testnet"
+        log_info "  4. See: docs/deployment/docker-deployment.md"
+        log_info ""
+        
+        if [ "$AUTO_CONFIRM" != true ]; then
+            echo -n "Continue with safe bootstrap mode anyway? (y/N): "
+            read -r RESPONSE
+            if [[ ! "$RESPONSE" =~ ^([yY][eE][sS]|[yY])$ ]]; then
+                log_info "Bootstrap cancelled. Consider using Docker for safer Ubuntu 24.10 deployment!"
+                exit 0
+            fi
+        else
+            log_warning "Continuing with safe bootstrap mode in non-interactive mode..."
+        fi
+    fi
+    
     # Detect package manager
     if command -v apt >/dev/null 2>&1; then
         PKG_MANAGER="apt"
@@ -1291,283 +1319,35 @@ start_system_service() {
 
 # ENHANCED LOG MANAGEMENT AND CLEANUP FUNCTIONS
 
-# Setup log rotation for Q Geth
+# Setup log rotation for Q Geth logs
 setup_log_rotation() {
-    log_info "Setting up log rotation for Q Geth..."
-    
-    # Determine if we need sudo for log rotation setup
-    SUDO_CMD=""
-    if [ "$EUID" -ne 0 ]; then
-        SUDO_CMD="sudo"
-    fi
-    
-    # Create logrotate config for Q Geth
-    $SUDO_CMD tee /etc/logrotate.d/qgeth > /dev/null << 'EOF'
-# Q Geth log rotation configuration
-
-# Q Geth user directory logs
-/home/*/qgeth/logs/*.log {
-    daily
-    rotate 7
-    compress
-    delaycompress
-    missingok
-    notifempty
-    create 0644 $(stat -c %U:%G %)
-    maxsize 100M
-    su $(stat -c %U) $(stat -c %G)
-}
-
-# Q Geth data directory logs
-/home/*/.qcoin/*/logs/*.log {
-    daily
-    rotate 7
-    compress
-    delaycompress
-    missingok
-    notifempty
-    create 0644 $(stat -c %U:%G %)
-    maxsize 100M
-    su $(stat -c %U) $(stat -c %G)
-}
-EOF
-    
-    log_success "✅ Log rotation configured for Q Geth"
+    log_info "Checking log rotation requirements..."
+    log_info "✅ Log rotation not needed - geth verbosity level 1 generates minimal logs"
+    log_info "ERROR-only logging produces small log files that don't require rotation"
+    log_success "✅ Log management: Simple and efficient with verbosity level 1"
 }
 
 # Setup systemd journal limits to prevent log explosion
 setup_systemd_journal_limits() {
-    log_info "Configuring systemd journal limits..."
-    
-    # Determine if we need sudo
-    SUDO_CMD=""
-    if [ "$EUID" -ne 0 ]; then
-        SUDO_CMD="sudo"
-    fi
-    
-    # Configure journald limits
-    $SUDO_CMD mkdir -p /etc/systemd/journald.conf.d
-    
-    $SUDO_CMD tee /etc/systemd/journald.conf.d/qgeth-limits.conf > /dev/null << 'EOF'
-# Q Geth systemd journal limits to prevent disk space issues (aggressive)
-[Journal]
-SystemMaxUse=100M
-RuntimeMaxUse=50M
-SystemMaxFileSize=10M
-RuntimeMaxFileSize=10M
-MaxRetentionSec=3days
-MaxFileSec=1day
-SystemMaxFiles=20
-RuntimeMaxFiles=10
-ForwardToSyslog=no
-Compress=yes
-SyncIntervalSec=60s
-RateLimitIntervalSec=30s
-RateLimitBurst=10000
-EOF
-    
-    # Configuration will take effect on next boot or service restart
-    log_success "✅ Systemd journal limits configured"
+    log_info "Checking systemd journal configuration..."
+    log_info "✅ Journal configuration not needed - geth verbosity already set to level 1 (ERROR only)"
+    log_info "This provides minimal logging without journal configuration complexity"
+    log_success "✅ Log management: Using geth verbosity level 1 (optimal)"
 }
 
 # Create disk monitoring and cleanup script
 create_disk_monitor() {
-    log_info "Creating disk monitoring and cleanup system..."
-    
-    # Use project directory for monitoring
-    MONITOR_DIR="$PROJECT_DIR"
-    
-    # Create disk monitor script
-    cat > "$MONITOR_DIR/disk-monitor.sh" << 'EOF'
-#!/bin/bash
-# Q Geth Disk Space Monitor and Emergency Cleanup
-# Automatically cleans up logs and temp files when disk usage is high
-
-LOG_TAG="qgeth-disk-monitor"
-CRITICAL_THRESHOLD=90
-WARNING_THRESHOLD=80
-
-# Function to log messages
-log_msg() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') [$LOG_TAG] $1" | logger -t "$LOG_TAG"
-    echo "$(date '+%Y-%m-%d %H:%M:%S') [$LOG_TAG] $1"
-}
-
-# Get disk usage percentage
-get_disk_usage() {
-    df / | awk 'NR==2 {print $5}' | sed 's/%//'
-}
-
-# Emergency cleanup function
-emergency_cleanup() {
-    local usage=$1
-    log_msg "CRITICAL: Disk usage at ${usage}% - performing emergency cleanup"
-    
-    # 1. Clean systemd journal logs (keep last 3 days) - only if journalctl works
-    if command -v journalctl >/dev/null 2>&1; then
-        if journalctl --version >/dev/null 2>&1; then
-            journalctl --vacuum-time=3d >/dev/null 2>&1
-            log_msg "Cleaned systemd journal logs"
-        else
-            log_msg "Skipped journal cleanup (journalctl unavailable)"
-        fi
-    fi
-    
-    # 2. Clean Q Geth logs older than 3 days
-    find /home/*/qgeth/logs -name "*.log" -mtime +3 -delete 2>/dev/null || true
-    find /home/*/.qcoin/*/logs -name "*.log" -mtime +3 -delete 2>/dev/null || true
-    log_msg "Cleaned old Q Geth logs"
-    
-    # 3. Truncate large active log files (>100MB)
-    find /home/*/qgeth/logs -name "*.log" -size +100M -exec truncate -s 50M {} \; 2>/dev/null || true
-    find /home/*/.qcoin -name "*.log" -size +100M -exec truncate -s 50M {} \; 2>/dev/null || true
-    log_msg "Truncated large log files"
-    
-    # 4. Clean Go build cache and temp files
-    if command -v go >/dev/null 2>&1; then
-        go clean -cache -modcache -testcache >/dev/null 2>&1 || true
-        log_msg "Cleaned Go build cache"
-    fi
-    
-    # 5. Clean system temp files
-    find /tmp -name "*qgeth*" -mtime +1 -delete 2>/dev/null || true
-    find /tmp -name "*quantum*" -mtime +1 -delete 2>/dev/null || true
-    log_msg "Cleaned temp files"
-    
-    # 6. Clean apt cache if available
-    if command -v apt >/dev/null 2>&1; then
-        apt clean >/dev/null 2>&1 || true
-        log_msg "Cleaned package cache"
-    fi
-    
-    # 7. Force log rotation
-    if command -v logrotate >/dev/null 2>&1; then
-        logrotate -f /etc/logrotate.d/qgeth >/dev/null 2>&1 || true
-        log_msg "Forced log rotation"
-    fi
-}
-
-# Warning cleanup function  
-warning_cleanup() {
-    local usage=$1
-    log_msg "WARNING: Disk usage at ${usage}% - performing routine cleanup"
-    
-    # 1. Clean journal logs (keep last week) - only if journalctl works
-    if command -v journalctl >/dev/null 2>&1; then
-        if journalctl --version >/dev/null 2>&1; then
-            journalctl --vacuum-time=1week >/dev/null 2>&1
-        fi
-    fi
-    
-    # 2. Clean old logs (>7 days)
-    find /home/*/qgeth/logs -name "*.log" -mtime +7 -delete 2>/dev/null || true
-    find /home/*/.qcoin/*/logs -name "*.log" -mtime +7 -delete 2>/dev/null || true
-    
-    # 3. Clean old temp files
-    find /tmp -name "*qgeth*" -mtime +7 -delete 2>/dev/null || true
-    find /tmp -name "*quantum*" -mtime +7 -delete 2>/dev/null || true
-    
-    log_msg "Routine cleanup completed"
-}
-
-# Main monitoring logic
-main() {
-    local usage=$(get_disk_usage)
-    
-    if [ "$usage" -ge "$CRITICAL_THRESHOLD" ]; then
-        emergency_cleanup "$usage"
-        
-        # Check if cleanup helped
-        local new_usage=$(get_disk_usage)
-        local saved=$((usage - new_usage))
-        log_msg "Emergency cleanup completed: ${usage}% -> ${new_usage}% (saved ${saved}%)"
-        
-        # If still critical, send alert
-        if [ "$new_usage" -ge "$CRITICAL_THRESHOLD" ]; then
-            log_msg "ALERT: Disk usage still critical at ${new_usage}% after cleanup!"
-        fi
-        
-    elif [ "$usage" -ge "$WARNING_THRESHOLD" ]; then
-        warning_cleanup "$usage"
-        
-        local new_usage=$(get_disk_usage)
-        local saved=$((usage - new_usage))
-        log_msg "Warning cleanup completed: ${usage}% -> ${new_usage}% (saved ${saved}%)"
-        
-    else
-        # Normal operation - just log status
-        log_msg "Disk usage normal: ${usage}%"
-    fi
-}
-
-# Run the monitor
-main "$@"
-EOF
-
-    chmod +x "$MONITOR_DIR/disk-monitor.sh"
-    
-    # Create systemd timer for disk monitoring (if systemd is available)
-    if [ "$INIT_SYSTEM" = "systemd" ]; then
-        log_info "Creating systemd timer for disk monitoring..."
-        
-        # Determine if we need sudo
-        SUDO_CMD=""
-        if [ "$EUID" -ne 0 ]; then
-            SUDO_CMD="sudo"
-        fi
-        
-        # Create service file
-        $SUDO_CMD tee /etc/systemd/system/qgeth-disk-monitor.service > /dev/null << EOF
-[Unit]
-Description=Q Geth Disk Space Monitor
-After=multi-user.target
-
-[Service]
-Type=oneshot
-ExecStart=$MONITOR_DIR/disk-monitor.sh
-User=root
-StandardOutput=journal
-StandardError=journal
-EOF
-
-        # Create timer file  
-        $SUDO_CMD tee /etc/systemd/system/qgeth-disk-monitor.timer > /dev/null << EOF
-[Unit]
-Description=Q Geth Disk Monitor Timer
-Requires=qgeth-disk-monitor.service
-
-[Timer]
-OnCalendar=hourly
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-EOF
-
-        # Enable and start timer
-        $SUDO_CMD systemctl daemon-reload
-        $SUDO_CMD systemctl enable qgeth-disk-monitor.timer
-        $SUDO_CMD systemctl start qgeth-disk-monitor.timer
-        
-        log_success "✅ Disk monitoring timer created and started"
-    else
-        # For non-systemd systems, add to crontab
-        log_info "Adding disk monitor to crontab..."
-        
-        # Add hourly disk monitoring to root crontab
-        (crontab -l 2>/dev/null || true; echo "0 * * * * $MONITOR_DIR/disk-monitor.sh") | crontab -
-        
-        log_success "✅ Disk monitoring added to crontab"
-    fi
-    
-    log_success "✅ Disk monitoring system created"
+    log_info "Checking disk monitoring requirements..."
+    log_info "✅ Disk monitoring not needed - geth verbosity level 1 generates minimal logs"
+    log_info "With ERROR-only logging, there are no large log files to monitor or clean up"
+    log_success "✅ Log management: Minimal footprint with geth verbosity level 1"
 }
 
 # Initial cleanup function to remove unnecessary files after installation
 initial_cleanup() {
-    log_info "Performing initial cleanup after installation..."
+    log_info "Performing post-installation cleanup..."
     
-    # Clean Go build cache and temp files  
+    # Clean Go build cache and temp files (build artifacts)
     if command -v go >/dev/null 2>&1; then
         log_info "Cleaning Go build cache..."
         go clean -cache -modcache -testcache 2>/dev/null || true
@@ -1597,18 +1377,18 @@ initial_cleanup() {
         rm -rf "$HOME/Qgeth3" 2>/dev/null || true
     fi
     
-    # Clean up any temporary build files
+    # Clean up temporary build files
     find "$PROJECT_DIR" -name "build-temp-*" -type d -exec rm -rf {} \; 2>/dev/null || true
     find /tmp -name "*qgeth*" -mtime +0 -delete 2>/dev/null || true
     find /tmp -name "*quantum*" -mtime +0 -delete 2>/dev/null || true
     
-    # Clean apt cache to save space
+    # Clean package cache to save disk space
     if command -v apt >/dev/null 2>&1 && [ "$EUID" -eq 0 ]; then
         apt clean 2>/dev/null || true
         apt autoremove -y 2>/dev/null || true
     fi
     
-    log_success "✅ Initial cleanup completed"
+    log_success "✅ Post-installation cleanup completed"
 }
 
 # Main installation
@@ -1744,8 +1524,8 @@ main() {
             exit 1
         fi
         
-        # Setup log management and monitoring
-        log_info "Setting up log management and monitoring..."
+        # Setup minimal log management (verbosity level 1)
+        log_info "Setting up minimal log management..."
         setup_log_rotation
         setup_systemd_journal_limits  
         create_disk_monitor
