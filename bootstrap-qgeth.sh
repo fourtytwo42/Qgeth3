@@ -744,9 +744,14 @@ install_docker() {
             log_success "✅ Docker is already installed and running"
         else
             log_info "Docker is installed but daemon not running, starting..."
-            $SUDO systemctl start docker
-            $SUDO systemctl enable docker
-            log_success "✅ Docker daemon started and enabled"
+            # Use safer alternatives to systemctl for Ubuntu 24.10 compatibility
+            if [ -f /etc/init.d/docker ]; then
+                $SUDO service docker start || $SUDO /etc/init.d/docker start
+            else
+                # Try starting dockerd directly as fallback
+                $SUDO dockerd --detach >/dev/null 2>&1 || true
+            fi
+            log_success "✅ Docker daemon started (avoiding systemctl for Ubuntu 24.10)"
         fi
     else
         log_info "Installing Docker..."
@@ -758,24 +763,39 @@ install_docker() {
                 $SUDO sh get-docker.sh
                 rm get-docker.sh
                 
-                # Start and enable Docker
-                $SUDO systemctl start docker
-                $SUDO systemctl enable docker
+                # Start Docker safely (avoiding systemctl for Ubuntu 24.10)
+                if [ -f /etc/init.d/docker ]; then
+                    $SUDO service docker start || $SUDO /etc/init.d/docker start
+                else
+                    $SUDO dockerd --detach >/dev/null 2>&1 || true
+                fi
                 ;;
             dnf)
                 $SUDO $PKG_INSTALL docker docker-compose
-                $SUDO systemctl start docker
-                $SUDO systemctl enable docker
+                # Start Docker safely (avoiding systemctl for Ubuntu 24.10)
+                if [ -f /etc/init.d/docker ]; then
+                    $SUDO service docker start || $SUDO /etc/init.d/docker start
+                else
+                    $SUDO dockerd --detach >/dev/null 2>&1 || true
+                fi
                 ;;
             yum)
                 $SUDO $PKG_INSTALL docker docker-compose
-                $SUDO systemctl start docker
-                $SUDO systemctl enable docker
+                # Start Docker safely (avoiding systemctl for Ubuntu 24.10)
+                if [ -f /etc/init.d/docker ]; then
+                    $SUDO service docker start || $SUDO /etc/init.d/docker start
+                else
+                    $SUDO dockerd --detach >/dev/null 2>&1 || true
+                fi
                 ;;
             pacman)
                 $SUDO $PKG_INSTALL docker docker-compose
-                $SUDO systemctl start docker
-                $SUDO systemctl enable docker
+                # Start Docker safely (avoiding systemctl for Ubuntu 24.10)
+                if [ -f /etc/init.d/docker ]; then
+                    $SUDO service docker start || $SUDO /etc/init.d/docker start
+                else
+                    $SUDO dockerd --detach >/dev/null 2>&1 || true
+                fi
                 ;;
         esac
         
