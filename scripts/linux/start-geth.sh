@@ -4,7 +4,7 @@
 # Networks: mainnet, testnet, devnet (default: testnet)
 # Options: --mining (enable mining with single thread)
 
-NETWORK="testnet"
+NETWORK="planck"
 MINING=false
 HELP=false
 EXTRA_ARGS=()
@@ -48,9 +48,9 @@ if [ "$HELP" = true ]; then
     echo -e "\033[1;37mUsage: ./start-geth.sh [network] [options]\033[0m"
     echo ""
     echo -e "\033[1;33mNetworks:\033[0m"
-    echo "  testnet   - Q Coin Testnet (Chain ID 73235) [DEFAULT]"
+    echo "  planck    - Q Coin Planck Network (Chain ID 73237) [DEFAULT]"
+    echo "  testnet   - Q Coin Testnet (Chain ID 73235)"
     echo "  devnet    - Q Coin Dev Network (Chain ID 73234)"
-    echo "  planck    - Q Coin Planck Network (Chain ID 73237)"
     echo ""
     echo -e "\033[1;33mOptions:\033[0m"
     echo "  --mining  - Enable mining with single thread"
@@ -62,9 +62,9 @@ if [ "$HELP" = true ]; then
     echo "  🔗 External Miner Support: Full qmpow API for external mining"
     echo ""
     echo -e "\033[1;32mExamples:\033[0m"
-    echo "  ./start-geth.sh                  # Start testnet node"
+    echo "  ./start-geth.sh                  # Start planck node (default)"
+    echo "  ./start-geth.sh testnet          # Start testnet node"
     echo "  ./start-geth.sh devnet --mining  # Start dev node with mining"
-    echo "  ./start-geth.sh planck           # Start planck network node"
     exit 0
 fi
 

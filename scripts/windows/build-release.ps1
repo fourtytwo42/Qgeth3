@@ -1011,12 +1011,12 @@ if ($Component -eq "geth" -or $Component -eq "both") {
             
             # Create PowerShell launcher with genesis auto-reset
             @'
-param([string]$Network = "testnet", [switch]$Mining, [switch]$Help)
+param([string]$Network = "planck", [switch]$Mining, [switch]$Help)
 
 if ($Help) {
     Write-Host "Q Coin Geth Launcher with Auto-Reset" -ForegroundColor Cyan
     Write-Host "Usage: .\start-geth.ps1 [network] [options]"
-    Write-Host "Networks: testnet, devnet, planck"
+    Write-Host "Networks: planck (default), testnet, devnet"
     Write-Host "Features: Automatic blockchain reset when genesis changes"
     exit 0
 }
@@ -1043,7 +1043,7 @@ $configs = @{
 }
 
 if (-not $configs.ContainsKey($Network)) {
-    Write-Host "Error: Invalid network '$Network'. Use: testnet, devnet, planck" -ForegroundColor Red
+    Write-Host "Error: Invalid network '$Network'. Use: planck (default), testnet, devnet" -ForegroundColor Red
     exit 1
 }
 
@@ -1084,7 +1084,7 @@ Write-Host "Starting Q Coin node..." -ForegroundColor Cyan
             @'
 @echo off
 set NETWORK=%1
-if "%NETWORK%"=="" set NETWORK=testnet
+if "%NETWORK%"=="" set NETWORK=planck
 
 if "%NETWORK%"=="testnet" (
     set CHAINID=73235
@@ -1099,7 +1099,7 @@ if "%NETWORK%"=="testnet" (
     set DATADIR=%APPDATA%\Qcoin\planck
     set GENESIS=genesis_quantum_planck.json
 ) else (
-    echo Error: Invalid network '%NETWORK%'. Use: testnet, devnet, planck
+    echo Error: Invalid network '%NETWORK%'. Use: planck (default), testnet, devnet
     exit /b 1
 )
 
@@ -1142,9 +1142,9 @@ PowerShell: .\start-geth.ps1 [testnet|devnet] [-mining]
 Batch: start-geth.bat [testnet|devnet]
 
 ## Network Information
+- Planck: Chain ID 73237, genesis_quantum_planck.json [DEFAULT]
 - Testnet: Chain ID 73235, genesis_quantum_testnet.json
 - Devnet: Chain ID 73234, genesis_quantum_dev.json
-- Planck: Chain ID 73237, genesis_quantum_planck.json
 
 ## Auto-Reset Functionality
 The node automatically detects when genesis parameters change and:

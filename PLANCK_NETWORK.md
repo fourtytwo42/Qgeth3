@@ -1,7 +1,7 @@
 # Q Coin Planck Network
 
 ## Overview
-The **Planck Network** is a new Q Coin testnet with the same configuration as the existing testnet but with a unique chain ID and genesis hash for isolated testing.
+The **Planck Network** is the **default** Q Coin testnet with the same configuration as the existing testnet but with a unique chain ID and genesis hash for isolated testing.
 
 ## Network Details
 - **Network Name**: Q Coin Planck Network
@@ -33,11 +33,14 @@ The planck network includes the same pre-allocated accounts as testnet:
 
 ### Linux
 ```bash
-# Start planck network node
-./scripts/linux/start-geth.sh planck
+# Start planck network node (default - no network parameter needed)
+./scripts/linux/start-geth.sh
 
 # Start planck network with mining
-./scripts/linux/start-geth.sh planck --mining
+./scripts/linux/start-geth.sh --mining
+
+# Or explicitly specify planck
+./scripts/linux/start-geth.sh planck
 
 # Start miner for planck network (after node is running)
 ./scripts/linux/start-miner.sh --gpu --threads 32
@@ -45,15 +48,21 @@ The planck network includes the same pre-allocated accounts as testnet:
 
 ### Windows
 ```powershell
-# Start planck network node
-.\start-geth.ps1 planck
+# Start planck network node (default - no network parameter needed)
+.\start-geth.ps1
 
 # Start planck network with mining
-.\start-geth.ps1 planck -mining
+.\start-geth.ps1 -mining
+
+# Or explicitly specify planck
+.\start-geth.ps1 planck
 ```
 
 ```batch
-# Batch file method
+# Batch file method (planck is default)
+start-geth.bat
+
+# Or explicitly specify planck
 start-geth.bat planck
 ```
 
@@ -72,9 +81,9 @@ The planck network supports the same mining capabilities as other Q Coin network
 
 | Network | Chain ID | Default Port | Purpose |
 |---------|----------|--------------|---------|
-| Testnet | 73235 | 30303 | Main testing network |
+| **Planck** | **73237** | **30307** | **Default testnet (isolated)** |
+| Testnet | 73235 | 30303 | Legacy testing network |
 | Devnet | 73234 | 30305 | Development/debugging |
-| **Planck** | **73237** | **30307** | **Isolated testing** |
 
 ## Use Cases for Planck Network
 - **Isolated Testing**: Test new features without affecting main testnet
@@ -101,7 +110,9 @@ Same as testnet/devnet:
 - **WSL2 GPU**: ~12000-20000+ PZ/s (Windows)
 
 ## Network Status
-✅ **READY**: Planck network is fully implemented and ready for use!
+✅ **DEFAULT**: Planck network is now the default testnet - fully implemented and ready for use!
+
+When you run geth without specifying a network, it automatically uses Planck.
 
 ## Benefits
 - **Same Genesis Parameters**: Identical to testnet for consistency
