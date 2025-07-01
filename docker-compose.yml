@@ -65,7 +65,7 @@ services:
       --ws.origins "*"
       --ws.api "eth,net,web3,personal,admin,txpool,miner,qmpow"
       --maxpeers 25
-      --verbosity 3
+      --verbosity 1
       --mine
       --miner.threads 0
       --miner.etherbase 0x742d35C6C4e6d8de6f10E7FF75DD98dd25b02C3A
@@ -109,7 +109,7 @@ services:
       --ws.origins "*"
       --ws.api "eth,net,web3,personal,admin,txpool,miner,qmpow,debug"
       --maxpeers 25
-      --verbosity 4
+      --verbosity 1
       --mine
       --miner.threads 0
       --miner.etherbase 0x742d35C6C4e6d8de6f10E7FF75DD98dd25b02C3A

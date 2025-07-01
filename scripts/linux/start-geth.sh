@@ -312,7 +312,7 @@ GETH_ARGS=(
     "--ws.origins" "*"
     "--ws.api" "eth,net,web3,personal,admin,txpool,miner,qmpow,debug"
     "--maxpeers" "25"
-    "--verbosity" "3"
+    "--verbosity" "1"
 )
 
 # Add mining if requested

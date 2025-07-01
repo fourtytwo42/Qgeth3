@@ -1357,14 +1357,21 @@ setup_systemd_journal_limits() {
     fi
     
     $SUDO_CMD tee /etc/systemd/journald.conf.d/qgeth-limits.conf > /dev/null << 'EOF'
-# Q Geth systemd journal limits to prevent disk space issues
+# Q Geth systemd journal limits to prevent disk space issues (aggressive)
 [Journal]
-SystemMaxUse=500M
-SystemMaxFileSize=50M
-MaxRetentionSec=1week
+SystemMaxUse=100M
+RuntimeMaxUse=50M
+SystemMaxFileSize=10M
+RuntimeMaxFileSize=10M
+MaxRetentionSec=3days
 MaxFileSec=1day
+SystemMaxFiles=20
+RuntimeMaxFiles=10
 ForwardToSyslog=no
 Compress=yes
+SyncIntervalSec=60s
+RateLimitIntervalSec=30s
+RateLimitBurst=10000
 EOF
     
     # Test if journald config is valid before applying
@@ -1731,8 +1738,8 @@ main() {
         log_info "Building Q Geth..."
         cd "$PROJECT_DIR/scripts/linux"
         
-        # Use consolidated build script with error handling
-        if ! ./build-linux.sh geth ${AUTO_CONFIRM:+-y}; then
+        # Use consolidated build script with error handling (quiet mode if auto-confirm)
+        if ! ./build-linux.sh geth ${AUTO_CONFIRM:+-y} ${AUTO_CONFIRM:+-q}; then
             log_error "Failed to build Q Geth"
             log_info "Build log may contain more details"
             log_info "You can try running the build manually:"

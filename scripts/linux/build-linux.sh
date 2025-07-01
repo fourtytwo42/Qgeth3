@@ -14,11 +14,15 @@ AUTO_CONFIRM=false
 TARGET="both"
 CLEAN="false"
 USE_SUDO_FOR_FILES=false
+QUIET_MODE=false
 
 for arg in "$@"; do
     case $arg in
         -y|--yes)
             AUTO_CONFIRM=true
+            ;;
+        -q|--quiet)
+            QUIET_MODE=true
             ;;
         --clean)
             CLEAN="--clean"
@@ -31,17 +35,21 @@ done
 
 VERSION="1.0.0"
 
-echo "🚀 Building Q Coin Linux Binaries (Memory-Optimized + Auto-Recovery)..."
-echo "Target: $TARGET"
-echo "Version: $VERSION"
-if [ "$AUTO_CONFIRM" = true ]; then
-    echo "Mode: Non-interactive (auto-confirm enabled)"
+if [ "$QUIET_MODE" != true ]; then
+    echo "🚀 Building Q Coin Linux Binaries (Memory-Optimized + Auto-Recovery)..."
+    echo "Target: $TARGET"
+    echo "Version: $VERSION"
+    if [ "$AUTO_CONFIRM" = true ]; then
+        echo "Mode: Non-interactive (auto-confirm enabled)"
+    fi
+    echo ""
+else
+    echo "Building Q Coin $TARGET binaries..."
 fi
-echo ""
 
 # CRITICAL FIX: Ensure Go 1.24.4 is active and prioritized
 validate_go_version() {
-    echo "🔧 Validating Go installation and PATH..."
+    [ "$QUIET_MODE" != true ] && echo "🔧 Validating Go installation and PATH..."
     
     # Force PATH to prioritize /usr/local/go/bin (where bootstrap installs Go 1.24.4)
     export PATH="/usr/local/go/bin:$PATH"
@@ -391,11 +399,13 @@ check_memory() {
         
         combined_mb=$((total_mb + swap_mb))
         
-        echo "💾 Memory Check:"
-        echo "  RAM: ${total_mb}MB"
-        echo "  Swap: ${swap_mb}MB"
-        echo "  Total Available: ${combined_mb}MB"
-        echo "  Required Total: ${required_mb}MB (4GB)"
+        if [ "$QUIET_MODE" != true ]; then
+            echo "💾 Memory Check:"
+            echo "  RAM: ${total_mb}MB"
+            echo "  Swap: ${swap_mb}MB"
+            echo "  Total Available: ${combined_mb}MB"
+            echo "  Required Total: ${required_mb}MB (4GB)"
+        fi
         
         # Add tolerance margin - 50MB difference is acceptable (same as prepare-vps.sh)
         local tolerance_mb=50
