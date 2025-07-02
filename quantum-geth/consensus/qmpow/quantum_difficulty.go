@@ -46,7 +46,7 @@ func CalcQuantumDifficulty(config ctypes.ChainConfigurator, time uint64, parent 
 	}
 	
 	// Use ASERT-Q algorithm for difficulty adjustment
-	targetBlockTime := int64(15) // 15 second target block time
+	targetBlockTime := int64(12) // FIXED: Use consistent 12 second target block time
 	timeDiff := int64(time) - int64(parent.Time)
 	
 	// ASERT-Q adjustment calculation
@@ -211,7 +211,7 @@ func CalcDifficultyASERTQ(config *Config, time uint64, parent *types.Header) *bi
 	
 	// Simple ASERT-Q approximation for testing
 	timeDelta := int64(time) - int64(parentTime)
-	targetTime := int64(10) // 10 second target
+	targetTime := int64(12) // FIXED: Use consistent 12 second target
 	
 	// Quantum-adjusted difficulty based on time delta
 	adjustment := big.NewInt(1000) // Base 1.0 scaled by 1000

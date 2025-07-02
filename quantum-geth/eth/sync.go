@@ -31,8 +31,8 @@ import (
 )
 
 const (
-	forceSyncCycle      = 10 * time.Second // Time interval to force syncs, even if few peers are available
-	defaultMinSyncPeers = 5                // Amount of peers desired to start syncing
+	forceSyncCycle      = 30 * time.Second // FIXED: Increased from 10s to 30s - less aggressive sync timing
+	defaultMinSyncPeers = 3                 // FIXED: Reduced from 5 to 3 - start syncing with fewer peers for better connectivity
 )
 
 var (

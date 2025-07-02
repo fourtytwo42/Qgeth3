@@ -234,7 +234,7 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 			QBits:    16,  // 16 qubits per puzzle
 			TCount:   20,  // 20 T-gates per puzzle (ENFORCED MINIMUM)
 			LNet:     128, // 128 chained puzzles per block
-			EpochLen: 100,
+			EpochLen: 600000, // FIXED: Use standard epoch length for consistency
 			TestMode: false, // ENABLE REAL QUANTUM MINING
 		}
 		log.Info("🔬 DEBUG: Fallback QMPoW config created",

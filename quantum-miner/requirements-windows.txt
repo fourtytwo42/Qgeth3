@@ -1,0 +1,25 @@
+# Q Coin Quantum Miner - Windows Requirements
+# Install with: pip install -r requirements-windows.txt
+
+# Core quantum computing (tested versions)
+qiskit==0.45.0
+qiskit-aer==0.12.2
+
+# Scientific computing
+numpy==1.24.3
+scipy==1.11.0
+
+# GPU acceleration (choose one based on your CUDA version)
+# Uncomment the line that matches your CUDA version:
+
+# For CUDA 12.x (RTX 40-series, RTX 30-series with newer drivers)
+# cupy-cuda12x>=12.0.0
+
+# For CUDA 11.x (GTX 16-series, RTX 20-series, older RTX 30-series drivers)  
+# cupy-cuda11x>=11.0.0
+
+# NOTE: If you don't have an NVIDIA GPU, the miner will work in CPU-only mode
+# without CuPy. Just install the core packages above.
+
+# Optional: IBM Quantum Cloud support
+# requests>=2.25.0 

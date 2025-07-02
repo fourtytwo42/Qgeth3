@@ -88,7 +88,7 @@ CMD ["geth", \
      "--ws.origins", "*", \
      "--ws.api", "eth,net,web3,personal,admin,txpool,miner,qmpow", \
      "--maxpeers", "25", \
-     "--verbosity", "3", \
+     "--verbosity", "1", \
      "--mine", \
      "--miner.threads", "0", \
      "--miner.etherbase", "0x0000000000000000000000000000000000000001"] 

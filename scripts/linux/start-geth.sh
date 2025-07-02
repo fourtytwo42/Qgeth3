@@ -4,7 +4,7 @@
 # Networks: mainnet, testnet, devnet (default: testnet)
 # Options: --mining (enable mining with single thread)
 
-NETWORK="testnet"
+NETWORK="planck"
 MINING=false
 HELP=false
 EXTRA_ARGS=()
@@ -12,7 +12,7 @@ EXTRA_ARGS=()
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
-        testnet|devnet)
+        testnet|devnet|planck)
             NETWORK="$1"
             shift
             ;;
@@ -48,7 +48,8 @@ if [ "$HELP" = true ]; then
     echo -e "\033[1;37mUsage: ./start-geth.sh [network] [options]\033[0m"
     echo ""
     echo -e "\033[1;33mNetworks:\033[0m"
-    echo "  testnet   - Q Coin Testnet (Chain ID 73235) [DEFAULT]"
+    echo "  planck    - Q Coin Planck Network (Chain ID 73237) [DEFAULT]"
+    echo "  testnet   - Q Coin Testnet (Chain ID 73235)"
     echo "  devnet    - Q Coin Dev Network (Chain ID 73234)"
     echo ""
     echo -e "\033[1;33mOptions:\033[0m"
@@ -61,7 +62,8 @@ if [ "$HELP" = true ]; then
     echo "  🔗 External Miner Support: Full qmpow API for external mining"
     echo ""
     echo -e "\033[1;32mExamples:\033[0m"
-    echo "  ./start-geth.sh                  # Start testnet node"
+    echo "  ./start-geth.sh                  # Start planck node (default)"
+    echo "  ./start-geth.sh testnet          # Start testnet node"
     echo "  ./start-geth.sh devnet --mining  # Start dev node with mining"
     exit 0
 fi
@@ -146,8 +148,16 @@ case $NETWORK in
         NAME="Q Coin Dev Network"
         BOOTNODE_PORT=30305
         ;;
+    planck)
+        CHAINID=73237
+        DATADIR="$HOME/.qcoin/planck"
+        GENESIS="../../configs/genesis_quantum_planck.json"
+        PORT=30307
+        NAME="Q Coin Planck Network"
+        BOOTNODE_PORT=30307
+        ;;
     *)
-        echo -e "\033[1;31m[ERROR] Invalid network '$NETWORK'. Use: testnet, devnet\033[0m"
+        echo -e "\033[1;31m[ERROR] Invalid network '$NETWORK'. Use: testnet, devnet, planck\033[0m"
         exit 1
         ;;
 esac
@@ -302,7 +312,7 @@ GETH_ARGS=(
     "--ws.origins" "*"
     "--ws.api" "eth,net,web3,personal,admin,txpool,miner,qmpow,debug"
     "--maxpeers" "25"
-    "--verbosity" "3"
+    "--verbosity" "1"
 )
 
 # Add mining if requested

@@ -39,7 +39,7 @@ type QuantumConstants struct {
 
 // QuantumSpec holds the quantum proof-of-work specification constants
 var QuantumSpec = QuantumConstants{
-	EpochBlocks:      50000,
+	EpochBlocks:      600000, // FIXED: Match standard epoch length
 	GlideBlocks:      12500,
 	StartingQBits:    16,
 	FixedTCount:      20,

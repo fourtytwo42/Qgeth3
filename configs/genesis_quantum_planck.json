@@ -1,7 +1,7 @@
 {
   "config": {
-    "networkId": 73234,
-    "chainId": 73234,
+    "networkId": 73237,
+    "chainId": 73237,
     "eip2FBlock": 0,
     "eip7FBlock": 0,
     "eip150Block": 0,
@@ -19,7 +19,8 @@
   },
   "difficulty": "0xC8",
   "gasLimit": "0x2fefd8",
-  "extraData": "0x516765746833204465764e6574",
+  "timestamp": "0x67826000",
+  "extraData": "0x516765746833205465737456322E3120506C616E636B204E6574776F726B20323032352E30362E3330",
   "alloc": {
     "0x8b61271473f14c80f2B1381Db9CB13b2d5306200": {
       "balance": "0x3635c9adc5dea00000"

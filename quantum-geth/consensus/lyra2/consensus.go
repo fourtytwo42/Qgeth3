@@ -282,11 +282,12 @@ func (lyra2 *Lyra2) CalcDifficulty(chain consensus.ChainHeaderReader, time uint6
 var (
 	big1       = big.NewInt(1)
 	big2       = big.NewInt(2)
-	big9       = big.NewInt(9)
+	big9       = big.NewInt(9)  // CRITICAL: Traditional Ethereum uses 9s intervals
+	big12      = big.NewInt(12) // FIXED: Q-blockchain uses 12s intervals for consistency
 	bigMinus20 = big.NewInt(-20)
 
-	DifficultyBoundDivisor = big.NewInt(200)   // The bound divisor of the difficulty, used in the update calculations.
-	MinimumDifficulty      = big.NewInt(10000) // The minimum that the difficulty may ever be.
+	DifficultyBoundDivisor = big.NewInt(2048) // FIXED: Match global params for consistency
+	MinimumDifficulty      = big.NewInt(200)  // FIXED: Match QMPoW minimum difficulty for consistency
 )
 
 // CalcDifficulty is the difficulty adjustment algorithm. It returns
@@ -294,9 +295,10 @@ var (
 // given the parent block's time and difficulty.
 func CalcDifficulty(config ctypes.ChainConfigurator, time uint64, parent *types.Header) *big.Int {
 	// https://github.com/ethereum/EIPs/issues/100.
+	// FIXED: Modified for Q-blockchain 12-second target block time consistency
 	// algorithm:
 	// diff = (parent_diff +
-	//         (parent_diff / 200 * max((2 if len(parent.uncles) else 1) - ((timestamp - parent.timestamp) // 9), -20))
+	//         (parent_diff / 200 * max((2 if len(parent.uncles) else 1) - ((timestamp - parent.timestamp) // 12), -20))
 	//        ) + 2^(periodCount - 2)
 
 	bigTime := new(big.Int).SetUint64(time)
@@ -306,15 +308,16 @@ func CalcDifficulty(config ctypes.ChainConfigurator, time uint64, parent *types.
 	x := new(big.Int)
 	y := new(big.Int)
 
-	// (2 if len(parent_uncles) else 1) - (block_timestamp - parent_timestamp) // 9
+	// FIXED: Use 12-second intervals for Q-blockchain consistency instead of 9-second Ethereum intervals
+	// (2 if len(parent_uncles) else 1) - (block_timestamp - parent_timestamp) // 12
 	x.Sub(bigTime, bigParentTime)
-	x.Div(x, big9)
+	x.Div(x, big12) // FIXED: Use 12-second target block time for consistency with QMPoW
 	if parent.UncleHash == types.EmptyUncleHash {
 		x.Sub(big1, x)
 	} else {
 		x.Sub(big2, x)
 	}
-	// max((2 if len(parent_uncles) else 1) - (block_timestamp - parent_timestamp) // 9, -20)
+	// max((2 if len(parent_uncles) else 1) - (block_timestamp - parent_timestamp) // 12, -20)
 	if x.Cmp(bigMinus20) < 0 {
 		x.Set(bigMinus20)
 	}

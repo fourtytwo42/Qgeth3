@@ -11,14 +11,18 @@ export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/l
 
 # Parse command line arguments
 AUTO_CONFIRM=false
-TARGET="both"
+TARGET="geth"
 CLEAN="false"
 USE_SUDO_FOR_FILES=false
+QUIET_MODE=false
 
 for arg in "$@"; do
     case $arg in
         -y|--yes)
             AUTO_CONFIRM=true
+            ;;
+        -q|--quiet)
+            QUIET_MODE=true
             ;;
         --clean)
             CLEAN="--clean"
@@ -31,17 +35,21 @@ done
 
 VERSION="1.0.0"
 
-echo "🚀 Building Q Coin Linux Binaries (Memory-Optimized + Auto-Recovery)..."
-echo "Target: $TARGET"
-echo "Version: $VERSION"
-if [ "$AUTO_CONFIRM" = true ]; then
-    echo "Mode: Non-interactive (auto-confirm enabled)"
+if [ "$QUIET_MODE" != true ]; then
+    echo "🚀 Building Q Coin Linux Binaries (Memory-Optimized + Auto-Recovery)..."
+    echo "Target: $TARGET"
+    echo "Version: $VERSION"
+    if [ "$AUTO_CONFIRM" = true ]; then
+        echo "Mode: Non-interactive (auto-confirm enabled)"
+    fi
+    echo ""
+else
+    echo "Building Q Coin $TARGET binaries..."
 fi
-echo ""
 
 # CRITICAL FIX: Ensure Go 1.24.4 is active and prioritized
 validate_go_version() {
-    echo "🔧 Validating Go installation and PATH..."
+    [ "$QUIET_MODE" != true ] && echo "🔧 Validating Go installation and PATH..."
     
     # Force PATH to prioritize /usr/local/go/bin (where bootstrap installs Go 1.24.4)
     export PATH="/usr/local/go/bin:$PATH"
@@ -391,11 +399,13 @@ check_memory() {
         
         combined_mb=$((total_mb + swap_mb))
         
-        echo "💾 Memory Check:"
-        echo "  RAM: ${total_mb}MB"
-        echo "  Swap: ${swap_mb}MB"
-        echo "  Total Available: ${combined_mb}MB"
-        echo "  Required Total: ${required_mb}MB (4GB)"
+        if [ "$QUIET_MODE" != true ]; then
+            echo "💾 Memory Check:"
+            echo "  RAM: ${total_mb}MB"
+            echo "  Swap: ${swap_mb}MB"
+            echo "  Total Available: ${combined_mb}MB"
+            echo "  Required Total: ${required_mb}MB (4GB)"
+        fi
         
         # Add tolerance margin - 50MB difference is acceptable (same as prepare-vps.sh)
         local tolerance_mb=50
@@ -725,14 +735,11 @@ build_geth() {
         cd ../../../..
         echo "✅ Quantum-Geth built successfully: ./geth.bin (CGO_ENABLED=0)"
         
-        # Create Q Coin geth wrapper that prevents Ethereum connections
-        create_geth_wrapper
-        
         # Show file info if ls is available
         if command -v ls >/dev/null 2>&1; then
-            ls -lh ../../geth.bin ../../geth 2>/dev/null || echo "Binaries created: ../../geth.bin, ../../geth"
+            ls -lh ../../geth.bin 2>/dev/null || echo "Binary created: ../../geth.bin"
         else
-            echo "Binaries created: ../../geth.bin, ../../geth"
+            echo "Binary created: ../../geth.bin"
         fi
     else
         cd ../../../..
@@ -1152,6 +1159,76 @@ create_linux_miner_script() {
     echo "✅ Linux miner script created: ../../start-linux-miner.sh"
 }
 
+# Function to clean up after build to save disk space
+cleanup_after_build() {
+    echo "🧹 Performing post-build cleanup to save disk space..."
+    
+    # Clean Go build cache - keep only essential cache
+    if command -v go >/dev/null 2>&1; then
+        echo "🔧 Cleaning Go build cache..."
+        go clean -cache -testcache 2>/dev/null || true
+        # Keep module cache but clean downloads cache
+        go clean -modcache 2>/dev/null || true
+        echo "✅ Go build cache cleaned"
+    fi
+    
+    # Clean temporary build directory
+    if [ -n "$BUILD_TEMP_DIR" ] && [ -d "$BUILD_TEMP_DIR" ]; then
+        echo "🔧 Cleaning temporary build directory: $BUILD_TEMP_DIR"
+        rm -rf "$BUILD_TEMP_DIR" 2>/dev/null || true
+        echo "✅ Temporary build directory cleaned"
+    fi
+    
+    # Clean any build-temp directories in project
+    echo "🔧 Cleaning any remaining build temp directories..."
+    find ../.. -name "build-temp-*" -type d -exec rm -rf {} \; 2>/dev/null || true
+    
+    # Clean system temp files related to the build
+    echo "🔧 Cleaning system temp files..."
+    find /tmp -name "*qgeth*" -mtime +0 -delete 2>/dev/null || true
+    find /tmp -name "*quantum*" -mtime +0 -delete 2>/dev/null || true
+    find /tmp -name "*go-build*" -type d -mtime +0 -exec rm -rf {} \; 2>/dev/null || true
+    
+    # Clean old object files and build artifacts
+    echo "🔧 Cleaning build artifacts..."
+    find ../.. -name "*.o" -delete 2>/dev/null || true
+    find ../.. -name "*.a" -delete 2>/dev/null || true
+    find ../.. -name "*.so" -delete 2>/dev/null || true
+    
+    # Remove duplicate binaries if they exist (keep only the latest)
+    if [ -f "../../geth.bin" ] && [ -f "../../geth.bin.bak" ]; then
+        rm -f "../../geth.bin.bak" 2>/dev/null || true
+    fi
+    
+    if [ -f "../../quantum-miner" ] && [ -f "../../quantum-miner.bak" ]; then
+        rm -f "../../quantum-miner.bak" 2>/dev/null || true  
+    fi
+    
+    echo "✅ Post-build cleanup completed"
+    echo ""
+}
+
+# Function to show disk space saved
+show_disk_usage() {
+    echo "💾 Disk Space Summary:"
+    
+    # Show current directory size
+    if command -v du >/dev/null 2>&1; then
+        local project_size=$(du -sh ../.. 2>/dev/null | cut -f1 || echo "unknown")
+        echo "  Project directory: $project_size"
+    fi
+    
+    # Show available disk space
+    if command -v df >/dev/null 2>&1; then
+        local disk_usage=$(df / 2>/dev/null | awk 'NR==2 {print $5}' || echo "unknown")
+        local disk_available=$(df -h / 2>/dev/null | awk 'NR==2 {print $4}' || echo "unknown")
+        echo "  Disk usage: $disk_usage"
+        echo "  Available space: $disk_available"
+    fi
+    
+    echo ""
+}
+
 # Main build logic
 case $TARGET in
     "geth")
@@ -1181,7 +1258,6 @@ echo "✅ Build Complete!"
 echo ""
 echo "🚀 Binaries created in project root directory:"
 if [ "$TARGET" = "geth" ] || [ "$TARGET" = "both" ]; then
-    echo "  ../../geth                 - Q Coin Geth wrapper (prevents Ethereum connections)"
     echo "  ../../geth.bin             - Quantum-Geth binary"
 fi
 if [ "$TARGET" = "miner" ] || [ "$TARGET" = "both" ]; then
@@ -1203,10 +1279,10 @@ echo ""
 echo "💾 Manual Method:"
 if [ "$TARGET" = "geth" ] || [ "$TARGET" = "both" ]; then
     echo "  # Initialize blockchain:"
-    echo "  ../../geth --datadir \$HOME/.qcoin init ../../configs/genesis_quantum_testnet.json"
+    echo "  ../../geth.bin --datadir \$HOME/.qcoin init ../../configs/genesis_quantum_testnet.json"
     echo ""
     echo "  # Start node (testnet, external mining):"
-    echo "  ../../geth --datadir \$HOME/.qcoin --networkid 73235 --mine --miner.threads 0 \\"
+    echo "  ../../geth.bin --datadir \$HOME/.qcoin --networkid 73235 --mine --miner.threads 0 \\"
     echo "         --http --http.api eth,net,web3,personal,admin,miner \\"
     echo "         --miner.etherbase 0x742d35C6C4e6d8de6f10E7FF75DD98dd25b02C3A"
 fi
@@ -1217,4 +1293,8 @@ if [ "$TARGET" = "miner" ] || [ "$TARGET" = "both" ]; then
     echo "                  -address 0x742d35C6C4e6d8de6f10E7FF75DD98dd25b02C3A"
 fi
 echo ""
-echo "✅ All builds use CGO_ENABLED=0 for geth - quantum field compatibility guaranteed!" 
+echo "✅ All builds use CGO_ENABLED=0 for geth - quantum field compatibility guaranteed!"
+
+# Clean up after build
+cleanup_after_build
+show_disk_usage 
