@@ -108,10 +108,10 @@ sudo -u "$ACTUAL_USER" -H bash -c "
 "
 
 # Verify build
-if [ -f "$PROJECT_DIR/geth.bin" ] && [ -f "$PROJECT_DIR/geth" ]; then
+if [ -f "$PROJECT_DIR/geth.bin" ]; then
     log_success "Q Geth built successfully"
 else
-    log_error "Build failed - binaries not found"
+    log_error "Build failed - geth.bin not found"
     exit 1
 fi
 

@@ -735,14 +735,11 @@ build_geth() {
         cd ../../../..
         echo "✅ Quantum-Geth built successfully: ./geth.bin (CGO_ENABLED=0)"
         
-        # Create Q Coin geth wrapper that prevents Ethereum connections
-        create_geth_wrapper
-        
         # Show file info if ls is available
         if command -v ls >/dev/null 2>&1; then
-            ls -lh ../../geth.bin ../../geth 2>/dev/null || echo "Binaries created: ../../geth.bin, ../../geth"
+            ls -lh ../../geth.bin 2>/dev/null || echo "Binary created: ../../geth.bin"
         else
-            echo "Binaries created: ../../geth.bin, ../../geth"
+            echo "Binary created: ../../geth.bin"
         fi
     else
         cd ../../../..
@@ -1261,7 +1258,6 @@ echo "✅ Build Complete!"
 echo ""
 echo "🚀 Binaries created in project root directory:"
 if [ "$TARGET" = "geth" ] || [ "$TARGET" = "both" ]; then
-    echo "  ../../geth                 - Q Coin Geth wrapper (prevents Ethereum connections)"
     echo "  ../../geth.bin             - Quantum-Geth binary"
 fi
 if [ "$TARGET" = "miner" ] || [ "$TARGET" = "both" ]; then
@@ -1283,10 +1279,10 @@ echo ""
 echo "💾 Manual Method:"
 if [ "$TARGET" = "geth" ] || [ "$TARGET" = "both" ]; then
     echo "  # Initialize blockchain:"
-    echo "  ../../geth --datadir \$HOME/.qcoin init ../../configs/genesis_quantum_testnet.json"
+    echo "  ../../geth.bin --datadir \$HOME/.qcoin init ../../configs/genesis_quantum_testnet.json"
     echo ""
     echo "  # Start node (testnet, external mining):"
-    echo "  ../../geth --datadir \$HOME/.qcoin --networkid 73235 --mine --miner.threads 0 \\"
+    echo "  ../../geth.bin --datadir \$HOME/.qcoin --networkid 73235 --mine --miner.threads 0 \\"
     echo "         --http --http.api eth,net,web3,personal,admin,miner \\"
     echo "         --miner.etherbase 0x742d35C6C4e6d8de6f10E7FF75DD98dd25b02C3A"
 fi
