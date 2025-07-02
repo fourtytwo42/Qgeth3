@@ -29,6 +29,34 @@ services:
     networks:
       - qgeth-network
 
+  # Q Geth Node (Planck Network)
+  qgeth-planck:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: qgeth:latest
+    container_name: qgeth-planck
+    ports:
+      - "8551:8545"    # HTTP RPC
+      - "8552:8546"    # WebSocket
+      - "30307:30303"  # P2P TCP
+      - "30307:30303/udp"  # P2P UDP
+    volumes:
+      - qgeth_planck_data:/opt/qgeth/data
+      - ./configs:/opt/qgeth/configs:ro
+    environment:
+      - NETWORK=planck
+      - CHAIN_ID=73237
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8545"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - qgeth-network
+
   # Q Geth Node with Mining (Testnet)
   qgeth-miner:
     build:
@@ -123,6 +151,8 @@ services:
 
 volumes:
   qgeth_data:
+    driver: local
+  qgeth_planck_data:
     driver: local
   qgeth_miner_data:
     driver: local

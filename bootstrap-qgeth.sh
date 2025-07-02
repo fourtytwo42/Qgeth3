@@ -128,7 +128,7 @@ detect_system() {
         log_info "  Docker provides perfect cross-platform compatibility:"
         log_info "  1. Install Docker: sudo dnf install docker docker-compose"
         log_info "  2. Start Docker: sudo systemctl start docker"
-        log_info "  3. Run Q Geth: docker-compose up -d qgeth-testnet"
+        log_info "  3. Run Q Geth: docker-compose up -d qgeth-planck"
         log_info "  4. See: docs/deployment/docker-deployment.md"
         log_info ""
         log_info "📋 Manual Installation Guide:"
@@ -499,7 +499,7 @@ fi
 
 echo "Starting Q Geth..."
 cd "$HOME/qgeth/Qgeth3/scripts/linux"
-nohup ./start-geth.sh testnet > "$LOG_FILE" 2>&1 &
+nohup ./start-geth.sh planck > "$LOG_FILE" 2>&1 &
 echo $! > "$PID_FILE"
 echo "Q Geth started successfully!"
 echo "PID: $(cat $PID_FILE)"
@@ -785,7 +785,7 @@ main() {
         log_info "Q Geth was built successfully but service creation failed"
         log_info "You can still run Q Geth manually:"
         log_info "  cd $PROJECT_DIR/scripts/linux"
-        log_info "  ./start-geth.sh testnet"
+        log_info "  ./start-geth.sh planck"
         exit 1
     fi
     
@@ -848,7 +848,7 @@ main() {
     echo "  1. Check status: $INSTALL_DIR/status-qgeth.sh"
     echo "  2. Check logs: tail -f $INSTALL_DIR/qgeth.log"
     echo "  3. Restart: $INSTALL_DIR/restart-qgeth.sh"
-    echo "  4. Or run manually: cd $PROJECT_DIR/scripts/linux && ./start-geth.sh testnet"
+            echo "  4. Or run manually: cd $PROJECT_DIR/scripts/linux && ./start-geth.sh planck"
     echo ""
     echo -e "${GREEN}Q Geth is now running as a persistent background service! 🚀${NC}"
 }
