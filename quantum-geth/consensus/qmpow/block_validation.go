@@ -34,6 +34,7 @@ type BlockValidationPipeline struct {
 	snarkVerifier      *SNARKVerifier
 	cache              *VerificationCache
 	proofChainValidator *ProofChainValidator
+	quantumAuthenticityValidator *QuantumAuthenticityValidator
 	mu                 sync.RWMutex
 }
 
@@ -76,6 +77,12 @@ type ValidationResult struct {
 	AttestationValid bool          // Whether attestation is valid
 }
 
+// BlockValidationResult represents the result of quantum block validation
+type BlockValidationResult struct {
+	IsValid bool  // Whether the validation passed
+	Error   error // Any error that occurred during validation
+}
+
 // EmbeddedProofData represents proof data embedded in block headers
 type EmbeddedProofData struct {
 	Magic          uint32 // 0xDEADBEEF
@@ -112,155 +119,174 @@ func NewBlockValidationPipeline(chainIDHash common.Hash) *BlockValidationPipelin
 		snarkVerifier:      NewSNARKVerifier(),
 		cache:              NewVerificationCache(DefaultVerificationCacheConfig()),
 		proofChainValidator: NewProofChainValidator(),
+		quantumAuthenticityValidator: NewQuantumAuthenticityValidator(),
 	}
 }
 
 // ValidateQuantumBlock implements the complete v0.9 block validation pipeline
 // Steps according to specification:
-// 1. RLP-decode classical header + quantum blob
-// 2. Canonical-compile & GateHash check
-// 3. Nova proof verify (Tier-B)
-// 4. Dilithium signature verify
-// 5. PoW target test via ASERT-Q
-// 6. EVM execution & state transition
-func (bvp *BlockValidationPipeline) ValidateQuantumBlock(
-	chain consensus.ChainHeaderReader,
-	block *types.Block,
-	state *state.StateDB,
-	publicKey []byte,
-	signature []byte,
-) (*ValidationResult, error) {
-
-	start := time.Now()
-	bvp.stats.TotalValidations++
-
-	result := &ValidationResult{
-		Valid: false,
+// 1. Validate quantum computational authenticity (CRITICAL SECURITY)
+// 2. Extract and validate proof data from block header
+// 3. Verify the final Nova proof cryptographically
+// 4. Validate hierarchical proof chain structure
+// 5. Validate proof root consistency
+func (bvp *BlockValidationPipeline) ValidateQuantumBlockAuthenticity(header *types.Header) (bool, error) {
+	// Check cache first for performance optimization
+	blockHash := header.Hash()
+	if cachedResult, found := bvp.cache.GetBlockVerification(blockHash); found {
+		log.Debug("📋 Using cached block validation result", "hash", blockHash.Hex()[:10]+"...")
+		if cachedResult.Error != nil {
+			return false, cachedResult.Error
+		}
+		return cachedResult.Valid, nil
 	}
 
-	header := block.Header()
+	startTime := time.Now()
+	
+	log.Info("🔬 Starting comprehensive quantum block validation",
+		"block", header.Number.Uint64(),
+		"hash", blockHash.Hex()[:10]+"...")
 
-	log.Info("🔍 Starting quantum block validation pipeline",
-		"blockNumber", header.Number.Uint64(),
-		"blockHash", block.Hash().Hex(),
-		"parentHash", header.ParentHash.Hex())
-
-	// Step 1: RLP-decode classical header + quantum blob
-	step1Start := time.Now()
-	if err := bvp.validateRLPDecoding(block); err != nil {
-		bvp.stats.FailedValidations++
-		bvp.stats.RLPDecodeErrors++
-		result.FailureReason = fmt.Sprintf("RLP decode failed: %v", err)
-		result.FailureStep = "RLP_DECODE"
-		result.ValidationTime = time.Since(start)
-		return result, err
-	}
-	bvp.stats.RLPDecodeTime += time.Since(step1Start)
-
-	log.Debug("✅ Step 1: RLP decode successful")
-
-	// Step 2: Canonical-compile & GateHash check
-	step2Start := time.Now()
-	gateHashValid, err := bvp.validateCanonicalCompileAndGateHash(header)
+	// Step 1: Validate quantum computational authenticity (CRITICAL SECURITY)
+	authenticityValid, err := bvp.quantumAuthenticityValidator.ValidateQuantumAuthenticity(header)
 	if err != nil {
-		bvp.stats.FailedValidations++
-		bvp.stats.CanonicalCompileErrors++
-		result.FailureReason = fmt.Sprintf("Canonical compile failed: %v", err)
-		result.FailureStep = "CANONICAL_COMPILE"
-		result.ValidationTime = time.Since(start)
-		return result, err
+		validationError := fmt.Errorf("quantum authenticity validation failed: %v", err)
+		result := VerificationResult{
+			Valid:     false,
+			Timestamp: time.Now(),
+			Error:     validationError,
+		}
+		bvp.cache.StoreBlockVerification(blockHash, result, common.Hash{})
+		return false, validationError
 	}
-	result.GateHashMatch = gateHashValid
-	bvp.stats.CanonicalCompileTime += time.Since(step2Start)
+	if !authenticityValid {
+		validationError := fmt.Errorf("quantum computation authenticity validation failed")
+		result := VerificationResult{
+			Valid:     false,
+			Timestamp: time.Now(),
+			Error:     validationError,
+		}
+		bvp.cache.StoreBlockVerification(blockHash, result, common.Hash{})
+		return false, validationError
+	}
 
-	log.Debug("✅ Step 2: Canonical compile & GateHash check successful")
-
-	// Step 3: Nova proof verify (Tier-B)
-	step3Start := time.Now()
-	proofValid, err := bvp.validateNovaProof(header)
+	// Step 2: Extract and validate proof data from block header
+	proofData, err := bvp.extractProofDataFromHeader(header)
 	if err != nil {
-		bvp.stats.FailedValidations++
-		bvp.stats.NovaProofErrors++
-		result.FailureReason = fmt.Sprintf("Nova proof verification failed: %v", err)
-		result.FailureStep = "NOVA_PROOF"
-		result.ValidationTime = time.Since(start)
-		return result, err
+		validationError := fmt.Errorf("proof data extraction failed: %v", err)
+		result := VerificationResult{
+			Valid:     false,
+			Timestamp: time.Now(),
+			Error:     validationError,
+		}
+		bvp.cache.StoreBlockVerification(blockHash, result, common.Hash{})
+		return false, validationError
 	}
-	result.ProofRootValid = proofValid
-	bvp.stats.NovaProofTime += time.Since(step3Start)
 
-	log.Debug("✅ Step 3: Nova proof verification successful")
-
-	// Step 4: Dilithium signature verify
-	step4Start := time.Now()
-	attestValid, err := bvp.validateDilithiumSignature(header, publicKey, signature)
+	// Step 3: Verify the final Nova proof cryptographically  
+	proofValid, err := bvp.verifyFinalNovaProofCryptographic(proofData.FinalNovaProof)
 	if err != nil {
-		bvp.stats.FailedValidations++
-		bvp.stats.DilithiumErrors++
-		result.FailureReason = fmt.Sprintf("Dilithium signature verification failed: %v", err)
-		result.FailureStep = "DILITHIUM_SIGNATURE"
-		result.ValidationTime = time.Since(start)
-		return result, err
+		validationError := fmt.Errorf("Nova proof verification failed: %v", err)
+		result := VerificationResult{
+			Valid:     false,
+			Timestamp: time.Now(),
+			Error:     validationError,
+		}
+		bvp.cache.StoreBlockVerification(blockHash, result, common.Hash{})
+		return false, validationError
 	}
-	result.AttestationValid = attestValid
-	bvp.stats.DilithiumTime += time.Since(step4Start)
-
-	log.Debug("✅ Step 4: Dilithium signature verification successful")
-
-	// Step 5: PoW target test via ASERT-Q
-	step5Start := time.Now()
-	if err := bvp.validatePoWTarget(chain, header); err != nil {
-		bvp.stats.FailedValidations++
-		bvp.stats.PoWTargetErrors++
-		result.FailureReason = fmt.Sprintf("PoW target test failed: %v", err)
-		result.FailureStep = "POW_TARGET"
-		result.ValidationTime = time.Since(start)
-		return result, err
+	if !proofValid {
+		validationError := fmt.Errorf("Nova proof is cryptographically invalid")
+		result := VerificationResult{
+			Valid:     false,
+			Timestamp: time.Now(),
+			Error:     validationError,
+		}
+		bvp.cache.StoreBlockVerification(blockHash, result, common.Hash{})
+		return false, validationError
 	}
-	bvp.stats.PoWTargetTime += time.Since(step5Start)
 
-	log.Debug("✅ Step 5: PoW target test successful")
-
-	// Step 6: EVM execution & state transition
-	step6Start := time.Now()
-	if err := bvp.validateEVMExecution(chain, block, state); err != nil {
-		bvp.stats.FailedValidations++
-		bvp.stats.EVMExecutionErrors++
-		result.FailureReason = fmt.Sprintf("EVM execution failed: %v", err)
-		result.FailureStep = "EVM_EXECUTION"
-		result.ValidationTime = time.Since(start)
-		return result, err
+	// Step 4: Validate hierarchical proof chain structure
+	proofChainStructure, err := bvp.proofChainValidator.ExtractProofChainFromFinalProof(proofData, bvp.chainIDHash)
+	if err != nil {
+		validationError := fmt.Errorf("proof chain extraction failed: %v", err)
+		result := VerificationResult{
+			Valid:     false,
+			Timestamp: time.Now(),
+			Error:     validationError,
+		}
+		bvp.cache.StoreBlockVerification(blockHash, result, common.Hash{})
+		return false, validationError
 	}
-	bvp.stats.EVMExecutionTime += time.Since(step6Start)
+	
+	chainValid, err := bvp.proofChainValidator.ValidateProofChain(proofChainStructure)
+	if err != nil {
+		validationError := fmt.Errorf("proof chain validation failed: %v", err)
+		result := VerificationResult{
+			Valid:     false,
+			Timestamp: time.Now(),
+			Error:     validationError,
+		}
+		bvp.cache.StoreBlockVerification(blockHash, result, common.Hash{})
+		return false, validationError
+	}
+	if !chainValid {
+		validationError := fmt.Errorf("proof chain validation failed")
+		result := VerificationResult{
+			Valid:     false,
+			Timestamp: time.Now(),
+			Error:     validationError,
+		}
+		bvp.cache.StoreBlockVerification(blockHash, result, common.Hash{})
+		return false, validationError
+	}
 
-	log.Debug("✅ Step 6: EVM execution & state transition successful")
+	// Step 5: Validate proof root consistency
+	rootValid, err := bvp.validateProofRootConsistency(header)
+	if err != nil {
+		validationError := fmt.Errorf("proof root validation failed: %v", err)
+		result := VerificationResult{
+			Valid:     false,
+			Timestamp: time.Now(),
+			Error:     validationError,
+		}
+		bvp.cache.StoreBlockVerification(blockHash, result, common.Hash{})
+		return false, validationError
+	}
+	if !rootValid {
+		validationError := fmt.Errorf("proof root consistency validation failed")
+		result := VerificationResult{
+			Valid:     false,
+			Timestamp: time.Now(),
+			Error:     validationError,
+		}
+		bvp.cache.StoreBlockVerification(blockHash, result, common.Hash{})
+		return false, validationError
+	}
 
-	// All steps passed - validation successful
-	result.Valid = true
-	result.ValidationTime = time.Since(start)
+	// All validations passed - cache success result
+	validationTime := time.Since(startTime)
+	result := VerificationResult{
+		Valid:     true,
+		Timestamp: time.Now(),
+		Error:     nil,
+	}
+	
+	proofRoot := common.Hash{}
+	if header.ProofRoot != nil {
+		proofRoot = *header.ProofRoot
+	}
+	bvp.cache.StoreBlockVerification(blockHash, result, proofRoot)
 
-	// Compute quantum proof hash for verification
-	h := sha256.New()
-	h.Write(header.OutcomeRoot.Bytes())
-	h.Write(header.GateHash.Bytes())
-	h.Write(header.ProofRoot.Bytes())
-	result.QuantumProofHash = common.BytesToHash(h.Sum(nil))
+	log.Info("✅ Comprehensive quantum block validation successful",
+		"block", header.Number.Uint64(),
+		"validation_time", validationTime,
+		"authenticity_passed", authenticityValid,
+		"proof_valid", proofValid,
+		"chain_valid", chainValid,
+		"root_valid", rootValid)
 
-	// Update statistics
-	bvp.stats.SuccessfulValidations++
-	bvp.stats.AverageValidationTime = updateAverageTimeValidation(
-		bvp.stats.AverageValidationTime,
-		result.ValidationTime,
-		bvp.stats.SuccessfulValidations,
-	)
-	bvp.stats.LastValidationTime = time.Now()
-
-	log.Info("🎉 Quantum block validation completed successfully",
-		"blockNumber", header.Number.Uint64(),
-		"validationTime", result.ValidationTime,
-		"quantumProofHash", result.QuantumProofHash.Hex())
-
-	return result, nil
+	return true, nil
 }
 
 // validateRLPDecoding validates RLP decoding of classical header + quantum blob

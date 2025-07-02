@@ -161,6 +161,9 @@ type QMPoW struct {
 	// Centralized quantum RLP management to prevent encoding inconsistencies
 	rlpManager *QuantumRLPManager
 
+	// Block validation pipeline with comprehensive security validation
+	blockValidationPipeline *BlockValidationPipeline
+
 	// Testing support
 	fakeFailure uint64 // Block number to fail at (for testing)
 
@@ -186,20 +189,17 @@ const (
 
 // New creates a quantum proof of work consensus engine
 func New(config Config) *QMPoW {
-	if config.SolverTimeout == 0 {
-		config.SolverTimeout = 30 * time.Second
-	}
-
-	qmpow := &QMPoW{
+	q := &QMPoW{
 		config:     config,
-		threads:    -1, // Default to disabled - will be set by SetThreads() based on --miner.threads flag
+		threads:    0,
 		update:     make(chan struct{}),
 		rlpManager: NewQuantumRLPManager(),
+		blockValidationPipeline: NewBlockValidationPipeline(common.Hash{}), // Use zero hash for now
 	}
 
-	// Initialize remote mining support
-	qmpow.remote = &remoteSealer{
-		qmpow:         qmpow,
+	// Start remote mining interface
+	q.remote = &remoteSealer{
+		qmpow:         q,
 		works:         make(map[common.Hash]*types.Block),
 		rates:         make(map[common.Hash]hashrate),
 		fetchWorkCh:   make(chan *sealWork),
@@ -207,14 +207,12 @@ func New(config Config) *QMPoW {
 		submitRateCh:  make(chan *hashrate),
 		requestExit:   make(chan struct{}),
 		exitCh:        make(chan struct{}),
-		workReadyCh:   make(chan struct{}, 1),
+		workReadyCh:   make(chan struct{}, 1), // Buffered for non-blocking notifications
 		submittedWork: make(map[common.Hash]map[uint64]bool),
 	}
+	go q.remote.loop()
 
-	// Start remote sealer
-	go qmpow.remote.loop()
-
-	return qmpow
+	return q
 }
 
 // Author implements consensus.Engine, returning the header's coinbase as the
@@ -287,31 +285,29 @@ func (q *QMPoW) VerifyHeader(chain consensus.ChainHeaderReader, header *types.He
 	return q.verifyQuantumProofMain(header)
 }
 
-// verifyQuantumProofMain verifies quantum proof according to specification
+// verifyQuantumProofMain performs comprehensive quantum proof verification
 func (q *QMPoW) verifyQuantumProofMain(header *types.Header) error {
-	// Only use simplified verification for explicit test modes
-	if q.config.TestMode || q.config.PowMode == ModeFake {
-		log.Info("🧪 Using simplified verification (test mode)")
-		return q.verifyQuantumProofStructureMain(header)
-	}
-
-	// PRODUCTION QUANTUM VERIFICATION - Full implementation
-	log.Debug("🔍 Starting full quantum proof verification",
+	log.Debug("🔬 Starting comprehensive quantum proof verification with authenticity validation",
 		"blockNumber", header.Number.Uint64(),
-		"epoch", *header.Epoch,
 		"qbits", *header.QBits,
-		"puzzles", *header.LNet)
+		"tcount", *header.TCount,
+		"lnet", *header.LNet)
 
-	// Step 1: Validate quantum header structure
-	if err := ValidateQuantumHeader(header); err != nil {
-		return fmt.Errorf("quantum header validation failed: %v", err)
-	}
-
-	// Step 2: Verify quantum parameters match block height
+	// Step 1: Verify quantum parameters match expected values for block height
 	expectedQBits, expectedTCount, expectedLNet := CalculateQuantumParamsForHeight(header.Number.Uint64())
 	if *header.QBits != expectedQBits || *header.TCount != expectedTCount || *header.LNet != expectedLNet {
 		return fmt.Errorf("quantum parameters mismatch: got qbits=%d tcount=%d lnet=%d, expected qbits=%d tcount=%d lnet=%d",
 			*header.QBits, *header.TCount, *header.LNet, expectedQBits, expectedTCount, expectedLNet)
+	}
+
+	// Step 2: CRITICAL SECURITY - Use comprehensive validation pipeline with authenticity checks
+	// This validates that the quantum computation is genuine and not a classical simulation
+	blockValid, err := q.blockValidationPipeline.ValidateQuantumBlockAuthenticity(header)
+	if err != nil {
+		return fmt.Errorf("comprehensive quantum block validation failed: %v", err)
+	}
+	if !blockValid {
+		return fmt.Errorf("quantum block failed comprehensive validation")
 	}
 
 	// Step 3: Verify quantum proof meets difficulty target
@@ -368,34 +364,13 @@ func (q *QMPoW) verifyQuantumProofMain(header *types.Header) error {
 		return fmt.Errorf("invalid attestation mode: got %d, expected %d", *header.AttestMode, AttestModeDilithium)
 	}
 
-	log.Debug("✅ Full quantum proof verification passed",
+	log.Debug("✅ Comprehensive quantum proof verification with authenticity validation passed",
 		"blockNumber", header.Number.Uint64(),
 		"qnonce", *header.QNonce64,
 		"difficulty", FormatDifficulty(header.Difficulty),
 		"outcomeRoot", header.OutcomeRoot.Hex()[:10]+"...",
 		"gateHash", header.GateHash.Hex()[:10]+"...",
 		"proofRoot", header.ProofRoot.Hex()[:10]+"...")
-
-	return nil
-}
-
-// verifyQuantumProofStructureMain verifies structure according to quantum specification
-func (q *QMPoW) verifyQuantumProofStructureMain(header *types.Header) error {
-	// Verify required fields are present
-	if header.OutcomeRoot == nil {
-		return fmt.Errorf("missing OutcomeRoot")
-	}
-	if header.GateHash == nil {
-		return fmt.Errorf("missing GateHash")
-	}
-	if header.ProofRoot == nil {
-		return fmt.Errorf("missing ProofRoot")
-	}
-
-	log.Debug("✅ Quantum structure verification passed",
-		"blockNumber", header.Number.Uint64(),
-		"epoch", *header.Epoch,
-		"qbits", *header.QBits)
 
 	return nil
 }

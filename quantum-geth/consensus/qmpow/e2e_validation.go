@@ -165,7 +165,7 @@ func (e2e *E2EValidationSuite) validateSingleBlock(blockNumber uint64) error {
 	e2e.qmpow.initializeQuantumFields(header)
 
 	// Validate quantum proof structure
-	if err := e2e.qmpow.verifyQuantumProofStructureMain(header); err != nil {
+	if err := e2e.qmpow.verifyQuantumProofMain(header); err != nil {
 		return fmt.Errorf("quantum proof structure validation failed: %v", err)
 	}
 
