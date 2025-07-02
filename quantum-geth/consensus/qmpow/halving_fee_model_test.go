@@ -10,7 +10,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/params/types/ctypes"
 	"github.com/ethereum/go-ethereum/params/types/goethereum"
 )
@@ -271,8 +270,8 @@ func TestHalvingBlockDetection(t *testing.T) {
 }
 
 func TestHalvingStatsTracking(t *testing.T) {
-	chainConfig := &params.ChainConfig{}
-	model := NewHalvingFeeModel(chainConfig)
+	mockChain := &MockHalvingChainReader{}
+	model := NewHalvingFeeModel(mockChain)
 
 	// Process several blocks
 	for i := uint64(1); i <= 3; i++ {

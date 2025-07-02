@@ -4,6 +4,8 @@
 package qmpow
 
 import (
+	"encoding/binary"
+	"hash/crc32"
 	"math/big"
 	"testing"
 	"time"
@@ -313,7 +315,10 @@ func createTestQuantumHeader() *types.Header {
 	qnonce := uint64(0)
 	attestMode := uint8(0)
 
-	return &types.Header{
+	// Create a mock proof root for testing
+	proofRoot := common.HexToHash("0xDEADBEEFCAFEBABE1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF")
+
+	header := &types.Header{
 		Number:        big.NewInt(1),
 		Difficulty:    big.NewInt(1000),
 		Time:          uint64(time.Now().Unix()),
@@ -328,7 +333,59 @@ func createTestQuantumHeader() *types.Header {
 		AttestMode:    &attestMode,
 		ExtraNonce32:  make([]byte, 32),
 		BranchNibbles: make([]byte, 128),
+		ProofRoot:     &proofRoot, // Add mock proof root for cryptographic verification testing
 	}
+
+	// Create mock QBlob with embedded proof data for testing
+	header.MarshalQuantumBlob() // Marshal the quantum fields first (277 bytes)
+	
+	// Create mock Final Nova proof structure
+	// Format: proofSize(4) + publicInputsSize(4) + aggregatedProofs(4) + proofData + publicInputs
+	
+	proofSize := uint32(512)      // 512 bytes of proof data
+	publicInputsSize := uint32(64) // 64 bytes of public inputs
+	aggregatedProofs := uint32(128) // Must be 128 for Final Nova
+	
+	// Create mock proof data
+	mockProofData := make([]byte, proofSize)
+	for i := range mockProofData {
+		mockProofData[i] = byte((i + 1) % 256) // Fill with non-zero test data
+	}
+	
+	// Create mock public inputs
+	mockPublicInputs := make([]byte, publicInputsSize)
+	for i := range mockPublicInputs {
+		mockPublicInputs[i] = byte((i + 50) % 256) // Fill with non-zero test data
+	}
+	
+	// Build the Final Nova proof structure
+	finalNovaProofData := make([]byte, 0, 12+int(proofSize)+int(publicInputsSize))
+	
+	// Add Final Nova proof header
+	proofHeader := make([]byte, 12)
+	binary.LittleEndian.PutUint32(proofHeader[0:4], proofSize)
+	binary.LittleEndian.PutUint32(proofHeader[4:8], publicInputsSize)
+	binary.LittleEndian.PutUint32(proofHeader[8:12], aggregatedProofs)
+	
+	finalNovaProofData = append(finalNovaProofData, proofHeader...)
+	finalNovaProofData = append(finalNovaProofData, mockProofData...)
+	finalNovaProofData = append(finalNovaProofData, mockPublicInputs...)
+	
+	// Calculate checksum for the complete Final Nova proof
+	checksum := crc32.ChecksumIEEE(finalNovaProofData)
+	
+	// Create embedded proof data header (magic + version + size + checksum)
+	embeddedHeader := make([]byte, 16)
+	binary.LittleEndian.PutUint32(embeddedHeader[0:4], 0xDEADBEEF)                      // Magic
+	binary.LittleEndian.PutUint32(embeddedHeader[4:8], 1)                               // Version
+	binary.LittleEndian.PutUint32(embeddedHeader[8:12], uint32(len(finalNovaProofData))) // Total size
+	binary.LittleEndian.PutUint32(embeddedHeader[12:16], checksum)                      // Checksum
+	
+	// Append embedded proof data to QBlob
+	header.QBlob = append(header.QBlob, embeddedHeader...)
+	header.QBlob = append(header.QBlob, finalNovaProofData...)
+
+	return header
 }
 
 // MockChainReader is defined in asert_q_test.go

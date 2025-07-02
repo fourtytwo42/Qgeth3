@@ -4,9 +4,12 @@
 package qmpow
 
 import (
+	"bytes"
 	"crypto/sha256"
+	"encoding/binary"
 	"fmt"
 	"time"
+	"hash/crc32"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
@@ -66,6 +69,29 @@ type ValidationResult struct {
 	GateHashMatch    bool          // Whether gate hash matches
 	ProofRootValid   bool          // Whether proof root is valid
 	AttestationValid bool          // Whether attestation is valid
+}
+
+// EmbeddedProofData represents proof data embedded in block headers
+type EmbeddedProofData struct {
+	Magic          uint32 // 0xDEADBEEF
+	Version        uint32 // Proof format version
+	FinalNovaProof []byte // The final aggregated Nova proof
+	Checksum       uint32 // CRC32 checksum for integrity
+}
+
+// FinalNovaProof represents the final aggregated Nova proof
+type FinalNovaProof struct {
+	ProofData    []byte            // Raw proof bytes
+	PublicInputs []byte            // Public inputs for verification
+	ProofSize    uint32            // Size of the proof
+	AggregatedProofs int          // Number of aggregated CAPSS proofs (should be 128)
+}
+
+// FinalNovaVerifier handles Final Nova proof verification
+type FinalNovaVerifier struct {
+	name      string
+	available bool
+	snarkVerifier *SNARKVerifier
 }
 
 // NewBlockValidationPipeline creates a new block validation pipeline
@@ -315,7 +341,7 @@ func (bvp *BlockValidationPipeline) validateCanonicalCompileAndGateHash(header *
 	return true, nil
 }
 
-// validateNovaProof validates Nova-Lite proof verification (Tier-B) with FULL CRYPTOGRAPHIC VERIFICATION
+// validateNovaProof performs full cryptographic verification of Nova proof without re-execution
 func (bvp *BlockValidationPipeline) validateNovaProof(header *types.Header) (bool, error) {
 	if header.ProofRoot == nil {
 		return false, fmt.Errorf("missing ProofRoot field")
@@ -333,363 +359,165 @@ func (bvp *BlockValidationPipeline) validateNovaProof(header *types.Header) (boo
 		return false, fmt.Errorf("proof root is zero hash")
 	}
 
-	// FULL CRYPTOGRAPHIC VERIFICATION: Reconstruct and verify the entire proof chain
-	log.Debug("🔐 Starting FULL Nova proof verification",
+	// CRYPTOGRAPHIC VERIFICATION: Extract and verify embedded proofs without re-execution
+	log.Debug("🔐 Starting CRYPTOGRAPHIC Nova proof verification (NO RE-EXECUTION)",
 		"proofRoot", header.ProofRoot.Hex(),
 		"blockNumber", header.Number.Uint64())
 
-	// Step 1: Reconstruct the 128 CAPSS proofs from quantum execution
-	capssProofs, err := bvp.reconstructCAPSSProofs(header)
+	// Step 1: Extract embedded proof data from block header
+	proofData, err := bvp.extractProofDataFromHeader(header)
 	if err != nil {
-		return false, fmt.Errorf("CAPSS proof reconstruction failed: %v", err)
+		return false, fmt.Errorf("proof data extraction failed: %v", err)
 	}
 
-	// Step 2: Verify each CAPSS proof individually
-	for i, capssProof := range capssProofs {
-		if !bvp.verifyCAPSSProof(capssProof) {
-			return false, fmt.Errorf("CAPSS proof %d verification failed", i)
-		}
-	}
-
-	// Step 3: Aggregate CAPSS proofs into 3 Nova-Lite proofs
-	proofRoot, err := bvp.novaAggregator.AggregateCAPSSProofs(capssProofs)
+	// Step 2: Verify the Final Nova proof cryptographically 
+	valid, err := bvp.verifyFinalNovaProofCryptographic(proofData)
 	if err != nil {
-		return false, fmt.Errorf("Nova-Lite aggregation failed: %v", err)
+		return false, fmt.Errorf("Final Nova proof verification failed: %v", err)
 	}
 
-	// Step 4: Verify each Nova-Lite proof cryptographically
-	for i, novaProof := range proofRoot.NovaProofs {
-		if !bvp.verifyNovaLiteProof(novaProof) {
-			return false, fmt.Errorf("Nova-Lite proof %d verification failed", i)
-		}
+	if !valid {
+		return false, fmt.Errorf("Final Nova proof cryptographic verification failed")
 	}
 
-	// Step 5: Verify the computed proof root matches the header
-	computedRoot := common.BytesToHash(proofRoot.Root)
-	if computedRoot != *header.ProofRoot {
-		return false, fmt.Errorf("proof root mismatch: computed %s, header %s",
-			computedRoot.Hex(), header.ProofRoot.Hex())
+	// Step 3: Validate proof root consistency
+	if err := bvp.validateProofRootConsistency(header.ProofRoot, proofData); err != nil {
+		return false, fmt.Errorf("proof root consistency validation failed: %v", err)
 	}
 
-	// Step 6: Validate proof root structure
-	if err := ValidateProofRoot(proofRoot); err != nil {
-		return false, fmt.Errorf("proof root validation failed: %v", err)
-	}
-
-	log.Debug("✅ FULL Nova proof verification successful",
+	log.Debug("✅ CRYPTOGRAPHIC Nova proof verification successful (NO RE-EXECUTION)",
 		"proofRoot", header.ProofRoot.Hex(),
-		"novaProofs", len(proofRoot.NovaProofs),
-		"totalSize", proofRoot.TotalSize)
+		"proofSize", len(proofData.FinalNovaProof))
 
 	return true, nil
 }
 
-// reconstructCAPSSProofs reconstructs the 128 CAPSS proofs from the quantum execution
-func (bvp *BlockValidationPipeline) reconstructCAPSSProofs(header *types.Header) ([]*CAPSSProof, error) {
-	// Create mining input for puzzle reconstruction
-	miningInput := &MiningInput{
-		ParentHash:   header.ParentHash,
-		TxRoot:       header.TxHash,
-		ExtraNonce32: header.ExtraNonce32,
-		QNonce64:     *header.QNonce64,
-		BlockHeight:  header.Number.Uint64(),
-		QBits:        *header.QBits,
-		TCount:       *header.TCount,
-		LNet:         128, // Always 128 chained puzzles
+// extractProofDataFromHeader extracts embedded proof data from block header quantum fields
+func (bvp *BlockValidationPipeline) extractProofDataFromHeader(header *types.Header) (*EmbeddedProofData, error) {
+	// Parse embedded proof data from QBlob
+	if len(header.QBlob) == 0 {
+		return nil, fmt.Errorf("missing quantum blob data")
 	}
 
-	// Execute the puzzle chain to get quantum execution traces
-	result, err := bvp.puzzleOrchestrator.ExecutePuzzleChain(miningInput)
+	// Extract proof data from the end of QBlob (after standard quantum fields)
+	// Standard quantum fields take 277 bytes, proof data comes after
+	standardFieldsSize := 277
+	if len(header.QBlob) <= standardFieldsSize {
+		return nil, fmt.Errorf("QBlob too small for embedded proof data")
+	}
+
+	proofDataBytes := header.QBlob[standardFieldsSize:]
+	
+	// Parse embedded proof data format
+	proofData, err := bvp.parseEmbeddedProofData(proofDataBytes)
 	if err != nil {
-		return nil, fmt.Errorf("puzzle chain execution failed: %v", err)
+		return nil, fmt.Errorf("failed to parse embedded proof data: %v", err)
 	}
 
-	// Verify we have exactly 128 puzzle results
-	if len(result.Results) != 128 {
-		return nil, fmt.Errorf("expected 128 quantum puzzle results, got %d", len(result.Results))
-	}
-
-	// Generate CAPSS proofs from each puzzle result
-	capssProofs := make([]*CAPSSProof, 128)
-	witness := NewMahadevWitness()
-	prover := NewCAPSSProver()
-
-	for i, puzzleResult := range result.Results {
-		// Generate Mahadev trace from puzzle result
-		trace, err := witness.GenerateTrace(
-			uint32(puzzleResult.PuzzleIndex+1000), // Unique circuit ID
-			puzzleResult.Seed,
-			puzzleResult.QASM,
-			puzzleResult.Outcome,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("Mahadev trace generation failed for puzzle %d: %v", i, err)
-		}
-
-		// Generate CAPSS proof from trace
-		proof, err := prover.GenerateProof(trace)
-		if err != nil {
-			return nil, fmt.Errorf("CAPSS proof generation failed for puzzle %d: %v", i, err)
-		}
-		capssProofs[i] = proof
-	}
-
-	log.Debug("🧩 Reconstructed CAPSS proofs",
-		"count", len(capssProofs),
-		"totalSize", bvp.calculateCAPSSProofsSize(capssProofs))
-
-	return capssProofs, nil
+	return proofData, nil
 }
 
-// verifyCAPSSProof performs full cryptographic verification of a CAPSS proof
-func (bvp *BlockValidationPipeline) verifyCAPSSProof(proof *CAPSSProof) bool {
-	// Verify proof structure
-	if len(proof.Proof) != 2200 {
-		log.Warn("Invalid CAPSS proof size", "expected", 2200, "actual", len(proof.Proof))
-		return false
+// parseEmbeddedProofData parses the embedded proof data format
+func (bvp *BlockValidationPipeline) parseEmbeddedProofData(data []byte) (*EmbeddedProofData, error) {
+	if len(data) < 16 {
+		return nil, fmt.Errorf("proof data too small: %d bytes", len(data))
 	}
 
-	if len(proof.ProofHash) != 32 {
-		log.Warn("Invalid CAPSS proof hash size", "expected", 32, "actual", len(proof.ProofHash))
-		return false
+	buf := bytes.NewReader(data)
+	
+	// Read proof data header
+	var magic uint32
+	var version uint32
+	var proofSize uint32
+	var checksum uint32
+	
+	if err := binary.Read(buf, binary.LittleEndian, &magic); err != nil {
+		return nil, fmt.Errorf("failed to read magic: %v", err)
 	}
-
-	// Verify proof hash integrity
-	computedHash := bvp.sha256Hash(string(proof.Proof))
-	expectedHash := fmt.Sprintf("%x", proof.ProofHash)
-	if computedHash != expectedHash {
-		log.Warn("CAPSS proof hash mismatch",
-			"computed", computedHash[:16],
-			"expected", expectedHash[:16])
-		return false
+	
+	if magic != 0xDEADBEEF {
+		return nil, fmt.Errorf("invalid proof data magic: 0x%x", magic)
 	}
+	
+	if err := binary.Read(buf, binary.LittleEndian, &version); err != nil {
+		return nil, fmt.Errorf("failed to read version: %v", err)
+	}
+	
+	if err := binary.Read(buf, binary.LittleEndian, &proofSize); err != nil {
+		return nil, fmt.Errorf("failed to read proof size: %v", err)
+	}
+	
+	if err := binary.Read(buf, binary.LittleEndian, &checksum); err != nil {
+		return nil, fmt.Errorf("failed to read checksum: %v", err)
+	}
+	
+	// Validate proof size
+	if proofSize > 6*1024 { // Max 6KB per specification
+		return nil, fmt.Errorf("proof size too large: %d bytes", proofSize)
+	}
+	
+	remainingBytes := len(data) - 16 // 16 bytes for header
+	if remainingBytes < int(proofSize) {
+		return nil, fmt.Errorf("insufficient data for proof: need %d, have %d", proofSize, remainingBytes)
+	}
+	
+	// Read the actual proof data
+	finalNovaProof := make([]byte, proofSize)
+	if _, err := buf.Read(finalNovaProof); err != nil {
+		return nil, fmt.Errorf("failed to read proof data: %v", err)
+	}
+	
+	// Verify checksum
+	computedChecksum := crc32.ChecksumIEEE(finalNovaProof)
+	if checksum != computedChecksum {
+		return nil, fmt.Errorf("proof checksum mismatch: expected 0x%x, got 0x%x", checksum, computedChecksum)
+	}
+	
+	return &EmbeddedProofData{
+		Magic:          magic,
+		Version:        version,
+		FinalNovaProof: finalNovaProof,
+		Checksum:       checksum,
+	}, nil
+}
 
-	// CRITICAL: Verify the CAPSS proof cryptographically
-	// This validates the actual zero-knowledge proof that the quantum computation was performed correctly
-	verifier := bvp.newCAPSSVerifier()
-	valid, err := verifier.VerifyProof(proof)
+// verifyFinalNovaProofCryptographic performs cryptographic verification of the Final Nova proof
+func (bvp *BlockValidationPipeline) verifyFinalNovaProofCryptographic(proofData *EmbeddedProofData) (bool, error) {
+	// Parse the Final Nova proof
+	finalNovaProof, err := bvp.parseFinalNovaProof(proofData.FinalNovaProof)
 	if err != nil {
-		log.Warn("CAPSS proof verification error", "error", err)
-		return false
+		return false, fmt.Errorf("failed to parse Final Nova proof: %v", err)
 	}
-
-	if !valid {
-		log.Warn("CAPSS proof cryptographic verification failed", "traceID", proof.TraceID)
-		return false
+	
+	// Get the Nova verifier
+	verifier := bvp.newFinalNovaVerifier()
+	if !verifier.IsAvailable() {
+		return false, fmt.Errorf("Final Nova verifier not available")
 	}
-
-	return true
-}
-
-// verifyNovaLiteProof performs full cryptographic verification of a Nova-Lite proof
-func (bvp *BlockValidationPipeline) verifyNovaLiteProof(proof *NovaLiteProof) bool {
-	// Verify proof structure
-	if proof.Size > 6*1024 {
-		log.Warn("Nova-Lite proof exceeds size limit", "size", proof.Size, "limit", 6*1024)
-		return false
-	}
-
-	if proof.CAPSSCount != 16 {
-		log.Warn("Invalid CAPSS count in Nova-Lite proof", "expected", 16, "actual", proof.CAPSSCount)
-		return false
-	}
-
-	if proof.Tier != 2 {
-		log.Warn("Invalid Nova-Lite proof tier", "expected", 2, "actual", proof.Tier)
-		return false
-	}
-
-	// Verify proof hash integrity
-	computedHash := bvp.sha256Hash(string(proof.ProofData))
-	expectedHash := fmt.Sprintf("%x", proof.ProofHash)
-	if computedHash != expectedHash {
-		log.Warn("Nova-Lite proof hash mismatch",
-			"computed", computedHash[:16],
-			"expected", expectedHash[:16])
-		return false
-	}
-
-	// CRITICAL: Verify the Nova-Lite recursive proof cryptographically
-	// This validates that the proof correctly aggregates 16 CAPSS proofs
-	verifier := bvp.newNovaLiteVerifier()
-	valid, err := verifier.VerifyRecursiveProof(proof)
+	
+	// Perform cryptographic verification
+	valid, err := verifier.VerifyFinalProof(finalNovaProof)
 	if err != nil {
-		log.Warn("Nova-Lite proof verification error", "error", err, "proofID", proof.ProofID)
-		return false
+		return false, fmt.Errorf("Final Nova verification error: %v", err)
 	}
-
-	if !valid {
-		log.Warn("Nova-Lite proof cryptographic verification failed", "proofID", proof.ProofID)
-		return false
-	}
-
-	return true
-}
-
-// calculateCAPSSProofsSize calculates total size of CAPSS proofs
-func (bvp *BlockValidationPipeline) calculateCAPSSProofsSize(proofs []*CAPSSProof) int {
-	totalSize := 0
-	for _, proof := range proofs {
-		totalSize += len(proof.Proof)
-	}
-	return totalSize
-}
-
-// sha256Hash computes SHA256 hash of input string
-func (bvp *BlockValidationPipeline) sha256Hash(input string) string {
-	hasher := sha256.New()
-	hasher.Write([]byte(input))
-	return fmt.Sprintf("%x", hasher.Sum(nil))
-}
-
-// newCAPSSVerifier creates a new CAPSS proof verifier with SNARK cryptography
-func (bvp *BlockValidationPipeline) newCAPSSVerifier() *CAPSSVerifier {
-	snarkVerifier := NewSNARKVerifier()
-	return &CAPSSVerifier{
-		name:         "CAPSSVerifier_v1.0_SNARK",
-		available:    snarkVerifier.IsAvailable(),
-		snarkVerifier: snarkVerifier,
-	}
-}
-
-// newNovaLiteVerifier creates a new Nova-Lite proof verifier
-func (bvp *BlockValidationPipeline) newNovaLiteVerifier() *NovaLiteVerifier {
-	return &NovaLiteVerifier{
-		name:      "NovaLiteVerifier_v1.0",
-		available: true,
-	}
-}
-
-// CAPSSVerifier handles CAPSS proof verification with cryptographic SNARK verification
-type CAPSSVerifier struct {
-	name         string
-	available    bool
-	snarkVerifier *SNARKVerifier // Real SNARK verifier instance
-}
-
-// VerifyProof performs full cryptographic verification of a CAPSS proof
-func (cv *CAPSSVerifier) VerifyProof(proof *CAPSSProof) (bool, error) {
-	if !cv.available {
-		return false, fmt.Errorf("CAPSS verifier not available")
-	}
-
-	log.Debug("🔐 Performing CAPSS proof verification with SNARK cryptography",
-		"traceID", proof.TraceID,
-		"proofSize", len(proof.Proof),
-		"publicInputsSize", len(proof.PublicInputs))
-
-	// Basic structural validation first
-	if len(proof.Proof) < 256 { // Minimum SNARK proof size
-		return false, fmt.Errorf("invalid CAPSS proof size: %d (minimum 256 bytes for SNARK)", len(proof.Proof))
-	}
-
-	// Check proof is not all zeros (trivial/fake proof)
-	allZeros := true
-	for _, b := range proof.Proof {
-		if b != 0 {
-			allZeros = false
-			break
-		}
-	}
-	if allZeros {
-		return false, fmt.Errorf("CAPSS proof is all zeros (fake proof)")
-	}
-
-	// Verify public inputs are present
-	if len(proof.PublicInputs) == 0 {
-		return false, fmt.Errorf("missing CAPSS public inputs")
-	}
-
-	// CRITICAL: Perform cryptographic SNARK verification using gnark-crypto
-	if cv.snarkVerifier == nil {
-		return false, fmt.Errorf("SNARK verifier not initialized")
-	}
-
-	valid, err := cv.snarkVerifier.VerifyCAPSSProof(proof)
-	if err != nil {
-		log.Warn("CAPSS SNARK verification failed", "error", err, "traceID", proof.TraceID)
-		return false, fmt.Errorf("SNARK verification error: %v", err)
-	}
-
-	if valid {
-		log.Debug("✅ CAPSS proof cryptographically verified",
-			"traceID", proof.TraceID,
-			"verifier", cv.snarkVerifier.GetName())
-	} else {
-		log.Warn("❌ CAPSS proof verification failed",
-			"traceID", proof.TraceID,
-			"verifier", cv.snarkVerifier.GetName())
-	}
-
+	
 	return valid, nil
 }
 
-// NovaLiteVerifier handles Nova-Lite recursive proof verification
-type NovaLiteVerifier struct {
-	name      string
-	available bool
-}
-
-// VerifyRecursiveProof performs full cryptographic verification of a Nova-Lite recursive proof
-func (nlv *NovaLiteVerifier) VerifyRecursiveProof(proof *NovaLiteProof) (bool, error) {
-	if !nlv.available {
-		return false, fmt.Errorf("Nova-Lite verifier not available")
+// validateProofRootConsistency validates that the proof root matches the embedded proof
+func (bvp *BlockValidationPipeline) validateProofRootConsistency(proofRoot *common.Hash, proofData *EmbeddedProofData) error {
+	// Calculate expected proof root from embedded proof data
+	hasher := sha256.New()
+	hasher.Write(proofData.FinalNovaProof)
+	expectedRoot := hasher.Sum(nil)
+	
+	expectedHash := common.BytesToHash(expectedRoot)
+	if *proofRoot != expectedHash {
+		return fmt.Errorf("proof root mismatch: expected %s, got %s", 
+			expectedHash.Hex(), proofRoot.Hex())
 	}
-
-	// CRITICAL CRYPTOGRAPHIC VERIFICATION:
-	// In a full implementation, this would:
-	// 1. Parse the Nova-Lite proof structure (≤ 6 kB recursive proof)
-	// 2. Extract the public inputs (Merkle root of 16 CAPSS proofs)
-	// 3. Verify the Nova-Lite recursive proof using the verification key
-	// 4. Validate that the proof correctly aggregates 16 CAPSS proofs
-	// 5. Check the compression ratio and proof size constraints
-
-	log.Debug("🔐 Performing Nova-Lite proof verification",
-		"proofID", proof.ProofID,
-		"batchIndex", proof.BatchIndex,
-		"proofSize", proof.Size,
-		"capssCount", proof.CAPSSCount)
-
-	// Verify proof structure
-	if proof.Size == 0 || proof.Size > 6*1024 {
-		return false, fmt.Errorf("invalid Nova-Lite proof size: %d", proof.Size)
-	}
-
-	if proof.CAPSSCount != 16 {
-		return false, fmt.Errorf("invalid CAPSS count: expected 16, got %d", proof.CAPSSCount)
-	}
-
-	// Check proof is not all zeros (trivial/fake proof)
-	allZeros := true
-	for _, b := range proof.ProofData {
-		if b != 0 {
-			allZeros = false
-			break
-		}
-	}
-	if allZeros {
-		return false, fmt.Errorf("Nova-Lite proof is all zeros (fake proof)")
-	}
-
-	// Verify public inputs are present
-	if len(proof.PublicInputs) == 0 {
-		return false, fmt.Errorf("missing Nova-Lite public inputs")
-	}
-
-	// For now, we perform structural validation
-	// TODO: Implement full Nova recursive proof verification
-	// This would involve:
-	// - Parsing the proof as a Nova recursive proof
-	// - Loading the verification key for the Nova circuit
-	// - Calling the Nova verifier with proof + public inputs
-	// - Validating the recursive aggregation of CAPSS proofs
-	// - Returning the verification result
-
-	log.Debug("✅ Nova-Lite proof verification completed",
-		"proofID", proof.ProofID,
-		"valid", true)
-
-	return true, nil
+	
+	return nil
 }
 
 // validateDilithiumSignature validates Dilithium-2 self-attestation
@@ -819,4 +647,129 @@ func updateAverageTimeValidation(currentAvg time.Duration, newTime time.Duration
 	// Calculate weighted average
 	totalNanos := int64(currentAvg)*int64(count-1) + int64(newTime)
 	return time.Duration(totalNanos / int64(count))
+}
+
+// parseFinalNovaProof parses the Final Nova proof from bytes
+func (bvp *BlockValidationPipeline) parseFinalNovaProof(data []byte) (*FinalNovaProof, error) {
+	if len(data) < 12 { // Minimum: proofSize(4) + publicInputsSize(4) + aggregatedProofs(4)
+		return nil, fmt.Errorf("Final Nova proof data too small: %d bytes", len(data))
+	}
+	
+	buf := bytes.NewReader(data)
+	
+	var proofSize uint32
+	var publicInputsSize uint32
+	var aggregatedProofs uint32
+	
+	if err := binary.Read(buf, binary.LittleEndian, &proofSize); err != nil {
+		return nil, fmt.Errorf("failed to read proof size: %v", err)
+	}
+	
+	if err := binary.Read(buf, binary.LittleEndian, &publicInputsSize); err != nil {
+		return nil, fmt.Errorf("failed to read public inputs size: %v", err)
+	}
+	
+	if err := binary.Read(buf, binary.LittleEndian, &aggregatedProofs); err != nil {
+		return nil, fmt.Errorf("failed to read aggregated proofs count: %v", err)
+	}
+	
+	// Validate aggregated proofs count (should be 128 CAPSS proofs)
+	if aggregatedProofs != 128 {
+		return nil, fmt.Errorf("invalid aggregated proofs count: expected 128, got %d", aggregatedProofs)
+	}
+	
+	// Read proof data
+	proofData := make([]byte, proofSize)
+	if _, err := buf.Read(proofData); err != nil {
+		return nil, fmt.Errorf("failed to read proof data: %v", err)
+	}
+	
+	// Read public inputs
+	publicInputs := make([]byte, publicInputsSize)
+	if _, err := buf.Read(publicInputs); err != nil {
+		return nil, fmt.Errorf("failed to read public inputs: %v", err)
+	}
+	
+	return &FinalNovaProof{
+		ProofData:        proofData,
+		PublicInputs:     publicInputs,
+		ProofSize:        proofSize,
+		AggregatedProofs: int(aggregatedProofs),
+	}, nil
+}
+
+// newFinalNovaVerifier creates a new Final Nova proof verifier
+func (bvp *BlockValidationPipeline) newFinalNovaVerifier() *FinalNovaVerifier {
+	snarkVerifier := NewSNARKVerifier()
+	return &FinalNovaVerifier{
+		name:          "FinalNovaVerifier_v1.0",
+		available:     snarkVerifier.IsAvailable(),
+		snarkVerifier: snarkVerifier,
+	}
+}
+
+// IsAvailable checks if the Final Nova verifier is available
+func (fnv *FinalNovaVerifier) IsAvailable() bool {
+	return fnv.available
+}
+
+// VerifyFinalProof performs cryptographic verification of a Final Nova proof
+func (fnv *FinalNovaVerifier) VerifyFinalProof(proof *FinalNovaProof) (bool, error) {
+	if !fnv.available {
+		return false, fmt.Errorf("Final Nova verifier not available")
+	}
+	
+	log.Debug("🔐 Performing Final Nova proof verification",
+		"proofSize", proof.ProofSize,
+		"publicInputsSize", len(proof.PublicInputs),
+		"aggregatedProofs", proof.AggregatedProofs)
+	
+	// Validate proof structure
+	if proof.ProofSize == 0 || proof.ProofSize > 6*1024 {
+		return false, fmt.Errorf("invalid Final Nova proof size: %d", proof.ProofSize)
+	}
+	
+	if proof.AggregatedProofs != 128 {
+		return false, fmt.Errorf("invalid aggregated proofs count: expected 128, got %d", proof.AggregatedProofs)
+	}
+	
+	// Check proof is not all zeros
+	allZeros := true
+	for _, b := range proof.ProofData {
+		if b != 0 {
+			allZeros = false
+			break
+		}
+	}
+	if allZeros {
+		return false, fmt.Errorf("Final Nova proof is all zeros (fake proof)")
+	}
+	
+	// Verify public inputs are present
+	if len(proof.PublicInputs) == 0 {
+		return false, fmt.Errorf("missing Final Nova public inputs")
+	}
+	
+	// CRITICAL: Perform cryptographic SNARK verification
+	if fnv.snarkVerifier == nil {
+		return false, fmt.Errorf("SNARK verifier not initialized")
+	}
+	
+	// Use specialized Final Nova verification
+	valid, err := fnv.snarkVerifier.VerifyFinalNovaProof(proof)
+	if err != nil {
+		return false, fmt.Errorf("Final Nova SNARK verification error: %v", err)
+	}
+	
+	if valid {
+		log.Debug("✅ Final Nova proof cryptographically verified",
+			"aggregatedProofs", proof.AggregatedProofs,
+			"verifier", fnv.snarkVerifier.GetName())
+	} else {
+		log.Warn("❌ Final Nova proof verification failed",
+			"aggregatedProofs", proof.AggregatedProofs,
+			"verifier", fnv.snarkVerifier.GetName())
+	}
+	
+	return valid, nil
 }
