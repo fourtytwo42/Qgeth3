@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
+	"sync"
 	"time"
 	"hash/crc32"
 
@@ -30,6 +31,9 @@ type BlockValidationPipeline struct {
 	canonicalCompiler  *CanonicalCompiler
 	asertCalculator    *ASERTQDifficulty
 	stats              ValidationStats
+	snarkVerifier      *SNARKVerifier
+	cache              *VerificationCache
+	mu                 sync.RWMutex
 }
 
 // ValidationStats tracks block validation statistics
@@ -94,7 +98,7 @@ type FinalNovaVerifier struct {
 	snarkVerifier *SNARKVerifier
 }
 
-// NewBlockValidationPipeline creates a new block validation pipeline
+// NewBlockValidationPipeline creates a new block validation pipeline with caching
 func NewBlockValidationPipeline(chainIDHash common.Hash) *BlockValidationPipeline {
 	return &BlockValidationPipeline{
 		chainIDHash:        chainIDHash,
@@ -104,6 +108,8 @@ func NewBlockValidationPipeline(chainIDHash common.Hash) *BlockValidationPipelin
 		canonicalCompiler:  NewCanonicalCompiler(),
 		asertCalculator:    NewASERTQDifficulty(),
 		stats:              ValidationStats{},
+		snarkVerifier:      NewSNARKVerifier(),
+		cache:              NewVerificationCache(DefaultVerificationCacheConfig()),
 	}
 }
 
@@ -341,150 +347,178 @@ func (bvp *BlockValidationPipeline) validateCanonicalCompileAndGateHash(header *
 	return true, nil
 }
 
-// validateNovaProof performs full cryptographic verification of Nova proof without re-execution
+// validateNovaProof performs full cryptographic verification of Nova proof with caching
 func (bvp *BlockValidationPipeline) validateNovaProof(header *types.Header) (bool, error) {
 	if header.ProofRoot == nil {
 		return false, fmt.Errorf("missing ProofRoot field")
 	}
 
+	// Calculate proof hash for cache lookup
+	proofHash := *header.ProofRoot
+	
+	// Check cache first for performance optimization
+	if cachedResult, found := bvp.cache.GetProofVerification(proofHash); found {
+		if cachedResult.Error != nil {
+			return false, cachedResult.Error
+		}
+		return cachedResult.Valid, nil
+	}
+
 	// Basic structure validation
 	proofRootBytes := header.ProofRoot.Bytes()
 	if len(proofRootBytes) != 32 {
-		return false, fmt.Errorf("invalid proof root size: got %d, expected 32", len(proofRootBytes))
+		result := VerificationResult{
+			Valid:     false,
+			Timestamp: time.Now(),
+			Error:     fmt.Errorf("invalid proof root size: got %d, expected 32", len(proofRootBytes)),
+		}
+		bvp.cache.StoreProofVerification(proofHash, result, "ProofRoot", common.Hash{})
+		return false, result.Error
 	}
 
 	// Check that proof root is not zero (indicates missing proof)
 	zeroHash := common.Hash{}
 	if *header.ProofRoot == zeroHash {
-		return false, fmt.Errorf("proof root is zero hash")
+		result := VerificationResult{
+			Valid:     false,
+			Timestamp: time.Now(),
+			Error:     fmt.Errorf("proof root is zero - missing proof"),
+		}
+		bvp.cache.StoreProofVerification(proofHash, result, "ProofRoot", common.Hash{})
+		return false, result.Error
 	}
 
-	// CRYPTOGRAPHIC VERIFICATION: Extract and verify embedded proofs without re-execution
-	log.Debug("🔐 Starting CRYPTOGRAPHIC Nova proof verification (NO RE-EXECUTION)",
-		"proofRoot", header.ProofRoot.Hex(),
-		"blockNumber", header.Number.Uint64())
-
-	// Step 1: Extract embedded proof data from block header
+	// Extract proof data from block header
 	proofData, err := bvp.extractProofDataFromHeader(header)
 	if err != nil {
-		return false, fmt.Errorf("proof data extraction failed: %v", err)
+		result := VerificationResult{
+			Valid:     false,
+			Timestamp: time.Now(),
+			Error:     fmt.Errorf("proof extraction failed: %v", err),
+		}
+		bvp.cache.StoreProofVerification(proofHash, result, "Extraction", common.Hash{})
+		return false, result.Error
 	}
 
-	// Step 2: Verify the Final Nova proof cryptographically 
-	valid, err := bvp.verifyFinalNovaProofCryptographic(proofData)
+	// Verify the final Nova proof cryptographically
+	valid, err := bvp.verifyFinalNovaProofCryptographic(proofData.FinalNovaProof)
+	
+	// Cache the result for future use
+	result := VerificationResult{
+		Valid:     valid,
+		Timestamp: time.Now(),
+		Error:     err,
+	}
+	bvp.cache.StoreProofVerification(proofHash, result, "FinalNova", common.Hash{})
+	
 	if err != nil {
-		return false, fmt.Errorf("Final Nova proof verification failed: %v", err)
+		return false, err
 	}
 
-	if !valid {
-		return false, fmt.Errorf("Final Nova proof cryptographic verification failed")
+	return valid, nil
+}
+
+// validateProofRootConsistency verifies that the proof root matches the embedded proof data
+func (bvp *BlockValidationPipeline) validateProofRootConsistency(header *types.Header) (bool, error) {
+	if header.ProofRoot == nil {
+		return false, fmt.Errorf("missing ProofRoot field")
 	}
 
-	// Step 3: Validate proof root consistency
-	if err := bvp.validateProofRootConsistency(header.ProofRoot, proofData); err != nil {
-		return false, fmt.Errorf("proof root consistency validation failed: %v", err)
+	// Extract proof data to validate consistency
+	proofData, err := bvp.extractProofDataFromHeader(header)
+	if err != nil {
+		return false, fmt.Errorf("failed to extract proof data: %v", err)
 	}
 
-	log.Debug("✅ CRYPTOGRAPHIC Nova proof verification successful (NO RE-EXECUTION)",
-		"proofRoot", header.ProofRoot.Hex(),
-		"proofSize", len(proofData.FinalNovaProof))
+	// Calculate expected proof root from embedded data
+	expectedProofRoot := bvp.calculateProofRoot(proofData)
+
+	// Verify proof root matches
+	if *header.ProofRoot != expectedProofRoot {
+		return false, fmt.Errorf("proof root mismatch: expected %s, got %s",
+			expectedProofRoot.Hex(), header.ProofRoot.Hex())
+	}
 
 	return true, nil
 }
 
-// extractProofDataFromHeader extracts embedded proof data from block header quantum fields
+// extractProofDataFromHeader extracts embedded proof data from quantum block header
 func (bvp *BlockValidationPipeline) extractProofDataFromHeader(header *types.Header) (*EmbeddedProofData, error) {
-	// Parse embedded proof data from QBlob
-	if len(header.QBlob) == 0 {
-		return nil, fmt.Errorf("missing quantum blob data")
+	// Check if QBlob field exists and has sufficient data
+	if header.QBlob == nil || len(header.QBlob) < 277+16 { // 277 bytes quantum fields + minimum proof data
+		return nil, fmt.Errorf("insufficient QBlob data for proof extraction")
 	}
 
-	// Extract proof data from the end of QBlob (after standard quantum fields)
-	// Standard quantum fields take 277 bytes, proof data comes after
-	standardFieldsSize := 277
-	if len(header.QBlob) <= standardFieldsSize {
-		return nil, fmt.Errorf("QBlob too small for embedded proof data")
-	}
-
-	proofDataBytes := header.QBlob[standardFieldsSize:]
+	// Extract proof data starting after the 277-byte quantum fields
+	qblobData := header.QBlob
+	proofDataStart := 277
 	
-	// Parse embedded proof data format
-	proofData, err := bvp.parseEmbeddedProofData(proofDataBytes)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse embedded proof data: %v", err)
+	if len(qblobData) < proofDataStart+16 {
+		return nil, fmt.Errorf("QBlob too small for proof data")
 	}
 
-	return proofData, nil
+	// Parse embedded proof data structure
+	proofBytes := qblobData[proofDataStart:]
+	return bvp.parseEmbeddedProofData(proofBytes)
 }
 
 // parseEmbeddedProofData parses the embedded proof data format
 func (bvp *BlockValidationPipeline) parseEmbeddedProofData(data []byte) (*EmbeddedProofData, error) {
-	if len(data) < 16 {
+	if len(data) < 16 { // Minimum size for header
 		return nil, fmt.Errorf("proof data too small: %d bytes", len(data))
 	}
 
-	buf := bytes.NewReader(data)
-	
-	// Read proof data header
-	var magic uint32
-	var version uint32
-	var proofSize uint32
-	var checksum uint32
-	
-	if err := binary.Read(buf, binary.LittleEndian, &magic); err != nil {
-		return nil, fmt.Errorf("failed to read magic: %v", err)
-	}
-	
+	// Parse header
+	magic := binary.LittleEndian.Uint32(data[0:4])
+	version := binary.LittleEndian.Uint32(data[4:8])
+	proofLength := binary.LittleEndian.Uint32(data[8:12])
+	checksum := binary.LittleEndian.Uint32(data[12:16])
+
+	// Validate magic number
 	if magic != 0xDEADBEEF {
-		return nil, fmt.Errorf("invalid proof data magic: 0x%x", magic)
+		return nil, fmt.Errorf("invalid magic number: 0x%08x", magic)
 	}
-	
-	if err := binary.Read(buf, binary.LittleEndian, &version); err != nil {
-		return nil, fmt.Errorf("failed to read version: %v", err)
+
+	// Validate version
+	if version != 1 {
+		return nil, fmt.Errorf("unsupported proof format version: %d", version)
 	}
-	
-	if err := binary.Read(buf, binary.LittleEndian, &proofSize); err != nil {
-		return nil, fmt.Errorf("failed to read proof size: %v", err)
+
+	// Validate proof length
+	if len(data) < 16+int(proofLength) {
+		return nil, fmt.Errorf("insufficient data for proof: need %d, have %d",
+			16+proofLength, len(data))
 	}
-	
-	if err := binary.Read(buf, binary.LittleEndian, &checksum); err != nil {
-		return nil, fmt.Errorf("failed to read checksum: %v", err)
+
+	// Extract proof data
+	proofData := data[16 : 16+proofLength]
+
+	// Validate checksum
+	calculatedChecksum := crc32.ChecksumIEEE(proofData)
+	if checksum != calculatedChecksum {
+		return nil, fmt.Errorf("proof data checksum mismatch: expected 0x%08x, got 0x%08x",
+			checksum, calculatedChecksum)
 	}
-	
-	// Validate proof size
-	if proofSize > 6*1024 { // Max 6KB per specification
-		return nil, fmt.Errorf("proof size too large: %d bytes", proofSize)
-	}
-	
-	remainingBytes := len(data) - 16 // 16 bytes for header
-	if remainingBytes < int(proofSize) {
-		return nil, fmt.Errorf("insufficient data for proof: need %d, have %d", proofSize, remainingBytes)
-	}
-	
-	// Read the actual proof data
-	finalNovaProof := make([]byte, proofSize)
-	if _, err := buf.Read(finalNovaProof); err != nil {
-		return nil, fmt.Errorf("failed to read proof data: %v", err)
-	}
-	
-	// Verify checksum
-	computedChecksum := crc32.ChecksumIEEE(finalNovaProof)
-	if checksum != computedChecksum {
-		return nil, fmt.Errorf("proof checksum mismatch: expected 0x%x, got 0x%x", checksum, computedChecksum)
-	}
-	
+
 	return &EmbeddedProofData{
 		Magic:          magic,
 		Version:        version,
-		FinalNovaProof: finalNovaProof,
+		FinalNovaProof: proofData,
 		Checksum:       checksum,
 	}, nil
 }
 
+// calculateProofRoot calculates the expected proof root from embedded proof data
+func (bvp *BlockValidationPipeline) calculateProofRoot(proofData *EmbeddedProofData) common.Hash {
+	// Calculate hash of the proof data for consistency verification
+	proofHash := sha256.Sum256(proofData.FinalNovaProof)
+	return common.BytesToHash(proofHash[:])
+}
+
 // verifyFinalNovaProofCryptographic performs cryptographic verification of the Final Nova proof
-func (bvp *BlockValidationPipeline) verifyFinalNovaProofCryptographic(proofData *EmbeddedProofData) (bool, error) {
+func (bvp *BlockValidationPipeline) verifyFinalNovaProofCryptographic(proofData []byte) (bool, error) {
 	// Parse the Final Nova proof
-	finalNovaProof, err := bvp.parseFinalNovaProof(proofData.FinalNovaProof)
+	finalNovaProof, err := bvp.parseFinalNovaProof(proofData)
 	if err != nil {
 		return false, fmt.Errorf("failed to parse Final Nova proof: %v", err)
 	}
@@ -502,22 +536,6 @@ func (bvp *BlockValidationPipeline) verifyFinalNovaProofCryptographic(proofData 
 	}
 	
 	return valid, nil
-}
-
-// validateProofRootConsistency validates that the proof root matches the embedded proof
-func (bvp *BlockValidationPipeline) validateProofRootConsistency(proofRoot *common.Hash, proofData *EmbeddedProofData) error {
-	// Calculate expected proof root from embedded proof data
-	hasher := sha256.New()
-	hasher.Write(proofData.FinalNovaProof)
-	expectedRoot := hasher.Sum(nil)
-	
-	expectedHash := common.BytesToHash(expectedRoot)
-	if *proofRoot != expectedHash {
-		return fmt.Errorf("proof root mismatch: expected %s, got %s", 
-			expectedHash.Hex(), proofRoot.Hex())
-	}
-	
-	return nil
 }
 
 // validateDilithiumSignature validates Dilithium-2 self-attestation
@@ -700,11 +718,10 @@ func (bvp *BlockValidationPipeline) parseFinalNovaProof(data []byte) (*FinalNova
 
 // newFinalNovaVerifier creates a new Final Nova proof verifier
 func (bvp *BlockValidationPipeline) newFinalNovaVerifier() *FinalNovaVerifier {
-	snarkVerifier := NewSNARKVerifier()
 	return &FinalNovaVerifier{
 		name:          "FinalNovaVerifier_v1.0",
-		available:     snarkVerifier.IsAvailable(),
-		snarkVerifier: snarkVerifier,
+		available:     bvp.snarkVerifier.IsAvailable(),
+		snarkVerifier: bvp.snarkVerifier,
 	}
 }
 
@@ -772,4 +789,73 @@ func (fnv *FinalNovaVerifier) VerifyFinalProof(proof *FinalNovaProof) (bool, err
 	}
 	
 	return valid, nil
+}
+
+// ValidateBlockWithCache performs complete block validation with caching
+func (bvp *BlockValidationPipeline) ValidateBlockWithCache(header *types.Header) (bool, error) {
+	// Calculate block hash for cache lookup
+	blockHash := header.Hash()
+	
+	// Check cache first for performance optimization
+	if cachedResult, found := bvp.cache.GetBlockVerification(blockHash); found {
+		if cachedResult.Error != nil {
+			return false, cachedResult.Error
+		}
+		return cachedResult.Valid, nil
+	}
+
+	// Perform full validation if not cached
+	valid, err := bvp.validateNovaProof(header)
+	
+	// Additional validations can be added here
+	if valid {
+		valid, err = bvp.validateProofRootConsistency(header)
+	}
+	
+	// Cache the complete block validation result
+	result := VerificationResult{
+		Valid:     valid,
+		Timestamp: time.Now(),
+		Error:     err,
+	}
+	
+	proofRoot := common.Hash{}
+	if header.ProofRoot != nil {
+		proofRoot = *header.ProofRoot
+	}
+	
+	bvp.cache.StoreBlockVerification(blockHash, result, proofRoot)
+	
+	if err != nil {
+		return false, err
+	}
+
+	return valid, nil
+}
+
+// InvalidateCache provides cache invalidation capabilities
+func (bvp *BlockValidationPipeline) InvalidateCache() {
+	bvp.cache.Clear()
+}
+
+// InvalidateProof invalidates a specific proof from cache
+func (bvp *BlockValidationPipeline) InvalidateProof(proofHash common.Hash) {
+	bvp.cache.InvalidateProof(proofHash)
+}
+
+// InvalidateBlock invalidates a specific block from cache
+func (bvp *BlockValidationPipeline) InvalidateBlock(blockHash common.Hash) {
+	bvp.cache.InvalidateBlock(blockHash)
+}
+
+// GetCacheStats returns current cache performance statistics
+func (bvp *BlockValidationPipeline) GetCacheStats() VerificationCacheStats {
+	return bvp.cache.GetStats()
+}
+
+// StopCache stops the cache cleanup goroutine
+func (bvp *BlockValidationPipeline) StopCache() {
+	if bvp.cache != nil {
+		bvp.cache.Stop()
+	}
 }
