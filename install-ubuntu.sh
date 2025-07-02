@@ -30,8 +30,10 @@ if [ -n "$SUDO_USER" ]; then
     ACTUAL_USER="$SUDO_USER"
     USER_HOME="/home/$SUDO_USER"
 else
-    log_error "Could not determine actual user. Please run with sudo."
-    exit 1
+    # If running directly as root (not via sudo)
+    ACTUAL_USER="root"
+    USER_HOME="/root"
+    log_warning "Running directly as root. Service will run as root user."
 fi
 
 # Project directory
@@ -169,7 +171,9 @@ fi
 # Final setup
 log_info "Setting correct ownership..."
 chown -R "$ACTUAL_USER:$ACTUAL_USER" "$PROJECT_DIR"
-chown -R "$ACTUAL_USER:$ACTUAL_USER" "$USER_HOME/.bashrc"
+if [ -f "$USER_HOME/.bashrc" ]; then
+    chown "$ACTUAL_USER:$ACTUAL_USER" "$USER_HOME/.bashrc"
+fi
 
 # Installation complete
 echo ""
