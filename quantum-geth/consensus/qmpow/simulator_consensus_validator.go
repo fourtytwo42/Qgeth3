@@ -784,13 +784,17 @@ func (crc *ConsensusResultsCache) set(key string, result *ConsensusResult) {
 		// Remove oldest entry
 		var oldestKey string
 		var oldestTime time.Time
+		first := true
 		for k, v := range crc.results {
-			if oldestKey == "" || v.ValidationTimestamp.Before(oldestTime) {
+			if first || v.ValidationTimestamp.Before(oldestTime) {
 				oldestKey = k
 				oldestTime = v.ValidationTimestamp
+				first = false
 			}
 		}
-		delete(crc.results, oldestKey)
+		if oldestKey != "" {
+			delete(crc.results, oldestKey)
+		}
 	}
 	
 	crc.results[key] = result
