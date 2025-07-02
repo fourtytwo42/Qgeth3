@@ -33,6 +33,7 @@ type BlockValidationPipeline struct {
 	stats              ValidationStats
 	snarkVerifier      *SNARKVerifier
 	cache              *VerificationCache
+	proofChainValidator *ProofChainValidator
 	mu                 sync.RWMutex
 }
 
@@ -98,7 +99,7 @@ type FinalNovaVerifier struct {
 	snarkVerifier *SNARKVerifier
 }
 
-// NewBlockValidationPipeline creates a new block validation pipeline with caching
+// NewBlockValidationPipeline creates a new validation pipeline with caching
 func NewBlockValidationPipeline(chainIDHash common.Hash) *BlockValidationPipeline {
 	return &BlockValidationPipeline{
 		chainIDHash:        chainIDHash,
@@ -110,6 +111,7 @@ func NewBlockValidationPipeline(chainIDHash common.Hash) *BlockValidationPipelin
 		stats:              ValidationStats{},
 		snarkVerifier:      NewSNARKVerifier(),
 		cache:              NewVerificationCache(DefaultVerificationCacheConfig()),
+		proofChainValidator: NewProofChainValidator(),
 	}
 }
 
@@ -858,4 +860,36 @@ func (bvp *BlockValidationPipeline) StopCache() {
 	if bvp.cache != nil {
 		bvp.cache.Stop()
 	}
+}
+
+// validateProofChain validates the hierarchical proof structure (CAPSS → Nova → Root) without re-computation
+func (bvp *BlockValidationPipeline) validateProofChain(header *types.Header) (bool, error) {
+	// Extract proof data from block header
+	proofData, err := bvp.extractProofDataFromHeader(header)
+	if err != nil {
+		return false, fmt.Errorf("failed to extract proof data for chain validation: %v", err)
+	}
+
+	// Extract proof chain structure from Final Nova proof
+	proofChain, err := bvp.proofChainValidator.ExtractProofChainFromFinalProof(proofData, bvp.chainIDHash)
+	if err != nil {
+		return false, fmt.Errorf("failed to extract proof chain structure: %v", err)
+	}
+
+	// Validate the complete hierarchical proof structure
+	valid, err := bvp.proofChainValidator.ValidateProofChain(proofChain)
+	if err != nil {
+		return false, fmt.Errorf("proof chain validation failed: %v", err)
+	}
+
+	if !valid {
+		return false, fmt.Errorf("hierarchical proof chain validation failed")
+	}
+
+	log.Debug("✅ Hierarchical proof chain validation successful",
+		"chain_id", bvp.chainIDHash.Hex(),
+		"aggregated_proofs", proofChain.FinalNovaProof.AggregatedProofs,
+		"proof_root", proofChain.ProofRoot.Hex())
+
+	return true, nil
 }
