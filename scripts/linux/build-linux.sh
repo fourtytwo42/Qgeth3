@@ -11,7 +11,7 @@ export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/l
 
 # Parse command line arguments
 AUTO_CONFIRM=false
-TARGET="both"
+TARGET="geth"
 CLEAN="false"
 USE_SUDO_FOR_FILES=false
 QUIET_MODE=false
