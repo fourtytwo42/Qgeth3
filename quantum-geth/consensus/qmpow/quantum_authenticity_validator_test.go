@@ -256,7 +256,7 @@ func TestQuantumAuthenticityValidator_BellCorrelationValidation(t *testing.T) {
 			correlationData := validator.extractBellCorrelationData(header)
 			bellParameter := validator.calculateBellParameter(correlationData)
 			t.Logf("Bell parameter: %.3f (classical bound: 2.0, quantum bound: %.3f)", 
-				bellParameter, 2.0, 2.0*1.414)
+				bellParameter, 2.0*1.414)
 		})
 	}
 }
@@ -371,19 +371,24 @@ func createHeaderWithParams(t *testing.T, qbits uint8, tcount uint16, lnet uint1
 	}
 	
 	// Set quantum parameters
-	header.QBits = &qbits
-	header.TCount = &tcount
+	qbits16 := uint16(qbits)
+	tcount32 := uint32(tcount)
+	header.QBits = &qbits16
+	header.TCount = &tcount32
 	header.LNet = &lnet
 	
 	// Set quantum fields with valid-looking data
-	header.OutcomeRoot = &common.Hash{}
-	copy(header.OutcomeRoot[:], sha256.Sum256([]byte("outcome"))[:])
+	outcomeHashBytes := sha256.Sum256([]byte("outcome"))
+	outcomeHash := common.BytesToHash(outcomeHashBytes[:])
+	header.OutcomeRoot = &outcomeHash
 	
-	header.GateHash = &common.Hash{}
-	copy(header.GateHash[:], sha256.Sum256([]byte("gates"))[:])
+	gateHashBytes := sha256.Sum256([]byte("gates"))
+	gateHash := common.BytesToHash(gateHashBytes[:])
+	header.GateHash = &gateHash
 	
-	header.ProofRoot = &common.Hash{}
-	copy(header.ProofRoot[:], sha256.Sum256([]byte("proof"))[:])
+	proofHashBytes := sha256.Sum256([]byte("proof"))
+	proofHash := common.BytesToHash(proofHashBytes[:])
+	header.ProofRoot = &proofHash
 	
 	// Set other required fields
 	header.BranchNibbles = make([]byte, 32)
@@ -408,7 +413,7 @@ func createClassicalSimulationHeader(t *testing.T) *types.Header {
 	// Linear congruential generator pattern
 	seed := uint32(12345)
 	lcg := func() uint32 {
-		seed = (seed*1103515245 + 12345) % 0x100000000
+		seed = (seed*1103515245 + 12345) // Will wrap around automatically for uint32
 		return seed
 	}
 	
@@ -495,7 +500,7 @@ func createHeaderByType(t *testing.T, headerType string) *types.Header {
 		// Create PRNG patterns
 		seed := uint32(12345)
 		for i := 0; i < len(header.ExtraNonce32); i += 4 {
-			seed = (seed*1103515245 + 12345) % 0x100000000
+			seed = (seed*1103515245 + 12345) // Will wrap around automatically for uint32
 			binary.LittleEndian.PutUint32(header.ExtraNonce32[i:i+4], seed)
 		}
 		

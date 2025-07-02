@@ -35,6 +35,7 @@ type BlockValidationPipeline struct {
 	cache              *VerificationCache
 	proofChainValidator *ProofChainValidator
 	quantumAuthenticityValidator *QuantumAuthenticityValidator
+	circuitCanonicalizer *QuantumCircuitCanonicalizer
 	mu                 sync.RWMutex
 }
 
@@ -83,6 +84,18 @@ type BlockValidationResult struct {
 	Error   error // Any error that occurred during validation
 }
 
+// TEMPORARY COMPATIBILITY TYPE FOR OLD TESTS
+// TODO: Remove once tests are updated to use new interface
+type BlockValidationResultOld struct {
+	Valid              bool          // Whether validation passed
+	FailureReason      string        // Human-readable failure reason
+	FailureStep        string        // Step where validation failed
+	ValidationTime     time.Duration // Time taken for validation
+	GateHashMatch      bool          // Whether gate hash matched
+	ProofRootValid     bool          // Whether proof root is valid
+	AttestationValid   bool          // Whether attestation is valid
+}
+
 // EmbeddedProofData represents proof data embedded in block headers
 type EmbeddedProofData struct {
 	Magic          uint32 // 0xDEADBEEF
@@ -120,6 +133,7 @@ func NewBlockValidationPipeline(chainIDHash common.Hash) *BlockValidationPipelin
 		cache:              NewVerificationCache(DefaultVerificationCacheConfig()),
 		proofChainValidator: NewProofChainValidator(),
 		quantumAuthenticityValidator: NewQuantumAuthenticityValidator(),
+		circuitCanonicalizer: NewQuantumCircuitCanonicalizer(),
 	}
 }
 
@@ -147,7 +161,30 @@ func (bvp *BlockValidationPipeline) ValidateQuantumBlockAuthenticity(header *typ
 		"block", header.Number.Uint64(),
 		"hash", blockHash.Hex()[:10]+"...")
 
-	// Step 1: Validate quantum computational authenticity (CRITICAL SECURITY)
+	// Step 1: Validate quantum circuit canonicalization (CONSENSUS CRITICAL)
+	canonicalValid, err := bvp.validateCircuitCanonical(header)
+	if err != nil {
+		validationError := fmt.Errorf("circuit canonicalization validation failed: %v", err)
+		result := VerificationResult{
+			Valid:     false,
+			Timestamp: time.Now(),
+			Error:     validationError,
+		}
+		bvp.cache.StoreBlockVerification(blockHash, result, common.Hash{})
+		return false, validationError
+	}
+	if !canonicalValid {
+		validationError := fmt.Errorf("quantum circuit canonicalization validation failed")
+		result := VerificationResult{
+			Valid:     false,
+			Timestamp: time.Now(),
+			Error:     validationError,
+		}
+		bvp.cache.StoreBlockVerification(blockHash, result, common.Hash{})
+		return false, validationError
+	}
+
+	// Step 2: Validate quantum computational authenticity (CRITICAL SECURITY)
 	authenticityValid, err := bvp.quantumAuthenticityValidator.ValidateQuantumAuthenticity(header)
 	if err != nil {
 		validationError := fmt.Errorf("quantum authenticity validation failed: %v", err)
@@ -170,7 +207,7 @@ func (bvp *BlockValidationPipeline) ValidateQuantumBlockAuthenticity(header *typ
 		return false, validationError
 	}
 
-	// Step 2: Extract and validate proof data from block header
+	// Step 3: Extract and validate proof data from block header
 	proofData, err := bvp.extractProofDataFromHeader(header)
 	if err != nil {
 		validationError := fmt.Errorf("proof data extraction failed: %v", err)
@@ -183,7 +220,7 @@ func (bvp *BlockValidationPipeline) ValidateQuantumBlockAuthenticity(header *typ
 		return false, validationError
 	}
 
-	// Step 3: Verify the final Nova proof cryptographically  
+	// Step 4: Verify the final Nova proof cryptographically  
 	proofValid, err := bvp.verifyFinalNovaProofCryptographic(proofData.FinalNovaProof)
 	if err != nil {
 		validationError := fmt.Errorf("Nova proof verification failed: %v", err)
@@ -206,7 +243,7 @@ func (bvp *BlockValidationPipeline) ValidateQuantumBlockAuthenticity(header *typ
 		return false, validationError
 	}
 
-	// Step 4: Validate hierarchical proof chain structure
+	// Step 5: Validate hierarchical proof chain structure
 	proofChainStructure, err := bvp.proofChainValidator.ExtractProofChainFromFinalProof(proofData, bvp.chainIDHash)
 	if err != nil {
 		validationError := fmt.Errorf("proof chain extraction failed: %v", err)
@@ -241,7 +278,7 @@ func (bvp *BlockValidationPipeline) ValidateQuantumBlockAuthenticity(header *typ
 		return false, validationError
 	}
 
-	// Step 5: Validate proof root consistency
+	// Step 6: Validate proof root consistency
 	rootValid, err := bvp.validateProofRootConsistency(header)
 	if err != nil {
 		validationError := fmt.Errorf("proof root validation failed: %v", err)
@@ -281,6 +318,7 @@ func (bvp *BlockValidationPipeline) ValidateQuantumBlockAuthenticity(header *typ
 	log.Info("✅ Comprehensive quantum block validation successful",
 		"block", header.Number.Uint64(),
 		"validation_time", validationTime,
+		"canonical_valid", canonicalValid,
 		"authenticity_passed", authenticityValid,
 		"proof_valid", proofValid,
 		"chain_valid", chainValid,
@@ -684,6 +722,22 @@ func (bvp *BlockValidationPipeline) ResetValidationStats() {
 	bvp.stats = ValidationStats{}
 }
 
+// TEMPORARY COMPATIBILITY METHOD FOR TESTS
+// TODO: Remove once tests are updated to use new interface
+func (bvp *BlockValidationPipeline) ValidateQuantumBlock(chain interface{}, block interface{}, state interface{}, publicKey []byte, signature []byte) (*BlockValidationResultOld, error) {
+	// This is a temporary stub to fix compilation
+	// Real implementation would properly handle the parameters
+	return &BlockValidationResultOld{
+		Valid:              false,
+		FailureReason:      "TEMPORARY_STUB",
+		FailureStep:        "STUB",
+		ValidationTime:     0,
+		GateHashMatch:      false,
+		ProofRootValid:     false,
+		AttestationValid:   false,
+	}, fmt.Errorf("temporary stub method - tests need to be updated")
+}
+
 // Helper function to update average time
 func updateAverageTimeValidation(currentAvg time.Duration, newTime time.Duration, count uint64) time.Duration {
 	if count == 0 {
@@ -916,6 +970,73 @@ func (bvp *BlockValidationPipeline) validateProofChain(header *types.Header) (bo
 		"chain_id", bvp.chainIDHash.Hex(),
 		"aggregated_proofs", proofChain.FinalNovaProof.AggregatedProofs,
 		"proof_root", proofChain.ProofRoot.Hex())
+
+	return true, nil
+}
+
+// validateCircuitCanonical validates quantum circuit canonicalization
+func (bvp *BlockValidationPipeline) validateCircuitCanonical(header *types.Header) (bool, error) {
+	if header.QBlob == nil || len(header.QBlob) < 277 {
+		return false, fmt.Errorf("missing or insufficient quantum blob data")
+	}
+
+	// Extract quantum circuit data from the header
+	circuitData := header.QBlob[:277] // First 277 bytes contain quantum circuit data
+
+	// Validate quantum parameters
+	if header.QBits == nil || header.TCount == nil || header.LNet == nil {
+		return false, fmt.Errorf("missing quantum parameters")
+	}
+
+	qubits := int(*header.QBits)
+	if qubits < 1 || qubits > 32 {
+		return false, fmt.Errorf("invalid qubit count: %d", qubits)
+	}
+
+	// Canonicalize the quantum circuit
+	canonicalCircuit, err := bvp.circuitCanonicalizer.CanonicalizeCircuit(circuitData, qubits)
+	if err != nil {
+		return false, fmt.Errorf("circuit canonicalization failed: %v", err)
+	}
+
+	// Validate circuit parameters match header
+	if canonicalCircuit.TGateCount != int(*header.TCount) {
+		return false, fmt.Errorf("T-gate count mismatch: circuit=%d, header=%d", 
+			canonicalCircuit.TGateCount, *header.TCount)
+	}
+
+	if canonicalCircuit.Qubits != qubits {
+		return false, fmt.Errorf("qubit count mismatch: circuit=%d, header=%d", 
+			canonicalCircuit.Qubits, qubits)
+	}
+
+	// Validate circuit complexity meets minimum requirements
+	complexity := canonicalCircuit.Complexity
+	if complexity.TGateCount < 20 {
+		return false, fmt.Errorf("insufficient T-gate complexity: %d (minimum 20)", complexity.TGateCount)
+	}
+
+	if complexity.TwoQubitCount < 1 {
+		return false, fmt.Errorf("insufficient two-qubit gate complexity: %d", complexity.TwoQubitCount)
+	}
+
+	// Validate canonical QASM is deterministic
+	if canonicalCircuit.QASMString == "" {
+		return false, fmt.Errorf("canonical QASM generation failed")
+	}
+
+	// Verify circuit hash for consistency
+	if canonicalCircuit.CircuitHash == (common.Hash{}) {
+		return false, fmt.Errorf("circuit hash calculation failed")
+	}
+
+	log.Debug("Circuit canonicalization validation passed",
+		"qubits", canonicalCircuit.Qubits,
+		"gates", canonicalCircuit.TotalGates,
+		"t_gates", canonicalCircuit.TGateCount,
+		"cx_gates", canonicalCircuit.CXGateCount,
+		"depth", canonicalCircuit.Depth,
+		"circuit_hash", canonicalCircuit.CircuitHash.Hex()[:10]+"...")
 
 	return true, nil
 }
