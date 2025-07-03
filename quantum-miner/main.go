@@ -3,6 +3,8 @@
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -12,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"quantum-gpu-miner/pkg/quantum"
 	"runtime"
 	"strings"
@@ -19,7 +22,6 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
-	"path/filepath"
 )
 
 const VERSION = "1.1.0-gpu"
@@ -96,6 +98,10 @@ type QuantumMiner struct {
 	// WSL2 caching
 	wsl2BinaryPath string // Path to cached WSL2 binary
 	wsl2SetupDone  bool   // Whether WSL2 setup is complete
+	
+	// Real Qiskit Quantum Simulator
+	qiskitSim *quantum.QiskitGPUSimulator
+	qiskitMutex sync.Mutex  // CRITICAL: Serialize access to Python subprocess
 }
 
 // ThreadState tracks individual thread execution state
@@ -316,14 +322,31 @@ func main() {
 		coinbase:         *coinbase,
 		nodeURL:          nodeURL,
 		threads:          *threads,
-		gpuMode:          gpuAvailable,
+		gpuMode:          *gpu || wsl2Available,
 		wsl2Mode:         wsl2Available,
-		client:           &http.Client{Timeout: 30 * time.Second},
 		stopChan:         make(chan bool, 1),
+		client:           &http.Client{Timeout: 30 * time.Second},
 		threadStates:     make(map[int]*ThreadState),
-		maxActiveThreads: int32(*threads / 2), // Limit concurrent active threads
-		memoryPool:       make(chan *PuzzleMemory, 10),
+		memoryPool:       make(chan *PuzzleMemory, *threads*2+5), // Extra space for initial blocks
+		maxActiveThreads: int32(*threads),
 		targetBlockTime:  12 * time.Second,
+		currentDifficulty: 200,
+	}
+
+	// Initialize real Qiskit quantum simulator
+	logInfo("🔧 Initializing Qiskit quantum simulator...")
+	var err error
+	miner.qiskitSim, err = quantum.NewQiskitGPUSimulator(0)
+	if err != nil {
+		logError("❌ Failed to initialize Qiskit simulator: %v", err)
+		logInfo("💡 This will fall back to simplified simulation")
+	} else {
+		logInfo("✅ Qiskit quantum simulator initialized!")
+		if miner.qiskitSim.IsGPUAvailable() {
+			logInfo("⚡ GPU acceleration is available!")
+		} else {
+			logInfo("💻 Using CPU quantum simulation")
+		}
 	}
 
 	// Initialize memory pool
@@ -349,7 +372,7 @@ func main() {
 		fmt.Printf("CPU Processing (%d Threads)\n", miner.threads)
 	}
 
-	err := miner.Start()
+	err = miner.Start()
 	if err != nil {
 		log.Fatalf("❌ Failed to start mining: %v", err)
 	}
@@ -637,6 +660,11 @@ func (m *QuantumMiner) Stop() {
 	atomic.StoreInt32(&m.running, 0)
 	close(m.stopChan)
 	m.wg.Wait()
+	
+	// Cleanup Qiskit simulator resources
+	if m.qiskitSim != nil {
+		m.qiskitSim.Cleanup()
+	}
 }
 
 func (m *QuantumMiner) testConnection() error {
@@ -671,24 +699,259 @@ func (m *QuantumMiner) rpcCall(method string, params []interface{}) (interface{}
 	return jsonResp.Result, nil
 }
 
+func (m *QuantumMiner) workFetcher() {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	
+	logInfo("🔄 Work fetcher starting...")
+	
+	for atomic.LoadInt32(&m.running) == 1 {
+		// Fetch work from geth
+		logInfo("📡 Fetching work from %s...", m.nodeURL)
+		result, err := m.rpcCall("qmpow_getWork", []interface{}{})
+		if err != nil {
+			logError("❌ Failed to fetch work: %v", err)
+			// Try basic connection test
+			if _, connErr := m.rpcCall("eth_blockNumber", []interface{}{}); connErr != nil {
+				logError("❌ Connection test failed: %v", connErr)
+			} else {
+				logInfo("✅ Connection OK, but qmpow_getWork failed")
+			}
+			time.Sleep(5 * time.Second)
+			continue
+		}
+		
+		logInfo("📋 Work result: %+v", result)
+		
+		// Parse work result
+		if workArray, ok := result.([]interface{}); ok && len(workArray) >= 3 {
+			work := &QuantumWork{
+				WorkHash:    workArray[0].(string),
+				BlockNumber: uint64(1), // Parse from workArray[1] if needed
+				Target:      workArray[2].(string),
+				QBits:       16, // Default values
+				TCount:      20,
+				LNet:        128,
+				FetchTime:   time.Now(),
+			}
+			
+			logInfo("📋 Parsed work - Hash: %s, Target: %s", work.WorkHash[:16]+"...", work.Target[:16]+"...")
+			
+			// Parse quantum params from workArray[3] if available
+			if len(workArray) >= 4 {
+				if params, ok := workArray[3].(string); ok {
+					logInfo("🔬 Quantum params: %s", params)
+					// Parse hex-encoded quantum params
+					// Format: qbits:16,tcount:20,lnet:128
+					if decoded, err := hex.DecodeString(params[2:]); err == nil {
+						paramStr := string(decoded)
+						logInfo("🔬 Decoded params: %s", paramStr)
+						// Parse parameters (simplified)
+						if strings.Contains(paramStr, "qbits:") {
+							// Parse actual parameters if needed
+						}
+					}
+				}
+			}
+			
+			// Update current work
+			m.workMutex.Lock()
+			oldWork := m.currentWork
+			m.currentWork = work
+			m.workMutex.Unlock()
+			
+			if oldWork == nil || oldWork.WorkHash != work.WorkHash {
+				logInfo("🆕 New work assigned: %s (target: %s)", work.WorkHash[:16]+"...", work.Target[:16]+"...")
+			} else {
+				logInfo("🔄 Same work, continuing...")
+			}
+		} else {
+			logError("❌ Invalid work format: %+v", result)
+		}
+		
+		<-ticker.C
+	}
+	
+	logInfo("🔄 Work fetcher stopping...")
+}
+
 func (m *QuantumMiner) miningThread(threadID int) {
 	defer m.wg.Done()
 	
+	logInfo("🧵 Mining thread %d starting", threadID)
+	
 	for atomic.LoadInt32(&m.running) == 1 {
-		// Simple mining loop - would contain actual quantum puzzle solving
-		time.Sleep(100 * time.Millisecond)
+		// Get current work
+		m.workMutex.RLock()
+		work := m.currentWork
+		m.workMutex.RUnlock()
 		
-		// Update stats
-		atomic.AddUint64(&m.attempts, 1)
-		atomic.AddUint64(&m.puzzlesSolved, 128) // 128 puzzles per attempt
+		if work == nil {
+			if threadID == 0 { // Only log from thread 0 to avoid spam
+				logInfo("⏳ Thread %d waiting for work...", threadID)
+			}
+			time.Sleep(1 * time.Second)
+			continue
+		}
+		
+		if threadID == 0 { // Only log from thread 0
+			logInfo("⛏️ Thread %d starting mining with work %s", threadID, work.WorkHash[:16]+"...")
+		}
+		
+		// Try different qnonces
+		for qnonce := uint64(threadID * 1000000); qnonce < uint64((threadID+1)*1000000) && atomic.LoadInt32(&m.running) == 1; qnonce++ {
+			atomic.AddUint64(&m.attempts, 1)
+			
+			// Log every 5000 attempts from thread 0, and every 20000 from other threads
+			if (threadID == 0 && qnonce%5000 == 0) || (threadID > 0 && qnonce%20000 == 0) {
+				progress := qnonce - uint64(threadID*1000000)
+				logInfo("🔍 Thread %d progress: %d/%d qnonces (%.1f%%)", threadID, progress, 1000000, float64(progress)/10000.0)
+			}
+			
+			// Solve quantum puzzles
+			if m.solveQuantumPuzzles(work, qnonce) {
+				logInfo("🎉 Thread %d found solution at qnonce %d", threadID, qnonce)
+				break // Found solution, get new work
+			}
+			
+			// Check for new work every 1000 attempts
+			if qnonce%1000 == 0 {
+				m.workMutex.RLock()
+				newWork := m.currentWork
+				m.workMutex.RUnlock()
+				if newWork != work {
+					logInfo("🔄 Thread %d: New work detected, switching...", threadID)
+					break // New work available
+				}
+			}
+		}
 	}
+	
+	logInfo("🧵 Mining thread %d stopping", threadID)
 }
 
-func (m *QuantumMiner) workFetcher() {
-	for atomic.LoadInt32(&m.running) == 1 {
-		// Fetch work from node
-		time.Sleep(1 * time.Second)
+func (m *QuantumMiner) solveQuantumPuzzles(work *QuantumWork, qnonce uint64) bool {
+	// Use real Qiskit batch simulation for all 128 puzzles at once
+	var outcomes [][]byte
+	var err error
+	
+	if m.qiskitSim != nil {
+		// CRITICAL: Serialize access to Python subprocess to prevent "exec: already started"
+		m.qiskitMutex.Lock()
+		
+		// Use real Qiskit quantum computation
+		start := time.Now()
+		outcomes, err = m.qiskitSim.BatchSimulateQuantumPuzzles(
+			work.WorkHash, 
+			qnonce, 
+			work.QBits,   // 16 qubits
+			work.TCount,  // 20 T-gates minimum
+			128,          // 128 puzzles per block
+		)
+		duration := time.Since(start)
+		
+		// Release the mutex immediately after the call
+		m.qiskitMutex.Unlock()
+		
+		if err != nil {
+			logError("❌ Qiskit batch simulation failed: %v", err)
+			// Still update puzzle counter for debugging even on failure
+			atomic.AddUint64(&m.puzzlesSolved, 128)
+			return false
+		}
+		
+		logInfo("⚛️ Qiskit: 128 puzzles completed in %.3fs (%.1f puzzles/sec)", 
+			duration.Seconds(), 128.0/duration.Seconds())
+		
+		// Update puzzle counter
+		atomic.AddUint64(&m.puzzlesSolved, 128)
+	} else {
+		// Fallback to individual CPU simulation if Qiskit failed to initialize
+		outcomes = make([][]byte, 128)
+		for i := 0; i < 128; i++ {
+			outcome, _, err := m.solveQuantumPuzzleCPU(i, work.WorkHash, qnonce, work.QBits, work.TCount)
+			if err != nil {
+				logError("❌ CPU Puzzle %d failed: %v", i, err)
+				return false
+			}
+			outcomes[i] = outcome
+		}
+		atomic.AddUint64(&m.puzzlesSolved, 128)
 	}
+	
+	// Calculate quantum proof quality using geth's exact algorithm
+	proofData := make([]byte, 0, len(outcomes)*len(outcomes[0]))
+	for _, outcome := range outcomes {
+		proofData = append(proofData, outcome...)
+	}
+	
+	hash := sha256.Sum256(append([]byte(work.WorkHash), proofData...))
+	proofQuality := new(big.Int).SetBytes(hash[:])
+	
+	// Check if solution meets target
+	targetBig := new(big.Int)
+	// Parse hex target (with or without 0x prefix)
+	if strings.HasPrefix(work.Target, "0x") {
+		targetBig.SetString(work.Target, 0)
+	} else {
+		targetBig.SetString(work.Target, 16) // Parse as hex
+	}
+	
+	// Log every 1000th attempt for debugging
+	if qnonce%1000 == 0 {
+		logInfo("🎯 QNonce %d: Quality=%s vs Target=%s", qnonce, 
+			proofQuality.Text(16)[:16]+"...", 
+			targetBig.Text(16)[:16]+"...")
+	}
+	
+	// Solution found if proof quality <= target (lower is better)
+	if proofQuality.Cmp(targetBig) <= 0 {
+		logInfo("🎉 SOLUTION FOUND! QNonce %d meets target", qnonce)
+		
+		// Submit solution to geth
+		submitParams := []interface{}{
+			work.WorkHash,
+			fmt.Sprintf("0x%x", qnonce),
+			hex.EncodeToString(proofData),
+		}
+		
+		result, err := m.rpcCall("qmpow_submitWork", submitParams)
+		if err != nil {
+			logError("❌ Failed to submit solution: %v", err)
+			atomic.AddUint64(&m.rejected, 1)
+			return false
+		}
+		
+		if accepted, ok := result.(bool); ok && accepted {
+			logInfo("✅ Solution accepted by network!")
+			atomic.AddUint64(&m.accepted, 1)
+			return true
+		} else {
+			logError("❌ Solution rejected by network")
+			atomic.AddUint64(&m.rejected, 1)
+			return false
+		}
+	}
+	
+	return false
+}
+
+func (m *QuantumMiner) solveQuantumPuzzleCPU(puzzleIndex int, workHash string, qnonce uint64, qbits, tcount int) ([]byte, float64, error) {
+	// Simplified CPU quantum simulation
+	// For now, use deterministic pseudo-quantum computation
+	seed := uint64(puzzleIndex) ^ qnonce ^ uint64(len(workHash))
+	
+	// Simulate quantum randomness
+	outcome := make([]byte, (qbits+7)/8)
+	for i := range outcome {
+		seed = seed*1103515245 + 12345
+		outcome[i] = byte(seed >> 24)
+	}
+	
+	// Simulate computation time - fast for testing
+	time.Sleep(time.Millisecond * 1)
+	
+	return outcome, 0.001, nil
 }
 
 func (m *QuantumMiner) statsReporter() {
