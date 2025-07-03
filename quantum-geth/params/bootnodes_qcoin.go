@@ -20,4 +20,13 @@ var QCoinTestnetBootnodes = []string{
 var QCoinDevBootnodes = []string{
 	"enode://fb63f743979b4a72eb87ad779e0444b122569b0bda9e009d6d10cad389f5bfcc346786b6c5de82c57b24582797a40deb227a54ed56f40b9c96cca375d09c9eb8@64.23.179.84:30305",    // Q Coin Dev VPS 1 (newest)
 	"enode://53e65f1627335d2df75918c455e8a1b59efbea574b0c90006b0413c3eeeec5bfcbe84ea774a5cc47e5281161c60fecf60c7a45547bcdde1a9f50f5b100f46fdf@143.110.231.183:30305", // Q Coin Dev VPS 2 (newest)
+}
+
+// QCoinPlanckBootnodes are the enode URLs of the P2P bootstrap nodes running on
+// the Q Coin Planck testnet network.
+var QCoinPlanckBootnodes = []string{
+	"enode://d95877e097ab3bc6a8f3c5aee4a508d9a950810f149a53d50b11b0fbbf8b7c2f139b01361e514d30054c080f46f3eb00f5a4f2e665ea1a8de2cd7ee37079f0b5@128.199.6.197:30307",   // Q Coin Planck VPS 1
+	"enode://587f338c3168ea2d273dca416f923581b95f1c3c4056e897aa4b91e4688e1bc1400decadb0b97a2c52b6eab48cb6d77192c88e97b72f7d8ef1f46d0e46f92900@209.97.131.210:30307",  // Q Coin Planck VPS 2  
+	"enode://f11a05bbfcb32db89077c0bcee94de13fc1ad5cbe40caee78141cc21bb5f7de62cd6bd23aad846548a66fecb040663bef9cf2a2ba874c9451401c455bfe700da@134.199.202.42:30307",  // Q Coin Planck VPS 3
+	"enode://f7352a2475bb12ba7b444b2eeb0b041f991f164b3f460d31f7fd2aeb139035619d5a43ca3e6214fdf3a97fc816fd416e452b64cee738932a8c204f6480a7f749@139.59.120.94:30307",   // Q Coin Planck VPS 4
 } 
