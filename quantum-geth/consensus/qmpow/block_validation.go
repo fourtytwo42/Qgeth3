@@ -37,6 +37,7 @@ type BlockValidationPipeline struct {
 	authenticityValidator  *QuantumAuthenticityValidator
 	circuitCanonicalizer   *QuantumCircuitCanonicalizer
 	consensusValidator     *SimulatorConsensusValidator
+	antiClassicalProtector *AntiClassicalMiningProtector
 	mu                     sync.RWMutex
 }
 
@@ -142,12 +143,45 @@ func NewBlockValidationPipeline(chainIDHash common.Hash) *BlockValidationPipelin
 		authenticityValidator: NewQuantumAuthenticityValidator(),
 		circuitCanonicalizer: NewQuantumCircuitCanonicalizer(),
 		consensusValidator: NewSimulatorConsensusValidator(),
+		antiClassicalProtector: NewAntiClassicalMiningProtector(),
 	}
 }
 
 // ValidateQuantumBlockAuthenticity performs quantum authenticity validation
 func (bvp *BlockValidationPipeline) ValidateQuantumBlockAuthenticity(header *types.Header) (bool, error) {
 	startTime := time.Now()
+	
+	// Step 0: Anti-Classical Mining Protection - CRITICAL SECURITY STEP
+	antiClassicalResult, err := bvp.antiClassicalProtector.ValidateQuantumAuthenticity(header)
+	if err != nil {
+		bvp.mu.Lock()
+		bvp.stats.QuantumAuthenticityErrors++
+		bvp.mu.Unlock()
+		return false, fmt.Errorf("anti-classical mining protection failed: %v", err)
+	}
+	
+	if !antiClassicalResult.IsQuantumAuthentic || antiClassicalResult.ClassicalDetected {
+		bvp.mu.Lock()
+		bvp.stats.QuantumAuthenticityErrors++
+		bvp.mu.Unlock()
+		
+		violation := "none"
+		if antiClassicalResult.ViolationDetails != nil {
+			violation = antiClassicalResult.ViolationDetails.ViolationType
+		}
+		
+		log.Warn("🚨 CLASSICAL SIMULATION DETECTED",
+			"block", header.Number,
+			"violation_type", violation,
+			"classical_detected", antiClassicalResult.ClassicalDetected,
+			"validation_time", antiClassicalResult.ValidationTime)
+		
+		return false, fmt.Errorf("classical simulation attack detected: %s", violation)
+	}
+	
+	log.Debug("✅ Anti-classical mining protection passed",
+		"block", header.Number,
+		"validation_time", antiClassicalResult.ValidationTime)
 	
 	// Step 1: Validate quantum circuit canonicalization
 	if valid, err := bvp.validateCircuitCanonical(header); err != nil || !valid {
@@ -182,7 +216,7 @@ func (bvp *BlockValidationPipeline) ValidateQuantumBlockAuthenticity(header *typ
 		return false, fmt.Errorf("quantum block failed authenticity validation")
 	}
 	
-	// Step 3: NEW - Validate simulator consensus
+	// Step 3: Validate simulator consensus
 	consensusValid, err := bvp.validateSimulatorConsensus(header)
 	if err != nil {
 		bvp.mu.Lock()
@@ -982,12 +1016,17 @@ func (bvp *BlockValidationPipeline) GetSimulatorConsensusStats() *SimulatorConse
 	return bvp.consensusValidator.GetConsensusStats()
 }
 
-// GetRegisteredQuantumSimulators returns information about registered simulators
+// GetRegisteredQuantumSimulators returns registered quantum simulators
 func (bvp *BlockValidationPipeline) GetRegisteredQuantumSimulators() map[string]*SimulatorFingerprint {
 	return bvp.consensusValidator.GetRegisteredSimulators()
 }
 
-// ValidateSimulatorConsensusManually allows manual consensus validation
+// ValidateSimulatorConsensusManually validates simulator consensus manually for testing
 func (bvp *BlockValidationPipeline) ValidateSimulatorConsensusManually(testCaseIDs []string) (*ConsensusValidationResult, error) {
 	return bvp.consensusValidator.ValidateSimulatorConsensus(testCaseIDs)
+}
+
+// GetAntiClassicalStats returns anti-classical mining protection statistics
+func (bvp *BlockValidationPipeline) GetAntiClassicalStats() *AntiClassicalStats {
+	return bvp.antiClassicalProtector.GetAntiClassicalStats()
 }
