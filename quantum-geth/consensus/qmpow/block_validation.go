@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 	"hash/crc32"
@@ -606,7 +607,7 @@ func (bvp *BlockValidationPipeline) validatePoWTarget(
 func (bvp *BlockValidationPipeline) validateEVMExecution(
 	chain consensus.ChainHeaderReader,
 	block *types.Block,
-	state *state.StateDB,
+	stateDB *state.StateDB,
 ) error {
 
 	// Verify transaction root
@@ -648,20 +649,335 @@ func (bvp *BlockValidationPipeline) ResetValidationStats() {
 	bvp.stats = &ValidationStats{}
 }
 
-// TEMPORARY COMPATIBILITY METHOD FOR TESTS
-// TODO: Remove once tests are updated to use new interface
-func (bvp *BlockValidationPipeline) ValidateQuantumBlock(chain interface{}, block interface{}, state interface{}, publicKey []byte, signature []byte) (*BlockValidationResultOld, error) {
-	// This is a temporary stub to fix compilation
-	// Real implementation would properly handle the parameters
+// ValidateCompleteBlockPipeline performs the complete 6-step block validation pipeline
+// as specified: RLP decode → Canonical compile → Nova proof → Dilithium → ASERT-Q → EVM execution
+func (bvp *BlockValidationPipeline) ValidateCompleteBlockPipeline(
+	chain consensus.ChainHeaderReader,
+	block *types.Block,
+	stateDB *state.StateDB,
+	publicKey []byte,
+	signature []byte,
+) (*BlockValidationResult, error) {
+	
+	startTime := time.Now()
+	header := block.Header()
+	
+	bvp.mu.Lock()
+	bvp.stats.TotalValidations++
+	bvp.mu.Unlock()
+	
+	log.Info("🔍 Starting complete block validation pipeline",
+		"block", header.Number.Uint64(),
+		"hash", block.Hash().Hex()[:10]+"...",
+		"steps", "6-step comprehensive validation")
+	
+	// Step 1: RLP‐decode classical header + quantum blob
+	step1Start := time.Now()
+	if err := bvp.validateRLPDecoding(block); err != nil {
+		bvp.mu.Lock()
+		bvp.stats.RLPDecodeErrors++
+		bvp.stats.FailedValidations++
+		bvp.mu.Unlock()
+		
+		log.Warn("❌ Step 1: RLP decoding failed",
+			"block", header.Number.Uint64(),
+			"error", err,
+			"step", "RLP_DECODE")
+		
+		return &BlockValidationResult{
+			IsValid: false,
+			Error:   fmt.Errorf("step 1 (RLP decode) failed: %v", err),
+		}, nil
+	}
+	
+	bvp.mu.Lock()
+	bvp.stats.RLPDecodeTime = time.Since(step1Start)
+	bvp.mu.Unlock()
+	
+	log.Debug("✅ Step 1: RLP decode completed", 
+		"block", header.Number.Uint64(),
+		"time", time.Since(step1Start))
+	
+	// Step 2: Canonical‐compile & GateHash check  
+	step2Start := time.Now()
+	valid, err := bvp.validateCanonicalCompileAndGateHash(header)
+	if err != nil || !valid {
+		bvp.mu.Lock()
+		bvp.stats.CanonicalCompileErrors++
+		bvp.stats.FailedValidations++
+		bvp.mu.Unlock()
+		
+		log.Warn("❌ Step 2: Canonical compile validation failed",
+			"block", header.Number.Uint64(),
+			"valid", valid,
+			"error", err,
+			"step", "CANONICAL_COMPILE")
+		
+		if err == nil {
+			err = fmt.Errorf("canonical compile validation failed")
+		}
+		
+		return &BlockValidationResult{
+			IsValid: false,
+			Error:   fmt.Errorf("step 2 (canonical compile) failed: %v", err),
+		}, nil
+	}
+	
+	bvp.mu.Lock()
+	bvp.stats.CanonicalCompileTime = time.Since(step2Start)
+	bvp.mu.Unlock()
+	
+	log.Debug("✅ Step 2: Canonical compile completed", 
+		"block", header.Number.Uint64(),
+		"time", time.Since(step2Start))
+	
+	// Step 3: Nova proof verify (Tier-B)
+	step3Start := time.Now()
+	valid, err = bvp.validateNovaProof(header)
+	if err != nil || !valid {
+		bvp.mu.Lock()
+		bvp.stats.NovaProofErrors++
+		bvp.stats.FailedValidations++
+		bvp.mu.Unlock()
+		
+		log.Warn("❌ Step 3: Nova proof validation failed",
+			"block", header.Number.Uint64(),
+			"valid", valid,
+			"error", err,
+			"step", "NOVA_PROOF")
+		
+		if err == nil {
+			err = fmt.Errorf("Nova proof validation failed")
+		}
+		
+		return &BlockValidationResult{
+			IsValid: false,
+			Error:   fmt.Errorf("step 3 (Nova proof) failed: %v", err),
+		}, nil
+	}
+	
+	bvp.mu.Lock()
+	bvp.stats.NovaProofTime = time.Since(step3Start)
+	bvp.mu.Unlock()
+	
+	log.Debug("✅ Step 3: Nova proof verification completed", 
+		"block", header.Number.Uint64(),
+		"time", time.Since(step3Start))
+	
+	// Step 4: Dilithium signature verify
+	step4Start := time.Now()
+	valid, err = bvp.validateDilithiumSignature(header, publicKey, signature)
+	if err != nil || !valid {
+		bvp.mu.Lock()
+		bvp.stats.DilithiumErrors++
+		bvp.stats.FailedValidations++
+		bvp.mu.Unlock()
+		
+		log.Warn("❌ Step 4: Dilithium signature validation failed",
+			"block", header.Number.Uint64(),
+			"valid", valid,
+			"error", err,
+			"step", "DILITHIUM_SIGNATURE")
+		
+		if err == nil {
+			err = fmt.Errorf("Dilithium signature validation failed")
+		}
+		
+		return &BlockValidationResult{
+			IsValid: false,
+			Error:   fmt.Errorf("step 4 (Dilithium signature) failed: %v", err),
+		}, nil
+	}
+	
+	bvp.mu.Lock()
+	bvp.stats.DilithiumTime = time.Since(step4Start)
+	bvp.mu.Unlock()
+	
+	log.Debug("✅ Step 4: Dilithium signature verification completed", 
+		"block", header.Number.Uint64(),
+		"time", time.Since(step4Start))
+	
+	// Step 5: PoW target test via ASERT-Q
+	step5Start := time.Now()
+	if err = bvp.validatePoWTarget(chain, header); err != nil {
+		bvp.mu.Lock()
+		bvp.stats.PoWTargetErrors++
+		bvp.stats.FailedValidations++
+		bvp.mu.Unlock()
+		
+		log.Warn("❌ Step 5: PoW target validation failed",
+			"block", header.Number.Uint64(),
+			"error", err,
+			"step", "POW_TARGET_ASERTQ")
+		
+		return &BlockValidationResult{
+			IsValid: false,
+			Error:   fmt.Errorf("step 5 (PoW target ASERT-Q) failed: %v", err),
+		}, nil
+	}
+	
+	bvp.mu.Lock()
+	bvp.stats.PoWTargetTime = time.Since(step5Start)
+	bvp.mu.Unlock()
+	
+	log.Debug("✅ Step 5: PoW target validation completed", 
+		"block", header.Number.Uint64(),
+		"time", time.Since(step5Start))
+	
+	// Step 6: EVM execution & state transition
+	step6Start := time.Now()
+	if err = bvp.validateEVMExecution(chain, block, stateDB); err != nil {
+		bvp.mu.Lock()
+		bvp.stats.EVMExecutionErrors++
+		bvp.stats.FailedValidations++
+		bvp.mu.Unlock()
+		
+		log.Warn("❌ Step 6: EVM execution validation failed",
+			"block", header.Number.Uint64(),
+			"error", err,
+			"step", "EVM_EXECUTION")
+		
+		return &BlockValidationResult{
+			IsValid: false,
+			Error:   fmt.Errorf("step 6 (EVM execution) failed: %v", err),
+		}, nil
+	}
+	
+	bvp.mu.Lock()
+	bvp.stats.EVMExecutionTime = time.Since(step6Start)
+	bvp.stats.SuccessfulValidations++
+	totalTime := time.Since(startTime)
+	bvp.stats.AverageValidationTime = updateAverageTimeValidation(
+		bvp.stats.AverageValidationTime, 
+		totalTime, 
+		bvp.stats.SuccessfulValidations)
+	bvp.stats.LastValidationTime = time.Now()
+	bvp.mu.Unlock()
+	
+	log.Info("🎉 Complete block validation pipeline successful",
+		"block", header.Number.Uint64(),
+		"hash", block.Hash().Hex()[:10]+"...",
+		"totalTime", totalTime,
+		"steps", "6/6 passed",
+		"rlp", bvp.stats.RLPDecodeTime,
+		"canonical", bvp.stats.CanonicalCompileTime,
+		"nova", bvp.stats.NovaProofTime,
+		"dilithium", bvp.stats.DilithiumTime,
+		"pow", bvp.stats.PoWTargetTime,
+		"evm", bvp.stats.EVMExecutionTime)
+	
+	// All steps passed successfully
+	return &BlockValidationResult{
+		IsValid: true,
+		Error:   nil,
+	}, nil
+}
+
+// ValidateQuantumBlock implements the complete block validation pipeline
+// This replaces the previous temporary stub with real implementation
+func (bvp *BlockValidationPipeline) ValidateQuantumBlock(chain interface{}, block interface{}, stateInterface interface{}, publicKey []byte, signature []byte) (*BlockValidationResultOld, error) {
+	// Type assertions to get proper types
+	chainReader, ok := chain.(consensus.ChainHeaderReader)
+	if !ok {
+		return &BlockValidationResultOld{
+			Valid:              false,
+			FailureReason:      "INVALID_CHAIN_TYPE",
+			FailureStep:        "TYPE_ASSERTION",
+			ValidationTime:     0,
+			GateHashMatch:      false,
+			ProofRootValid:     false,
+			AttestationValid:   false,
+		}, fmt.Errorf("invalid chain type, expected consensus.ChainHeaderReader")
+	}
+	
+	blockType, ok := block.(*types.Block)
+	if !ok {
+		return &BlockValidationResultOld{
+			Valid:              false,
+			FailureReason:      "INVALID_BLOCK_TYPE",
+			FailureStep:        "TYPE_ASSERTION", 
+			ValidationTime:     0,
+			GateHashMatch:      false,
+			ProofRootValid:     false,
+			AttestationValid:   false,
+		}, fmt.Errorf("invalid block type, expected *types.Block")
+	}
+	
+	stateDB, ok := stateInterface.(*state.StateDB)
+	if !ok {
+		return &BlockValidationResultOld{
+			Valid:              false,
+			FailureReason:      "INVALID_STATE_TYPE",
+			FailureStep:        "TYPE_ASSERTION",
+			ValidationTime:     0,
+			GateHashMatch:      false,
+			ProofRootValid:     false,
+			AttestationValid:   false,
+		}, fmt.Errorf("invalid state type, expected *state.StateDB")
+	}
+	
+	// Use the complete pipeline validation
+	startTime := time.Now()
+	result, err := bvp.ValidateCompleteBlockPipeline(chainReader, blockType, stateDB, publicKey, signature)
+	validationTime := time.Since(startTime)
+	
+	if err != nil {
+		return &BlockValidationResultOld{
+			Valid:              false,
+			FailureReason:      err.Error(),
+			FailureStep:        "PIPELINE_ERROR",
+			ValidationTime:     validationTime,
+			GateHashMatch:      false,
+			ProofRootValid:     false,
+			AttestationValid:   false,
+		}, err
+	}
+	
+	if !result.IsValid {
+		// Parse which step failed from the error message
+		failureStep := "UNKNOWN"
+		failureReason := "validation failed"
+		
+		if result.Error != nil {
+			errorStr := result.Error.Error()
+			failureReason = errorStr
+			
+			if strings.Contains(errorStr, "step 1") {
+				failureStep = "RLP_DECODE"
+			} else if strings.Contains(errorStr, "step 2") {
+				failureStep = "CANONICAL_COMPILE"
+			} else if strings.Contains(errorStr, "step 3") {
+				failureStep = "NOVA_PROOF"
+			} else if strings.Contains(errorStr, "step 4") {
+				failureStep = "DILITHIUM_SIGNATURE"
+			} else if strings.Contains(errorStr, "step 5") {
+				failureStep = "POW_TARGET_ASERTQ"
+			} else if strings.Contains(errorStr, "step 6") {
+				failureStep = "EVM_EXECUTION"
+			}
+		}
+		
+		return &BlockValidationResultOld{
+			Valid:              false,
+			FailureReason:      failureReason,
+			FailureStep:        failureStep,
+			ValidationTime:     validationTime,
+			GateHashMatch:      failureStep != "CANONICAL_COMPILE", // Failed gate hash if canonical compile failed
+			ProofRootValid:     failureStep != "NOVA_PROOF",        // Failed proof root if Nova failed
+			AttestationValid:   failureStep != "DILITHIUM_SIGNATURE", // Failed attestation if Dilithium failed
+		}, nil
+	}
+	
+	// All validation passed
 	return &BlockValidationResultOld{
-		Valid:              false,
-		FailureReason:      "TEMPORARY_STUB",
-		FailureStep:        "STUB",
-		ValidationTime:     0,
-		GateHashMatch:      false,
-		ProofRootValid:     false,
-		AttestationValid:   false,
-	}, fmt.Errorf("temporary stub method - tests need to be updated")
+		Valid:              true,
+		FailureReason:      "",
+		FailureStep:        "",
+		ValidationTime:     validationTime,
+		GateHashMatch:      true,
+		ProofRootValid:     true,
+		AttestationValid:   true,
+	}, nil
 }
 
 // Helper function to update average time
