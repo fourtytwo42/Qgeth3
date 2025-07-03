@@ -256,8 +256,32 @@ func TestNovaLiteProofGeneration(t *testing.T) {
 		capssProofs[i] = proof
 	}
 
+	// Create 128 CAPSS proofs for proper batch creation
+	fullCapssProofs := make([]*CAPSSProof, 128)
+	copy(fullCapssProofs[0:16], capssProofs)
+	
+	// Fill remaining slots with additional test proofs
+	for i := 16; i < 128; i++ {
+		seed := []byte(fmt.Sprintf("nova_filler_seed_%d_32bytes", i))
+		if len(seed) < 32 {
+			seed = append(seed, make([]byte, 32-len(seed))...)
+		}
+		qasm := fmt.Sprintf("qreg q[4]; creg c[4]; rx(0.%d) q[0]; measure q -> c;", i%10)
+		trace, err := witness.GenerateTrace(uint32(i+300), seed[:32], qasm, uint16(i+0x3000))
+		if err != nil {
+			t.Fatalf("Failed to generate filler trace %d: %v", i, err)
+		}
+		
+		proof, err := prover.GenerateProof(trace)
+		if err != nil {
+			t.Fatalf("Failed to generate filler CAPSS proof %d: %v", i, err)
+		}
+		
+		fullCapssProofs[i] = proof
+	}
+
 	// Create batch
-	batches, err := aggregator.createProofBatches(append(capssProofs, make([]*CAPSSProof, 32)...))
+	batches, err := aggregator.createProofBatches(fullCapssProofs)
 	if err != nil {
 		t.Fatalf("Failed to create batches: %v", err)
 	}
