@@ -1668,10 +1668,12 @@ func (d *Downloader) importBlockResults(results []*fetchResult) error {
 			log.Debug("Downloaded item processing failed", "number", results[index].Header.Number, "hash", results[index].Header.Hash(), "err", err)
 
 			// In post-merge, notify the engine API of encountered bad chains
+			// Skip beacon chain bounds for quantum blockchain (uses QMPoW, not beacon chain)
 			if d.badBlock != nil {
 				head, _, _, err := d.skeleton.Bounds()
 				if err != nil {
-					log.Error("Failed to retrieve beacon bounds for bad block reporting", "err", err)
+					// Skip beacon bounds error for quantum blockchain - QMPoW doesn't use beacon chain
+					log.Debug("Skipping beacon bounds for quantum blockchain", "err", err)
 				} else {
 					d.badBlock(blocks[index].Header(), head)
 				}
