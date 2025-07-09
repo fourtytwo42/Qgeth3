@@ -113,7 +113,7 @@ if [ $? -eq 0 ] && echo "$CHAIN_ID_RESPONSE" | grep -q '"result"'; then
             NETWORK_NAME="Q Coin Mainnet"
             NETWORK_COLOR="\033[1;32m"  # Green
             ;;
-        73237)
+        73238)
             NETWORK_NAME="Q Coin Planck Network"
             NETWORK_COLOR="\033[1;34m"  # Blue
             ;;

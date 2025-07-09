@@ -1274,7 +1274,7 @@ if "%NETWORK%"=="planck" (
 REM Start the node with network-specific configuration
 if "%NETWORK%"=="planck" (
     echo Starting Planck network node...
-    geth.exe --datadir qdata --networkid 73237 --port 30307 --http --http.addr "0.0.0.0" --http.port 8545 --http.corsdomain "*" --http.api "eth,net,web3,personal,admin,txpool,miner,qmpow" --ws --ws.addr "0.0.0.0" --ws.port 8546 --ws.origins "*" --ws.api "eth,net,web3,personal,admin,txpool,miner,qmpow" --allow-insecure-unlock --rpc.allow-unprotected-txs --mine --miner.threads 0 --miner.etherbase 0x0000000000000000000000000000000000000001
+    geth.exe --datadir qdata --networkid 73238 --port 30307 --http --http.addr "0.0.0.0" --http.port 8545 --http.corsdomain "*" --http.api "eth,net,web3,personal,admin,txpool,miner,qmpow" --ws --ws.addr "0.0.0.0" --ws.port 8546 --ws.origins "*" --ws.api "eth,net,web3,personal,admin,txpool,miner,qmpow" --allow-insecure-unlock --rpc.allow-unprotected-txs --mine --miner.threads 0 --miner.etherbase 0x0000000000000000000000000000000000000001
 ) else if "%NETWORK%"=="testnet" (
     echo Starting testnet node...
     geth.exe --datadir qdata --networkid 73235 --port 30305 --http --http.addr "0.0.0.0" --http.port 8545 --http.corsdomain "*" --http.api "eth,net,web3,personal,admin,txpool,miner,qmpow" --ws --ws.addr "0.0.0.0" --ws.port 8546 --ws.origins "*" --ws.api "eth,net,web3,personal,admin,txpool,miner,qmpow" --allow-insecure-unlock --rpc.allow-unprotected-txs --mine --miner.threads 0 --miner.etherbase 0x0000000000000000000000000000000000000001
@@ -1297,7 +1297,7 @@ PowerShell: .\start-geth.ps1 [planck|testnet|devnet]
 Batch: start-geth.bat [planck|testnet|devnet]
 
 ## Networks
-- Planck: Chain ID 73237 (default)
+- Planck: Chain ID 73238 (default)
 - Testnet: Chain ID 73235  
 - Devnet: Chain ID 73234
 

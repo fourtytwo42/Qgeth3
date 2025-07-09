@@ -48,7 +48,7 @@ if [ "$HELP" = true ]; then
     echo -e "\033[1;37mUsage: ./start-geth.sh [network] [options]\033[0m"
     echo ""
     echo -e "\033[1;33mNetworks:\033[0m"
-    echo "  planck    - Q Coin Planck Network (Chain ID 73237) [DEFAULT]"
+    echo "  planck    - Q Coin Planck Network (Chain ID 73238) [DEFAULT]"
     echo "  testnet   - Q Coin Testnet (Chain ID 73235)"
     echo "  devnet    - Q Coin Dev Network (Chain ID 73234)"
     echo ""
@@ -149,7 +149,7 @@ case $NETWORK in
         BOOTNODE_PORT=30305
         ;;
     planck)
-        CHAINID=73237
+        CHAINID=73238
         DATADIR="$HOME/.qcoin/planck"
         GENESIS="../../configs/genesis_quantum_planck.json"
         PORT=30307

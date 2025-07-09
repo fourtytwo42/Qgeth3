@@ -1178,7 +1178,7 @@ func setBootstrapNodes(ctx *cli.Context, cfg *p2p.Config) {
 					urls = params.QCoinTestnetBootnodes
 				case 73236:
 					urls = params.QCoinMainnetBootnodes
-				case 73237:
+				case 73238:
 					urls = params.QCoinPlanckBootnodes
 				}
 			}

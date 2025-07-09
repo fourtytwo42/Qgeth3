@@ -46,7 +46,7 @@ services:
       - ./configs:/opt/qgeth/configs:ro
     environment:
       - NETWORK=planck
-      - CHAIN_ID=73237
+      - CHAIN_ID=73238
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8545"]

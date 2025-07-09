@@ -5,8 +5,8 @@ The **Planck Network** is the **default** Q Coin testnet with the same configura
 
 ## Network Details
 - **Network Name**: Q Coin Planck Network
-- **Chain ID**: 73237
-- **Network ID**: 73237
+- **Chain ID**: 73238
+- **Network ID**: 73238
 - **Genesis File**: `configs/genesis_quantum_planck.json`
 - **Default Port**: 30307
 - **Data Directory**: 
@@ -81,7 +81,7 @@ The planck network supports the same mining capabilities as other Q Coin network
 
 | Network | Chain ID | Default Port | Purpose |
 |---------|----------|--------------|---------|
-| **Planck** | **73237** | **30307** | **Default testnet (isolated)** |
+| **Planck** | **73238** | **30307** | **Default testnet (isolated)** |
 | Testnet | 73235 | 30303 | Legacy testing network |
 | Devnet | 73234 | 30305 | Development/debugging |
 

@@ -9,6 +9,7 @@
     "eip160Block": 0,
     "eip161FBlock": 0,
     "eip170FBlock": 0,
+    "terminalTotalDifficulty": null,
     "qmpow": {
       "qbits": 16,
       "tcount": 20,

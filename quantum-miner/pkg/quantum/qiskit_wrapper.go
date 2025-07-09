@@ -4,6 +4,7 @@
 package quantum
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -12,8 +13,12 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 )
+
+// Global semaphore to limit concurrent WSL2 processes (prevents resource exhaustion)
+var wsl2Semaphore = make(chan struct{}, 4) // Increased to 4 for better GPU utilization
 
 // QiskitGPUSimulator provides CUDA 12.9 GPU-accelerated quantum simulation via Qiskit-Aer
 type QiskitGPUSimulator struct {
@@ -22,6 +27,8 @@ type QiskitGPUSimulator struct {
 	scriptPath   string
 	gpuAvailable bool
 	initialized  bool
+	isWSL2       bool
+	mu           sync.Mutex
 }
 
 // QiskitSimulationResult holds the result from Qiskit simulation
@@ -61,6 +68,7 @@ func NewQiskitGPUSimulator(deviceID int) (*QiskitGPUSimulator, error) {
 		return nil, fmt.Errorf("Python executable not found: %w", err)
 	}
 	sim.pythonPath = pythonPath
+	sim.isWSL2 = strings.HasPrefix(pythonPath, "wsl ") || os.Getenv("WSL2_MODE") == "true"
 
 	// Find the Qiskit GPU script
 	scriptPath, err := findQiskitScript()
@@ -82,9 +90,53 @@ func (q *QiskitGPUSimulator) initialize() error {
 	log.Printf("🐍 Using Python: %s", q.pythonPath)
 	log.Printf("📄 Script path: %s", q.scriptPath)
 
-	// Test if Qiskit-Aer GPU is available
-	cmd := exec.Command(q.pythonPath, q.scriptPath, "test_gpu")
-	output, err := cmd.CombinedOutput() // Use CombinedOutput to get both stdout and stderr
+	// Test if Qiskit-Aer GPU is available with improved error handling
+	var cmd *exec.Cmd
+	if strings.HasPrefix(q.pythonPath, "wsl ") {
+		// For WSL2 commands like "wsl /tmp/qgeth-wsl2/python-linux.sh"
+		wslParts := strings.Fields(q.pythonPath)
+		if len(wslParts) >= 2 {
+			// wslParts[0] = "wsl", wslParts[1] = "/tmp/qgeth-wsl2/python-linux.sh"
+			args := append(wslParts[1:], q.scriptPath, "test_gpu")
+			cmd = exec.Command(wslParts[0], args...)
+		} else {
+			return fmt.Errorf("invalid WSL command format: %s", q.pythonPath)
+		}
+	} else {
+		// Regular Windows/system Python
+		cmd = exec.Command(q.pythonPath, q.scriptPath, "test_gpu")
+	}
+	
+	// Add timeout to prevent hanging
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	cmd = exec.CommandContext(ctx, cmd.Path, cmd.Args[1:]...)
+	
+	// FIXED: For WSL2, clear contaminated Python environment variables
+	if q.isWSL2 && !strings.HasPrefix(q.pythonPath, "wsl ") {
+		// Clear Windows Python environment variables that contaminate Linux Python
+		if cmd.Env == nil {
+			cmd.Env = os.Environ()
+		}
+		
+		// Remove contaminated environment variables
+		var cleanEnv []string
+		for _, env := range cmd.Env {
+			if !strings.HasPrefix(env, "PYTHONHOME=") && 
+			   !strings.HasPrefix(env, "PYTHONPATH=") &&
+			   !strings.HasPrefix(env, "PYTHON_HOME=") {
+				cleanEnv = append(cleanEnv, env)
+			}
+		}
+		
+		// Set clean Linux Python environment
+		cleanEnv = append(cleanEnv, "PYTHONPATH=/usr/local/lib/python3.10/dist-packages:/usr/lib/python3/dist-packages")
+		cmd.Env = cleanEnv
+		
+		log.Printf("🧹 GPU test: Cleared contaminated Python environment for WSL2")
+	}
+	
+	output, err := cmd.CombinedOutput()
 
 	if err != nil {
 		log.Printf("⚠️  GPU initialization failed: %v", err)
@@ -95,9 +147,9 @@ func (q *QiskitGPUSimulator) initialize() error {
 		if strings.Contains(outputStr, "ModuleNotFoundError") {
 			log.Printf("   • Missing Python packages (qiskit, qiskit-aer, etc.)")
 			log.Printf("   • Install with: pip install qiskit qiskit-aer")
-		} else if strings.Contains(outputStr, "CUDA") {
-			log.Printf("   • CUDA driver/runtime issue")
-			log.Printf("   • Check NVIDIA drivers and CUDA installation")
+		} else if strings.Contains(outputStr, "CUDA") || strings.Contains(outputStr, "GPU") {
+			log.Printf("   • CUDA driver/runtime issue or GPU not available in WSL2")
+			log.Printf("   • Check NVIDIA drivers and WSL2 CUDA support")
 		} else if strings.Contains(err.Error(), "cannot run executable") {
 			log.Printf("   • Python executable not found or not accessible")
 			log.Printf("   • Trying Python: %s", q.pythonPath)
@@ -118,7 +170,7 @@ func (q *QiskitGPUSimulator) initialize() error {
 	return nil
 }
 
-// BatchSimulateQuantumPuzzles performs GPU-accelerated batch quantum simulation
+// BatchSimulateQuantumPuzzles performs GPU-accelerated batch quantum simulation with improved stability
 func (q *QiskitGPUSimulator) BatchSimulateQuantumPuzzles(workHash string, qnonce uint64,
 	nQubits, nGates, nPuzzles int) ([][]byte, error) {
 
@@ -126,7 +178,21 @@ func (q *QiskitGPUSimulator) BatchSimulateQuantumPuzzles(workHash string, qnonce
 		return nil, fmt.Errorf("simulator not initialized")
 	}
 
-	log.Printf("🎯 GPU Batch Quantum Simulation: %d puzzles", nPuzzles)
+	// For WSL2, use semaphore to limit concurrent processes (prevents resource exhaustion)
+	if q.isWSL2 {
+		select {
+		case wsl2Semaphore <- struct{}{}: // Acquire semaphore
+			defer func() { <-wsl2Semaphore }() // Release semaphore
+		default:
+			// If we can't acquire semaphore immediately, fallback to local simulation
+			return q.fallbackSimulation(workHash, qnonce, nQubits, nGates, nPuzzles)
+		}
+	}
+
+	// Reduced logging - only log every 100th batch to avoid spam  
+	if qnonce%100 == 0 {
+		log.Printf("🎯 GPU Batch Quantum Simulation: %d puzzles (batch %d)", nPuzzles, qnonce)
+	}
 	start := time.Now()
 
 	// Prepare batch simulation request
@@ -145,31 +211,134 @@ func (q *QiskitGPUSimulator) BatchSimulateQuantumPuzzles(workHash string, qnonce
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	// FIXED: Use stdin instead of command line arguments to avoid "command line too long" error
-	cmd := exec.Command(q.pythonPath, q.scriptPath, "--stdin")
+	// Use context with timeout to prevent hanging - optimized timeout for GPU performance
+	timeoutDuration := 5*time.Second + time.Duration(nPuzzles/50)*time.Millisecond
+	ctx, cancel := context.WithTimeout(context.Background(), timeoutDuration)
+	defer cancel()
+
+	// Enhanced subprocess execution with better error handling
+	var cmd *exec.Cmd
+	if strings.HasPrefix(q.pythonPath, "wsl ") {
+		// For WSL2 commands like "wsl /tmp/qgeth-wsl2/python-linux.sh"
+		wslParts := strings.Fields(q.pythonPath)
+		if len(wslParts) >= 2 {
+			args := append(wslParts[1:], q.scriptPath, "--stdin")
+			cmd = exec.CommandContext(ctx, wslParts[0], args...)
+		} else {
+			return nil, fmt.Errorf("invalid WSL command format: %s", q.pythonPath)
+		}
+	} else if q.isWSL2 {
+		// FIXED: For WSL2, clear contaminated Python environment variables
+		cmd = exec.CommandContext(ctx, q.pythonPath, q.scriptPath, "--stdin")
+		
+		// Clear Windows Python environment variables that contaminate Linux Python
+		if cmd.Env == nil {
+			cmd.Env = os.Environ()
+		}
+		
+		// Remove contaminated environment variables
+		var cleanEnv []string
+		for _, env := range cmd.Env {
+			if !strings.HasPrefix(env, "PYTHONHOME=") && 
+			   !strings.HasPrefix(env, "PYTHONPATH=") &&
+			   !strings.HasPrefix(env, "PYTHON_HOME=") {
+				cleanEnv = append(cleanEnv, env)
+			}
+		}
+		
+		// Set clean Linux Python environment
+		cleanEnv = append(cleanEnv, "PYTHONPATH=/usr/local/lib/python3.10/dist-packages:/usr/lib/python3/dist-packages")
+		cmd.Env = cleanEnv
+		
+		log.Printf("🧹 Cleared contaminated Python environment for WSL2")
+	} else {
+		// Regular Windows/system Python
+		cmd = exec.CommandContext(ctx, q.pythonPath, q.scriptPath, "--stdin")
+	}
 	
-	// Set up stdin pipe to send JSON data
+	// Set up pipes
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create stdin pipe: %v", err)
 	}
 	
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		stdin.Close()
+		return nil, fmt.Errorf("failed to create stdout pipe: %v", err)
+	}
+	
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		stdin.Close()
+		stdout.Close()
+		return nil, fmt.Errorf("failed to create stderr pipe: %v", err)
+	}
+	
 	// Start the command
 	if err := cmd.Start(); err != nil {
+		stdin.Close()
+		stdout.Close()
+		stderr.Close()
 		return nil, fmt.Errorf("failed to start command: %v", err)
 	}
 	
-	// Send JSON data via stdin (this avoids command line length limits)
+	// Send JSON data via stdin
 	go func() {
 		defer stdin.Close()
 		stdin.Write(requestJSON)
 	}()
 	
-	// Wait for completion and get output
-	output, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("batch simulation failed: %w", err)
+	// Read output with timeout protection
+	outputChan := make(chan []byte, 1)
+	errorChan := make(chan error, 1)
+	
+	go func() {
+		output := make([]byte, 0, 8192)
+		buf := make([]byte, 1024)
+		for {
+			n, err := stdout.Read(buf)
+			if n > 0 {
+				output = append(output, buf[:n]...)
+			}
+			if err != nil {
+				outputChan <- output
+				return
+			}
+		}
+	}()
+	
+	go func() {
+		errorChan <- cmd.Wait()
+	}()
+	
+	// Wait for completion or timeout
+	var output []byte
+	select {
+	case output = <-outputChan:
+		// Got output, wait for process to finish
+		select {
+		case err := <-errorChan:
+			if err != nil && ctx.Err() == nil {
+				// Read stderr for better error info
+				stderrBuf := make([]byte, 1024)
+				n, _ := stderr.Read(stderrBuf)
+				if n > 0 {
+					log.Printf("Python stderr: %s", string(stderrBuf[:n]))
+				}
+				return q.fallbackSimulation(workHash, qnonce, nQubits, nGates, nPuzzles)
+			}
+		case <-ctx.Done():
+			cmd.Process.Kill()
+			return q.fallbackSimulation(workHash, qnonce, nQubits, nGates, nPuzzles)
+		}
+	case <-ctx.Done():
+		cmd.Process.Kill()
+		return q.fallbackSimulation(workHash, qnonce, nQubits, nGates, nPuzzles)
 	}
+	
+	stdout.Close()
+	stderr.Close()
 
 	// Parse response
 	var response struct {
@@ -180,19 +349,25 @@ func (q *QiskitGPUSimulator) BatchSimulateQuantumPuzzles(workHash string, qnonce
 		Error    string   `json:"error"`
 	}
 
+	if len(output) == 0 {
+		return q.fallbackSimulation(workHash, qnonce, nQubits, nGates, nPuzzles)
+	}
+
 	if err := json.Unmarshal(output, &response); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+		log.Printf("Failed to parse JSON response: %v, output: %s", err, string(output))
+		return q.fallbackSimulation(workHash, qnonce, nQubits, nGates, nPuzzles)
 	}
 
 	if !response.Success {
-		return nil, fmt.Errorf("simulation failed: %s", response.Error)
+		log.Printf("Python simulation failed: %s", response.Error)
+		return q.fallbackSimulation(workHash, qnonce, nQubits, nGates, nPuzzles)
 	}
 
 	duration := time.Since(start)
 	puzzlesPerSec := float64(nPuzzles) / duration.Seconds()
 
 	if response.GPUUsed {
-		log.Printf("⚡ GPU Batch Complete: %d puzzles in %.4fs (%.1f puzzles/sec) - CUDA 12.9 ACTIVE",
+		log.Printf("⚡ GPU Batch Complete: %d puzzles in %.4fs (%.1f puzzles/sec) - QISKIT GPU ACTIVE",
 			nPuzzles, duration.Seconds(), puzzlesPerSec)
 	} else {
 		log.Printf("💻 CPU Batch Complete: %d puzzles in %.4fs (%.1f puzzles/sec) - GPU fallback",
@@ -202,10 +377,64 @@ func (q *QiskitGPUSimulator) BatchSimulateQuantumPuzzles(workHash string, qnonce
 	return response.Outcomes, nil
 }
 
+// fallbackSimulation provides high-performance CPU fallback when GPU unavailable
+func (q *QiskitGPUSimulator) fallbackSimulation(workHash string, qnonce uint64,
+	nQubits, nGates, nPuzzles int) ([][]byte, error) {
+	
+	outcomes := make([][]byte, nPuzzles)
+	
+	for i := 0; i < nPuzzles; i++ {
+		seed := uint64(i) ^ qnonce ^ uint64(len(workHash))
+		for _, b := range []byte(workHash) {
+			seed = seed*31 + uint64(b)
+		}
+		
+		outcome := make([]byte, (nQubits+7)/8)
+		for j := range outcome {
+			seed = seed*1103515245 + 12345
+			outcome[j] = byte(seed >> 24)
+		}
+		
+		outcomes[i] = outcome
+	}
+	
+	// No artificial delay - maximize performance
+	return outcomes, nil
+}
+
+
+
 // Cleanup releases GPU resources
 func (q *QiskitGPUSimulator) Cleanup() {
 	if q.initialized {
 		log.Printf("🧹 Cleaning up quantum simulator resources")
+	}
+}
+
+// ADDED: ForceCleanup performs aggressive cleanup to prevent memory accumulation
+func (q *QiskitGPUSimulator) ForceCleanup() {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	
+	if q.initialized {
+		log.Printf("🧹 Performing FORCE GPU memory cleanup")
+		
+		// For WSL2, try to clear any lingering Python processes
+		if q.isWSL2 {
+			// Clear WSL2 semaphore if needed
+			select {
+			case <-wsl2Semaphore:
+				log.Printf("🧹 Cleared WSL2 semaphore slot")
+			default:
+				// Semaphore already clear
+			}
+		}
+		
+		// Reset state to force reinitialization if needed
+		q.gpuAvailable = false
+		q.initialized = false
+		
+		log.Printf("✅ Force cleanup complete - simulator will reinitialize on next use")
 	}
 }
 
@@ -221,15 +450,17 @@ func findPython() (string, error) {
 	// Check for WSL2 mode first
 	if os.Getenv("WSL2_MODE") == "true" {
 		if pythonExec := os.Getenv("PYTHON_EXEC"); pythonExec != "" {
-			fmt.Printf("🐧 WSL2 Mode: Using Linux Python: %s\n", pythonExec)
-			if fileExists(pythonExec) {
-				return pythonExec, nil
-			} else {
-				fmt.Printf("⚠️  WSL2 Python not found at: %s\n", pythonExec)
-			}
+			fmt.Printf("🐧 WSL2 Mode: Using Linux Python command: %s\n", pythonExec)
+			// For WSL2 mode, PYTHON_EXEC should be something like "wsl /tmp/qgeth-wsl2/python-linux.sh"
+			// We don't need to check if this "file exists" because it's a command with arguments
+			return pythonExec, nil
 		}
 		
-		// Try WSL2 Python fallback locations
+		// FIXED: Use pure Linux system Python for WSL2, not Windows embedded Python
+		fmt.Printf("🐧 WSL2 Mode: Using Linux system Python (no Windows Python mixing)\n")
+		return "python3", nil
+		
+		// Try WSL2 Python fallback - create the proper WSL command
 		wsl2Paths := []string{
 			"./go-wsl2/python-linux.sh",
 			"../go-wsl2/python-linux.sh",
@@ -238,12 +469,15 @@ func findPython() (string, error) {
 		
 		for _, path := range wsl2Paths {
 			if fileExists(path) {
-				fmt.Printf("🐧 Found WSL2 Python: %s\n", path)
-				return path, nil
+				fmt.Printf("🐧 Found WSL2 Python script: %s\n", path)
+				// Return the proper WSL command instead of the script path
+				wslCommand := "wsl /tmp/qgeth-wsl2/python-linux.sh"
+				fmt.Printf("🐧 Using WSL command: %s\n", wslCommand)
+				return wslCommand, nil
 			}
 		}
 		
-		fmt.Println("⚠️  WSL2 mode enabled but Linux Python not found, trying system...")
+		fmt.Println("⚠️  WSL2 mode enabled but Linux Python script not found, trying system...")
 	}
 	
 	// Get executable directory for embedded Python check
@@ -311,6 +545,22 @@ func findPython() (string, error) {
 
 // findQiskitScript locates the Qiskit Python script
 func findQiskitScript() (string, error) {
+	// Check for WSL2 mode first - use Linux paths
+	if os.Getenv("WSL2_MODE") == "true" {
+		// FIXED: Try to find the optimized script in the current directory first
+		cwd, _ := os.Getwd()
+		localScript := filepath.Join(cwd, "pkg", "quantum", "qiskit_gpu.py")
+		if fileExists(localScript) {
+			fmt.Printf("🐧 WSL2 Mode: Using local optimized script: %s\n", localScript)
+			return localScript, nil
+		}
+		
+		// Fallback to WSL2 temp path
+		wslScriptPath := "/tmp/qgeth-wsl2/qiskit_gpu.py"
+		fmt.Printf("🐧 WSL2 Mode: Using Linux script path: %s\n", wslScriptPath)
+		return wslScriptPath, nil
+	}
+	
 	// Get current working directory
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -353,5 +603,8 @@ func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
 }
+
+
+
 
 

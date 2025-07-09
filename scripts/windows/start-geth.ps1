@@ -24,7 +24,7 @@ if ($Help) {
     Write-Host "  mainnet   - Q Coin Mainnet (Chain ID 73236)"
     Write-Host "  testnet   - Q Coin Testnet (Chain ID 73235) [DEFAULT]"
     Write-Host "  devnet    - Q Coin Dev Network (Chain ID 73234)"
-    Write-Host "  planck    - Q Coin Planck Network (Chain ID 73237)"
+    Write-Host "  planck    - Q Coin Planck Network (Chain ID 73238)"
     Write-Host ""
     Write-Host "Options:" -ForegroundColor Yellow
     Write-Host "  -mining   - Enable mining with single thread"
@@ -102,7 +102,7 @@ $configs = @{
         name = "Q Coin Dev Network"
     }
     "planck" = @{
-        chainid = 73237
+        chainid = 73238
         datadir = "$env:APPDATA\Qcoin\planck"
         genesis = Join-Path $projectRoot "configs\genesis_quantum_planck.json"
         port = 30307

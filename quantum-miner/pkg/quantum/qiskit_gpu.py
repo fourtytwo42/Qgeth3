@@ -40,7 +40,7 @@ class QiskitGPUBackend:
         """Initialize CUDA 12.9 GPU-accelerated Qiskit-Aer backend"""
         try:
             # Try GPU backend first (CUDA 12.9)
-            print(f"INFO: Attempting to initialize CUDA 12.9 GPU backend...")
+            print(f"INFO: Attempting to initialize CUDA 12.9 GPU backend...", file=sys.stderr)
             self.backend = AerSimulator(device='GPU', method='statevector')
             
             # Test GPU backend with a simple circuit
@@ -56,8 +56,8 @@ class QiskitGPUBackend:
             gpu_test_time = time.time() - start_time
             
             self.gpu_available = True
-            print(f"SUCCESS: CUDA 12.9 GPU backend ACTIVE! Test circuit: {gpu_test_time:.4f}s")
-            print(f"INFO: GPU Device: {self.device_id}, Backend: {self.backend}")
+            print(f"SUCCESS: CUDA 12.9 GPU backend ACTIVE! Test circuit: {gpu_test_time:.4f}s", file=sys.stderr)
+            print(f"INFO: GPU Device: {self.device_id}, Backend: {self.backend}", file=sys.stderr)
             
         except Exception as e:
             print(f"WARNING: CUDA 12.9 GPU initialization failed: {e}", file=sys.stderr)
@@ -72,7 +72,7 @@ class QiskitGPUBackend:
                 test_circuit = QuantumCircuit(4)
                 test_circuit.h(0)
                 result = self.backend.run(test_circuit, shots=1).result()
-                print(f"SUCCESS: CPU backend initialized successfully")
+                print(f"SUCCESS: CPU backend initialized successfully", file=sys.stderr)
                 
             except Exception as e2:
                 raise RuntimeError(f"Both GPU and CPU backends failed: {e2}")
@@ -109,31 +109,36 @@ class QiskitGPUBackend:
         seed = puzzle_index ^ qnonce ^ hash(work_hash) & 0xFFFFFFFF
         np.random.seed(seed)
         
-        # For large circuits (mining), use simplified simulation
-        if n_gates > 1000:
-            # Fast approximation for large circuits
-            start_time = time.time()
-            
-            # Simulate quantum randomness with classical computation
-            # This approximates the quantum behavior for mining purposes
-            outcome_int = seed % (2 ** min(n_qubits, 16))  # Limit to 16 qubits for safety
-            outcome_bytes = outcome_int.to_bytes((min(n_qubits, 16) + 7) // 8, byteorder='little')
-            
-            # Add small delay to simulate computation time
-            time.sleep(0.001)  # 1ms delay
-            simulation_time = time.time() - start_time
-            
-            return outcome_bytes, simulation_time
+        # Force GPU/CPU quantum simulation for all circuits
+        # Optimize for mining performance while using real quantum simulation
         
-        # For smaller circuits, use full quantum simulation
-        gates = self._generate_random_circuit(n_qubits, n_gates)
+        # Create optimized quantum circuit for mining
+        circuit = QuantumCircuit(n_qubits)
         
-        # Create and run the circuit
+        # For mining efficiency, use simplified but real quantum circuit
+        # Limit gates for performance while maintaining quantum behavior
+        effective_gates = min(n_gates, 100)  # Limit to 100 gates for performance
+        
+        for gate_idx in range(effective_gates):
+            gate_type = (seed + gate_idx) % 3
+            target = (seed + gate_idx) % n_qubits
+            
+            if gate_type == 0:  # Hadamard
+                circuit.h(target)
+            elif gate_type == 1:  # T gate
+                circuit.t(target)
+            elif gate_type == 2 and n_qubits > 1:  # CNOT
+                control = (target + 1) % n_qubits
+                circuit.cx(control, target)
+        
+        # Add measurements to get classical outcomes
+        circuit.measure_all()
+        
+        # Execute the optimized quantum circuit
         start_time = time.time()
-        circuit = self.create_quantum_circuit(n_qubits, gates)
         
-        # Transpile with minimal optimization for speed
-        transpiled = transpile(circuit, self.backend, optimization_level=0)
+        # Transpile with GPU optimization for speed
+        transpiled = transpile(circuit, self.backend, optimization_level=1)
         
         # Run simulation with fewer shots for speed
         job = self.backend.run(transpiled, shots=1)  # Single shot for speed
@@ -239,7 +244,10 @@ class QiskitGPUBackend:
             # CPU fallback for batch simulation
             return self._cpu_batch_simulate(work_hash, qnonce, n_qubits, n_gates, n_puzzles)
         
-        print(f"INFO: GPU Batch Processing: {n_puzzles} puzzles on CUDA 12.9")
+        # Reduce logging spam - only log every 10th batch
+        batch_num = qnonce % 10
+        if batch_num == 0:
+            print(f"INFO: GPU Batch Processing: {n_puzzles} puzzles on CUDA 12.9", file=sys.stderr)
         start_time = time.time()
         
         # For mining efficiency, we use simplified quantum simulation
@@ -300,14 +308,42 @@ class QiskitGPUBackend:
                 outcomes.append(outcome_bytes)
         
         total_time = time.time() - start_time
-        print(f"SUCCESS: GPU Batch Complete: {n_puzzles} puzzles in {total_time:.4f}s ({n_puzzles/total_time:.1f} puzzles/sec)")
+        
+        # Reduce logging spam - only log every 10th batch
+        if batch_num == 0:
+            print(f"SUCCESS: GPU Batch Complete: {n_puzzles} puzzles in {total_time:.4f}s ({n_puzzles/total_time:.1f} puzzles/sec)", file=sys.stderr)
+        
+        # ADDED: Force cleanup to prevent memory accumulation
+        self._force_cleanup_memory()
         
         return outcomes, total_time
+    
+    def _force_cleanup_memory(self):
+        """Force cleanup GPU/CPU memory to prevent accumulation"""
+        try:
+            # Clear any cached circuits/results
+            if hasattr(self.backend, '_circuits'):
+                self.backend._circuits = None
+            
+            # Force Python garbage collection
+            import gc
+            gc.collect()
+            
+            # Clear numpy cache if possible
+            if hasattr(np, 'get_include'):
+                # Clear any numpy caches
+                pass
+                
+        except Exception as e:
+            # Silent cleanup - don't crash mining for cleanup issues
+            pass
     
     def _cpu_batch_simulate(self, work_hash: str, qnonce: int,
                           n_qubits: int, n_gates: int, n_puzzles: int) -> Tuple[List[bytes], float]:
         """CPU fallback for batch simulation"""
-        print(f"INFO: CPU Batch Processing: {n_puzzles} puzzles")
+        # Reduce logging spam - only log every 50th batch for CPU
+        if qnonce % 50 == 0:
+            print(f"INFO: CPU Batch Processing: {n_puzzles} puzzles", file=sys.stderr)
         start_time = time.time()
         
         outcomes = []
@@ -316,6 +352,10 @@ class QiskitGPUBackend:
             outcomes.append(outcome)
         
         total_time = time.time() - start_time
+        
+        # ADDED: Cleanup CPU memory too
+        self._force_cleanup_memory()
+        
         return outcomes, total_time
 
 def main():

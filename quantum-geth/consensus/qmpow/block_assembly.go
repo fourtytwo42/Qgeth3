@@ -167,7 +167,9 @@ func (ba *BlockAssembler) AssembleQuantumBlock(
 	// Step 5: Assemble the final block
 	// Note: Dilithium signature & public key are returned separately
 	// to be appended to block body as per specification
-	block := types.NewBlockWithWithdrawals(header, txs, uncles, receipts, withdrawals, nil)
+	// QUANTUM CONSENSUS FIX: Always use empty uncles - quantum consensus does not support uncles
+	var emptyUncles []*types.Header
+	block := types.NewBlockWithWithdrawals(header, txs, emptyUncles, receipts, withdrawals, nil)
 
 	// Update statistics
 	ba.stats.SuccessfulAssemblies++
@@ -302,5 +304,7 @@ func (q *QMPoW) FinalizeAndAssembleWithProofs(
 	}
 
 	// For non-quantum blocks, use standard assembly
-	return types.NewBlockWithWithdrawals(header, txs, uncles, receipts, withdrawals, nil), nil
+	// QUANTUM CONSENSUS FIX: Always use empty uncles - quantum consensus does not support uncles
+	var emptyUncles []*types.Header
+	return types.NewBlockWithWithdrawals(header, txs, emptyUncles, receipts, withdrawals, nil), nil
 }

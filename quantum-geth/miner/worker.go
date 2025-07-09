@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -795,8 +796,18 @@ func (w *worker) resultLoop() {
 				_, err = w.chain.WriteBlockAndSetHead(block, nil, nil, state, true)
 				if err != nil {
 					log.Error("❌ Failed writing quantum block to chain", "err", err, "number", block.Number())
+					// QUANTUM CONSENSUS FIX: Don't invalidate work for uncle blocks
+					// Uncle blocks are expected to be rejected by quantum consensus
+					if !strings.Contains(err.Error(), "quantum consensus does not support uncles") {
+						// Only invalidate work for legitimate failures, not uncle block rejections
+						if qmpowEngine, ok := w.engine.(*qmpow.QMPoW); ok {
+							qmpowEngine.InvalidateOldWork(block.NumberU64())
+						}
+					} else {
+						log.Info("🚫 Uncle block correctly rejected by quantum consensus", "block", block.Number(), "hash", hash.Hex()[:10]+"...")
+					}
 				} else {
-									log.Info("✅ New block added to blockchain", "block", block.Number(), "hash", hash.Hex()[:10]+"...")
+					log.Info("✅ New block added to blockchain", "block", block.Number(), "hash", hash.Hex()[:10]+"...")
 
 					// CRITICAL FIX: Immediately invalidate old work templates for external miners
 					// This prevents external miners from submitting solutions for blocks that have already been mined
@@ -843,6 +854,16 @@ func (w *worker) resultLoop() {
 			_, err := w.chain.WriteBlockAndSetHead(block, receipts, logs, task.state, true)
 			if err != nil {
 				log.Error("❌ Failed writing quantum block to chain", "err", err, "number", block.Number())
+				// QUANTUM CONSENSUS FIX: Don't invalidate work for uncle blocks
+				// Uncle blocks are expected to be rejected by quantum consensus
+				if !strings.Contains(err.Error(), "quantum consensus does not support uncles") {
+					// Only invalidate work for legitimate failures, not uncle block rejections
+					if qmpowEngine, ok := w.engine.(*qmpow.QMPoW); ok {
+						qmpowEngine.InvalidateOldWork(block.NumberU64())
+					}
+				} else {
+					log.Info("🚫 Uncle block correctly rejected by quantum consensus", "block", block.Number(), "hash", hash.Hex()[:10]+"...")
+				}
 				continue
 			}
 			log.Info("✅ New block added to blockchain", 

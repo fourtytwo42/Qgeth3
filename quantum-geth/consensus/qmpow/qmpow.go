@@ -130,9 +130,8 @@ type remoteSealer struct {
 	requestExit  chan struct{}
 	exitCh       chan struct{}
 
-	// For automatic work preparation
+	// For blockchain reference (no template work)
 	chain       consensus.ChainHeaderReader
-	workReadyCh chan struct{}
 
 	// For duplicate submission tracking
 	submittedWork map[common.Hash]map[uint64]bool // workHash -> qnonce -> submitted
@@ -207,7 +206,6 @@ func New(config Config) *QMPoW {
 		submitRateCh:  make(chan *hashrate),
 		requestExit:   make(chan struct{}),
 		exitCh:        make(chan struct{}),
-		workReadyCh:   make(chan struct{}, 1),
 		submittedWork: make(map[common.Hash]map[uint64]bool),
 	}
 
@@ -528,6 +526,13 @@ func (q *QMPoW) Prepare(chain consensus.ChainHeaderReader, header *types.Header)
 func (q *QMPoW) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB,
 	txs []*types.Transaction, uncles []*types.Header, withdrawals []*types.Withdrawal) {
 
+	// QUANTUM CONSENSUS VALIDATION: Warn about uncle blocks being passed
+	if len(uncles) > 0 {
+		log.Warn("🚫 Quantum consensus ignoring uncle blocks in Finalize", 
+			"blockNumber", header.Number.Uint64(), 
+			"uncleCount", len(uncles))
+	}
+
 	// Create halving fee model if not exists
 	if q.halvingModel == nil {
 		q.halvingModel = NewHalvingFeeModel(chain)
@@ -568,6 +573,14 @@ func (q *QMPoW) Finalize(chain consensus.ChainHeaderReader, header *types.Header
 func (q *QMPoW) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB,
 	txs []*types.Transaction, uncles []*types.Header, receipts []*types.Receipt,
 	withdrawals []*types.Withdrawal) (*types.Block, error) {
+	
+	// QUANTUM CONSENSUS VALIDATION: Reject any attempt to include uncles
+	if len(uncles) > 0 {
+		log.Warn("🚫 Quantum consensus rejected uncle blocks", 
+			"blockNumber", header.Number.Uint64(), 
+			"uncleCount", len(uncles))
+		// Continue with empty uncles instead of erroring to prevent blockchain halt
+	}
 
 	// First: Finalize the header (apply rewards, etc.)
 	q.Finalize(chain, header, state, txs, uncles, withdrawals)
@@ -588,8 +601,11 @@ func (q *QMPoW) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *t
 		"blockNumber", header.Number.Uint64(),
 		"stateRoot", header.Root.Hex())
 
+	// QUANTUM CONSENSUS FIX: Always use empty uncles - quantum consensus does not support uncles
+	var emptyUncles []*types.Header
+	
 	// Assemble and return the final block
-	return types.NewBlockWithWithdrawals(header, txs, uncles, receipts, withdrawals, nil), nil
+	return types.NewBlockWithWithdrawals(header, txs, emptyUncles, receipts, withdrawals, nil), nil
 }
 
 // Seal generates a new sealing request for the given input block
@@ -1305,16 +1321,8 @@ func (s *remoteSealer) loop() {
 			s.mu.RUnlock()
 
 			if currentBlock == nil {
-				// Try to prepare work automatically
-				s.tryPrepareWork()
-				s.mu.RLock()
-				if s.currentBlock == nil {
-					s.mu.RUnlock()
-					work.errc <- errNoMiningWork
-				} else {
-					work.res <- s.currentWork
-					s.mu.RUnlock()
-				}
+				// No template work - only real mining work is allowed
+				work.errc <- errNoMiningWork
 			} else {
 				work.res <- currentWork
 			}
@@ -1340,7 +1348,7 @@ func (s *remoteSealer) loop() {
 				}
 			}
 
-			// CRITICAL FIX: Aggressive cleanup of outdated work templates
+			// CRITICAL FIX: Aggressive cleanup of outdated work
 			// This prevents external miners from submitting solutions for blocks
 			// that have already been mined and written to the blockchain
 			s.mu.Lock()
@@ -1349,12 +1357,12 @@ func (s *remoteSealer) loop() {
 				currentWorkHash = s.qmpow.SealHash(s.currentBlock.Header())
 			}
 
-			// Remove ALL old work templates except current work
+			// Remove ALL old work except current work
 			// This forces external miners to fetch new work after each block
 			for workHash := range s.works {
 				if workHash != currentWorkHash {
 					delete(s.works, workHash)
-					log.Debug("🔧 Cleaned up outdated work template", "workHash", workHash.Hex()[:10]+"...")
+					log.Debug("🔧 Cleaned up outdated work", "workHash", workHash.Hex()[:10]+"...")
 				}
 			}
 
@@ -1367,8 +1375,8 @@ func (s *remoteSealer) loop() {
 			s.mu.Unlock()
 
 		case <-workTicker.C:
-			// Automatically prepare work for external miners
-			s.tryPrepareWork()
+			// No automatic template work generation in real-work-only mode
+			// Work is only prepared when actual mining tasks are available
 
 		case <-s.requestExit:
 			return
@@ -1518,7 +1526,7 @@ func (s *remoteSealer) submitQuantumWork(qnonce uint64, blockHash common.Hash, q
 	}
 	s.submittedWork[blockHash][qnonce] = true
 
-	// Submit successful block if we have a result channel
+	// Submit successful block - only real mining work is supported
 	if s.results != nil {
 		log.Info("🔬 Processing REAL mining work with results channel", 
 			"qnonce", qnonce, 
@@ -1539,21 +1547,11 @@ func (s *remoteSealer) submitQuantumWork(qnonce uint64, blockHash common.Hash, q
 			return false
 		}
 	} else {
-		// This is template work from external miners (normal when local mining is disabled)
-		// Template work allows external miners to submit solutions even when the node
-		// is not actively mining (--miner.threads 0). This is expected behavior.
-		log.Info("✅ Template work solution accepted from external miner",
-			"number", header.Number.Uint64(),
+		// No template work - only real mining work is supported
+		log.Error("❌ Mining submission rejected - no active mining work", 
 			"qnonce", qnonce,
-			"type", "template",
-			"miner", "external",
-			"stateRoot", header.Root.Hex())
-
-		// For template blocks, the solution is valid but there's no direct submission path
-		// This is expected behavior when local mining is disabled (--miner.threads 0)
-		// External miners can submit valid solutions which are acknowledged here
-		// Return true to indicate the proof is valid
-		return true
+			"blockNumber", header.Number.Uint64())
+		return false
 	}
 }
 
@@ -1888,106 +1886,14 @@ func (s *remoteSealer) setChain(chain consensus.ChainHeaderReader) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.chain = chain
-
-	// Prepare initial work
-	go s.tryPrepareWork()
+	// Template work removed - only real mining work is supported
 }
 
-// tryPrepareWork attempts to prepare work for external miners when none is available
-func (s *remoteSealer) tryPrepareWork() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+// Template work functionality removed - only real mining work is supported
+// Real mining work is created through submitWork() when the miner worker 
+// calls engine.Seal() with a results channel for actual block mining
 
-	// CRITICAL FIX: Don't create template work if we already have real work with results channel
-	// Real mining work (with results channel) should never be overridden by template work
-	if s.results != nil && s.currentBlock != nil {
-		log.Debug("🔗 Skipping template work - real mining work already active", 
-			"block", s.currentBlock.Number().Uint64(),
-			"hasResultsChannel", s.results != nil)
-		return
-	}
-
-	// Skip if we already have recent work (but no results channel - template work)
-	if s.currentBlock != nil && s.results == nil {
-		// This is template work - allow refresh for external miners
-		log.Debug("🔄 Refreshing template work for external miners", 
-			"block", s.currentBlock.Number().Uint64())
-	}
-
-	// Skip if no chain reference available
-	if s.chain == nil {
-		return
-	}
-
-	// Get current head block
-	parent := s.chain.CurrentHeader()
-	if parent == nil {
-		log.Warn("No current header available for work preparation")
-		return
-	}
-
-	// Create a template block for external miners
-	header := &types.Header{
-		ParentHash: parent.Hash(),
-		Number:     new(big.Int).Add(parent.Number, big.NewInt(1)),
-		Time:       uint64(time.Now().Unix()),
-		GasLimit:   parent.GasLimit,
-		Difficulty: s.qmpow.CalcDifficulty(s.chain, uint64(time.Now().Unix()), parent),
-		Coinbase:   common.Address{}, // Will be set by external miner
-	}
-
-	// Prepare the header using QMPoW
-	if err := s.qmpow.Prepare(s.chain, header); err != nil {
-		log.Error("Failed to prepare header for remote mining", "err", err)
-		return
-	}
-
-	// CRITICAL FIX: Set the correct state root for empty template blocks
-	// Template blocks have no transactions and empty state, so they should use
-	// the parent's state root to ensure consistency when external miners submit solutions
-	//
-	// The issue was that template blocks were created with an incorrect state root,
-	// causing "state root mismatch" errors when external miners submitted valid solutions.
-	// By using the parent's state root, we ensure that when the block is processed,
-	// the state transitions will be applied correctly and the final state root will match.
-	header.Root = parent.Root
-
-	// Set correct empty hashes for template blocks with no transactions
-	header.TxHash = types.EmptyTxsHash
-	header.ReceiptHash = types.EmptyReceiptsHash
-	header.Bloom = types.Bloom{} // Empty bloom filter
-	header.UncleHash = types.EmptyUncleHash
-
-	log.Debug("🔧 Template block state root set", 
-		"blockNumber", header.Number.Uint64(),
-		"parentRoot", parent.Root.Hex(),
-		"templateRoot", header.Root.Hex(),
-		"txHash", header.TxHash.Hex(),
-		"receiptHash", header.ReceiptHash.Hex())
-
-	// Create template block with empty transactions and receipts
-	block := types.NewBlock(header, nil, nil, nil, nil)
-
-	// CRITICAL FIX: Only set template work if we don't have real work
-	// This ensures real mining work is never overridden by template work
-	if s.results == nil {
-		// Prepare work for external miners (template work only)
-		s.currentBlock = block
-		s.results = nil // Explicitly set to nil for template work
-		s.makeQuantumWorkUnsafe(block)
-
-		log.Info("🔗 Template work prepared for external miners",
-			"block", header.Number.Uint64(),
-			"difficulty", FormatDifficulty(header.Difficulty),
-			"type", "template")
-	} else {
-		log.Debug("🚫 Skipping template work preparation - real work active", 
-			"realBlock", s.currentBlock.Number().Uint64(),
-			"templateBlock", header.Number.Uint64())
-	}
-}
-
-// invalidateOldWork immediately clears all work templates to force external miners
+// invalidateOldWork immediately clears all mining work to force external miners
 // to fetch new work after a block has been successfully mined and written
 func (s *remoteSealer) invalidateOldWork(blockNumber uint64) {
 	s.mu.Lock()
@@ -1995,16 +1901,17 @@ func (s *remoteSealer) invalidateOldWork(blockNumber uint64) {
 
 	log.Info("🔧 Invalidating old mining work",
 		"block", blockNumber,
-		"templates", len(s.works))
+		"works", len(s.works))
 
-	// Clear ALL work templates - external miners must fetch new work
+	// Clear ALL work - external miners must fetch new work
 	s.works = make(map[common.Hash]*types.Block)
 	s.submittedWork = make(map[common.Hash]map[uint64]bool)
 	
 	// Clear current work to force regeneration
 	s.currentBlock = nil
 	s.currentWork = [5]string{}
-	s.results = nil
+	// DO NOT clear s.results - this is the communication channel back to the miner worker
+	// and must persist across work invalidation. Only submitWork() should set this.
 
 	log.Info("✅ Mining work updated for new block", "block", blockNumber)
 }

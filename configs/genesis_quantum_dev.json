@@ -9,17 +9,19 @@
     "eip160Block": 0,
     "eip161FBlock": 0,
     "eip170FBlock": 0,
+    "terminalTotalDifficulty": null,
     "qmpow": {
       "qbits": 16,
       "tcount": 20,
       "lnet": 128,
       "epochLen": 600000,
-      "testMode": false
+      "testMode": true
     }
   },
   "difficulty": "0xC8",
   "gasLimit": "0x2fefd8",
-  "extraData": "0x516765746833204465764e6574",
+  "timestamp": "0x67825B00",
+  "extraData": "0x516765746833204465764E657420323032352E30362E3238204570506F636820466978",
   "alloc": {
     "0x8b61271473f14c80f2B1381Db9CB13b2d5306200": {
       "balance": "0x3635c9adc5dea00000"
