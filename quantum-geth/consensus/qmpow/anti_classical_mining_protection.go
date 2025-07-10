@@ -275,6 +275,20 @@ func (acmp *AntiClassicalMiningProtector) ValidateQuantumAuthenticity(header *ty
 	acmp.stats.TotalValidations++
 	acmp.mu.Unlock()
 	
+	// GENESIS BLOCK EXCEPTION: Skip anti-classical validation for genesis block (block 0)
+	// Genesis blocks contain placeholder quantum data and don't need real quantum validation
+	if header.Number.Uint64() == 0 {
+		if acmp.config.DebugMode {
+			log.Debug("🌱 Skipping anti-classical validation for genesis block", "block", header.Number)
+		}
+		return &AntiClassicalValidationResult{
+			IsQuantumAuthentic:    true,
+			ClassicalDetected:     false,
+			ValidationTime:        time.Since(startTime),
+			ValidationTimestamp:   time.Now(),
+		}, nil
+	}
+	
 	if acmp.config.DebugMode {
 		log.Debug("🔍 Starting anti-classical validation",
 			"block", header.Number,
