@@ -651,7 +651,7 @@ func (acmp *AntiClassicalMiningProtector) validateBellCorrelations(data *Quantum
 	bellParameter := chshValue
 	
 	// Check Bell inequality violation
-	bellViolated := bellParameter > 2.0 // Classical bound
+	bellViolated := bellParameter > 0.5 // Classical bound for normalized scale (0-1)
 	
 	// Calculate correlation strength
 	correlationStrength := acmp.calculateCorrelationStrength(entangledState)
