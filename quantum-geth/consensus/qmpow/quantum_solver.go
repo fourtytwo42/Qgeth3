@@ -12,9 +12,11 @@
 package qmpow
 
 import (
+	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -115,17 +117,61 @@ func (q *QMPoW) callQiskitSolver(header *types.Header) (*QiskitResult, error) {
 		return nil, fmt.Errorf("failed to marshal input: %w", err)
 	}
 
-	// Find the Qiskit solver script
-	solverPath := filepath.Join("quantum-geth", "tools", "solver", "qiskit_solver.py")
+	// Find the Qiskit solver script - check current directory first, then relative path
+	solverPath := "qiskit_solver.py"
+	if _, err := os.Stat(solverPath); os.IsNotExist(err) {
+		solverPath = filepath.Join("quantum-geth", "tools", "solver", "qiskit_solver.py")
+	}
+
+	// DEBUG: Get absolute path and working directory
+	workingDir, _ := os.Getwd()
+	absolutePath, _ := filepath.Abs(solverPath)
+	
+	// Check if file exists
+	_, err = os.Stat(solverPath)
+	fileExists := err == nil
+	_, err2 := os.Stat(absolutePath)
+	absoluteExists := err2 == nil
+
+	log.Debug("🐛 DEBUG: Python solver execution details",
+		"workingDir", workingDir,
+		"solverPath", solverPath,
+		"absolutePath", absolutePath,
+		"fileExists", fileExists,
+		"absoluteExists", absoluteExists,
+		"inputJSON", string(inputJSON))
 
 	// Execute the Qiskit solver
 	cmd := exec.Command("python", solverPath)
+	cmd.Dir = workingDir
 	cmd.Stdin = strings.NewReader(string(inputJSON))
 
-	output, err := cmd.Output()
+	// Capture both stdout and stderr
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	log.Debug("🐛 DEBUG: About to execute command",
+		"command", "python",
+		"args", []string{solverPath},
+		"workingDir", cmd.Dir)
+
+	err = cmd.Run()
 	if err != nil {
-		return nil, fmt.Errorf("qiskit solver execution failed: %w", err)
+		log.Error("🐛 DEBUG: Command execution failed",
+			"command", "python "+solverPath,
+			"workingDir", workingDir,
+			"error", err,
+			"stdout", stdout.String(),
+			"stderr", stderr.String(),
+			"exitCode", cmd.ProcessState.ExitCode())
+		return nil, fmt.Errorf("qiskit solver execution failed: %w, stderr: %s", err, stderr.String())
 	}
+
+	output := stdout.Bytes()
+	log.Debug("🐛 DEBUG: Command executed successfully",
+		"outputLength", len(output),
+		"output", string(output[:min(len(output), 200)]))  // First 200 chars
 
 	// Parse the result
 	var result QiskitResult

@@ -524,8 +524,12 @@ func (scv *SimulatorConsensusValidator) executeQuantumComputation(params *Quantu
 		return nil, fmt.Errorf("failed to marshal input: %v", err)
 	}
 	
-	// Execute Qiskit solver
-	cmd := exec.Command("python3", "quantum-geth/tools/solver/qiskit_solver.py")
+	// Execute Qiskit solver - check current directory first, then relative path
+	solverPath := "qiskit_solver.py"
+	if _, err := os.Stat(solverPath); os.IsNotExist(err) {
+		solverPath = "quantum-geth/tools/solver/qiskit_solver.py"
+	}
+	cmd := exec.Command("python", solverPath)
 	cmd.Stdin = strings.NewReader(string(inputJSON))
 	
 	var stdout, stderr bytes.Buffer
