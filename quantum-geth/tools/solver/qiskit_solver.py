@@ -113,18 +113,20 @@ def execute_quantum_circuit(circuit: QuantumCircuit, shots: int = 8192) -> Dict[
             signal.alarm(0)
         raise e
 
-def extract_quantum_outcomes(counts: Dict[str, int], qubits: int) -> bytes:
-    """Extract quantum measurement outcomes as bytes"""
-    # Get the most frequent measurement outcome
+def extract_quantum_outcomes(counts: Dict[str, int], qubits: int) -> List[int]:
+    """Extract quantum measurement outcomes as list of integers (0 or 1)"""
+    outcomes = []
+    
     if not counts:
-        # Fallback: generate based on quantum randomness simulation
-        return os.urandom((qubits + 7) // 8)
+        # Fallback: generate quantum randomness
+        for _ in range(qubits):
+            outcomes.append(int(os.urandom(1)[0] % 2))
+        return outcomes
     
     # Use quantum measurement statistics to generate outcomes
     total_shots = sum(counts.values())
-    outcome_bytes = bytearray()
     
-    # Process each bit position
+    # Process each bit position to get quantum measurement outcomes
     for bit_pos in range(qubits):
         ones_count = 0
         zeros_count = 0
@@ -136,14 +138,19 @@ def extract_quantum_outcomes(counts: Dict[str, int], qubits: int) -> bytes:
                 else:
                     zeros_count += count
         
-        # Quantum bit value based on measurement probability
-        if bit_pos % 8 == 0:
-            outcome_bytes.append(0)
-        
+        # Quantum bit value based on measurement probability with randomness
         if ones_count > zeros_count:
-            outcome_bytes[-1] |= (1 << (bit_pos % 8))
+            # More likely to be 1, but add some quantum randomness
+            prob_one = ones_count / (ones_count + zeros_count)
+            outcome = 1 if (os.urandom(1)[0] / 256.0) < prob_one else 0
+        else:
+            # More likely to be 0, but add some quantum randomness
+            prob_zero = zeros_count / (ones_count + zeros_count)
+            outcome = 0 if (os.urandom(1)[0] / 256.0) < prob_zero else 1
+        
+        outcomes.append(outcome)
     
-    return bytes(outcome_bytes)
+    return outcomes
 
 def calculate_quantum_metrics(counts: Dict[str, int], qubits: int) -> Dict[str, float]:
     """Calculate quantum authenticity metrics with corrected Bell parameter calculation"""
@@ -234,7 +241,7 @@ def solve_quantum_puzzles(seed_hex: str, qubits: int, tcount: int, lnet: int) ->
             circuit = create_quantum_circuit(qubits, tcount, puzzle_seed)
             counts = execute_quantum_circuit(circuit, shots=1024)
             
-            # Extract quantum outcomes for this puzzle
+            # Extract quantum outcomes for this puzzle (now returns List[int])
             outcomes = extract_quantum_outcomes(counts, qubits)
             all_outcomes.extend(outcomes)
             
@@ -249,7 +256,7 @@ def solve_quantum_puzzles(seed_hex: str, qubits: int, tcount: int, lnet: int) ->
         metrics = calculate_quantum_metrics(counts, qubits)
         
         # Generate quantum proof data
-        outcomes_bytes = bytes(all_outcomes)
+        outcomes_bytes = bytes(all_outcomes)  # Convert list of int to bytes
         gate_hash = hashlib.sha256(str(circuit).encode()).digest()
         proof_root = hashlib.sha256(outcomes_bytes + gate_hash).digest()
         
