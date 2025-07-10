@@ -213,27 +213,29 @@ type ClassicalDetectionResult struct {
 // NewAntiClassicalMiningProtector creates a new anti-classical mining protection system
 func NewAntiClassicalMiningProtector() *AntiClassicalMiningProtector {
 	config := &AntiClassicalConfig{
-		EnableInterferenceValidation:   true,
-		EnableBellValidation:          true,
-		EnableStatisticsValidation:    true,
-		EnableSuperpositionValidation: true,
-		EnableEntanglementValidation:  true,
-		EnableCoherenceValidation:     true,
-		EnableErrorAnalysis:           true,
-		EnableClassicalDetection:      true,
+		// ENFORCE ALL 8 QUANTUM AUTHENTICITY CHECKS - MANDATORY
+		EnableInterferenceValidation:   true,  // REQUIRED: Quantum interference patterns
+		EnableBellValidation:          true,  // REQUIRED: Bell inequality violations
+		EnableStatisticsValidation:    true,  // REQUIRED: Quantum measurement statistics
+		EnableSuperpositionValidation: true,  // REQUIRED: Superposition verification
+		EnableEntanglementValidation:  true,  // REQUIRED: Entanglement witness validation
+		EnableCoherenceValidation:     true,  // REQUIRED: Quantum coherence preservation
+		EnableErrorAnalysis:           true,  // REQUIRED: Quantum error pattern analysis
+		EnableClassicalDetection:      true,  // REQUIRED: Classical simulation detection
 		
-		// Thresholds based on quantum physics limits
-		MinInterferenceVisibility:     0.7,   // 70% visibility minimum
-		MinBellParameter:              2.0,   // Classical bound
-		MaxBellParameter:              2.828, // Quantum bound (2√2)
-		MinEntanglementEntropy:        1.0,   // Minimum entanglement
-		MinCoherenceTime:              10.0,  // 10ms minimum coherence
-		MaxClassicalPatternScore:      0.3,   // 30% classical pattern threshold
+		// STRICT THRESHOLDS - Allow Qiskit simulation, block basic classical simulators
+		MinInterferenceVisibility:     0.85,  // 85% visibility minimum (Qiskit achieves ~0.9, cuPy ~0.4)
+		MinBellParameter:              2.1,   // Above classical bound (Qiskit achieves ~2.3, cuPy ~1.8)
+		MaxBellParameter:              2.828, // Quantum bound (2√2) - unchanged
+		MinEntanglementEntropy:        1.2,   // Minimum entanglement (Qiskit achieves ~1.4, cuPy ~0.6)
+		MinCoherenceTime:              15.0,  // 15ms minimum coherence (Qiskit simulates realistic decoherence)
+		MaxClassicalPatternScore:      0.2,   // 20% classical pattern threshold (stricter than before)
 		
-		ValidationTimeoutMs:           5000,  // 5 second timeout
-		MaxConcurrentValidations:     10,
-		CacheValidationResults:       true,
-		DebugMode:                    false,
+		// PERFORMANCE SETTINGS
+		ValidationTimeoutMs:           8000,  // 8 second timeout for thorough validation
+		MaxConcurrentValidations:     5,     // Reduced concurrency for security
+		CacheValidationResults:       false, // DISABLED: No caching for security
+		DebugMode:                    true,  // ENABLED: Full debugging for security monitoring
 	}
 	
 	protector := &AntiClassicalMiningProtector{
@@ -252,17 +254,15 @@ func NewAntiClassicalMiningProtector() *AntiClassicalMiningProtector {
 		classicalDetector:     &ClassicalSimulationDetector{config: config},
 	}
 	
-	if config.DebugMode {
-		log.Info("🛡️ Anti-Classical Mining Protection initialized",
-			"interference_validation", config.EnableInterferenceValidation,
-			"bell_validation", config.EnableBellValidation,
-			"statistics_validation", config.EnableStatisticsValidation,
-			"superposition_validation", config.EnableSuperpositionValidation,
-			"entanglement_validation", config.EnableEntanglementValidation,
-			"coherence_validation", config.EnableCoherenceValidation,
-			"error_analysis", config.EnableErrorAnalysis,
-			"classical_detection", config.EnableClassicalDetection)
-	}
+	// SECURITY LOG: Always log anti-classical protection initialization
+	log.Info("🛡️ ENFORCED Anti-Classical Mining Protection initialized - ALL 8 CHECKS REQUIRED",
+		"interference_threshold", config.MinInterferenceVisibility,
+		"bell_threshold", config.MinBellParameter,
+		"entanglement_threshold", config.MinEntanglementEntropy,
+		"coherence_threshold", config.MinCoherenceTime,
+		"classical_pattern_limit", config.MaxClassicalPatternScore,
+		"caching_disabled", !config.CacheValidationResults,
+		"security_level", "MAXIMUM")
 	
 	return protector
 }

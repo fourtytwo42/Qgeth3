@@ -364,6 +364,39 @@ func (q *QMPoW) verifyQuantumProofMain(header *types.Header) error {
 		return fmt.Errorf("invalid attestation mode: got %d, expected %d", *header.AttestMode, AttestModeDilithium)
 	}
 
+	// Step 8: ENFORCED Anti-Classical Mining Protection
+	// CRITICAL: This prevents classical simulation attacks and ensures quantum authenticity
+	antiClassicalProtector := NewAntiClassicalMiningProtector()
+	validationResult, err := antiClassicalProtector.ValidateQuantumAuthenticity(header)
+	if err != nil {
+		log.Warn("❌ Anti-classical validation failed",
+			"blockNumber", header.Number.Uint64(),
+			"error", err,
+			"qnonce", *header.QNonce64)
+		return fmt.Errorf("anti-classical validation failed: %v", err)
+	}
+	
+	if !validationResult.IsQuantumAuthentic {
+		log.Warn("🚨 CLASSICAL SIMULATION DETECTED",
+			"blockNumber", header.Number.Uint64(),
+			"qnonce", *header.QNonce64,
+			"violationType", validationResult.ViolationDetails.ViolationType,
+			"severity", validationResult.ViolationDetails.Severity,
+			"description", validationResult.ViolationDetails.Description,
+			"expectedValue", validationResult.ViolationDetails.ExpectedValue,
+			"actualValue", validationResult.ViolationDetails.ActualValue)
+		return fmt.Errorf("classical simulation detected: %s - %s", 
+			validationResult.ViolationDetails.ViolationType,
+			validationResult.ViolationDetails.Description)
+	}
+	
+	// Log successful quantum authentication
+	log.Info("🛡️ Quantum authenticity validated",
+		"blockNumber", header.Number.Uint64(),
+		"qnonce", *header.QNonce64,
+		"validationTime", validationResult.ValidationTime,
+		"securityLevel", "MAXIMUM")
+
 	log.Debug("✅ Comprehensive quantum proof verification with authenticity validation passed",
 		"blockNumber", header.Number.Uint64(),
 		"qnonce", *header.QNonce64,

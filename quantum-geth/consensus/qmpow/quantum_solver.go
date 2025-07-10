@@ -203,11 +203,38 @@ func (q *QMPoW) SolveQuantumPuzzles(header *types.Header) error {
 	// Marshal updated quantum fields into QBlob for proper RLP encoding
 	header.MarshalQuantumBlob()
 
-	log.Debug("🔬 Real quantum computation completed",
+	// CRITICAL: Validate quantum authenticity immediately after computation
+	// This prevents classical simulation attacks during mining
+	antiClassicalProtector := NewAntiClassicalMiningProtector()
+	validationResult, err := antiClassicalProtector.ValidateQuantumAuthenticity(header)
+	if err != nil {
+		log.Warn("❌ Mining: Anti-classical validation failed",
+			"blockNumber", header.Number.Uint64(),
+			"qnonce", *header.QNonce64,
+			"error", err)
+		return fmt.Errorf("mining anti-classical validation failed: %v", err)
+	}
+	
+	if !validationResult.IsQuantumAuthentic {
+		log.Warn("🚨 MINING: Classical simulation detected during mining",
+			"blockNumber", header.Number.Uint64(),
+			"qnonce", *header.QNonce64,
+			"violationType", validationResult.ViolationDetails.ViolationType,
+			"severity", validationResult.ViolationDetails.Severity,
+			"description", validationResult.ViolationDetails.Description,
+			"backend", result.Backend)
+		return fmt.Errorf("mining: classical simulation detected: %s - %s", 
+			validationResult.ViolationDetails.ViolationType,
+			validationResult.ViolationDetails.Description)
+	}
+
+	log.Debug("🔬 Real quantum computation completed with authentication",
 		"qnonce", *header.QNonce64,
 		"totalTime", fmt.Sprintf("%.3fs", result.TotalTime),
 		"avgTimePerPuzzle", fmt.Sprintf("%.3fs", result.AvgTimePerPuzzle),
-		"backend", result.Backend)
+		"backend", result.Backend,
+		"quantumAuthentic", validationResult.IsQuantumAuthentic,
+		"validationTime", validationResult.ValidationTime)
 
 	return nil
 }
