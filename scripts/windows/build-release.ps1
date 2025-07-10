@@ -1077,11 +1077,11 @@ if (Test-Path $config.genesis) {
     exit 1
 }
 
-$threads = if ($Mining) { "1" } else { "0" }
+$threads = if ($Mining) { "1" } else { "1" }
 $coinbase = "0x0000000000000000000000000000000000000001"
 $args = @("--datadir", $config.datadir, "--networkid", $config.chainid, "--port", $config.port,
     "--http", "--http.addr", "0.0.0.0", "--http.port", "8545", "--http.corsdomain", "*",
-    "--http.api", "eth,net,web3,personal,admin,txpool,miner,qmpow", "--mine", "--miner.threads", $threads, "--miner.etherbase", $coinbase)
+    "--http.api", "eth,net,web3,personal,admin,txpool,miner,qmpow", "--verbosity", "1", "--mine", "--miner.threads", $threads, "--miner.etherbase", $coinbase)
 
 Write-Host "Starting Q Coin node..." -ForegroundColor Cyan
 & ".\geth.exe" @args
@@ -1110,7 +1110,7 @@ if "%NETWORK%"=="schrodinger" (
     set DATADIR=%APPDATA%\Qcoin\planck
     set GENESIS=genesis_quantum_planck.json
 ) else (
-    echo Error: Invalid network '%NETWORK%'. Use: schrodinger (default), planck, testnet, devnet
+    echo Error: Invalid network. Use: schrodinger, planck, testnet, devnet
     exit /b 1
 )
 
@@ -1132,7 +1132,7 @@ if %ERRORLEVEL% neq 0 (
 echo Genesis initialization successful
 
 echo Starting Q Coin node...
-geth.exe --datadir "%DATADIR%" --networkid %CHAINID% --http --http.addr 0.0.0.0 --http.port 8545 --http.corsdomain "*" --http.api "eth,net,web3,personal,admin,txpool,miner,qmpow" --mine --miner.threads 0 --miner.etherbase 0x0000000000000000000000000000000000000001
+geth.exe --datadir "%DATADIR%" --networkid %CHAINID% --http --http.addr 0.0.0.0 --http.port 8545 --http.corsdomain "*" --http.api "eth,net,web3,personal,admin,txpool,miner,qmpow" --verbosity 1 --mine --miner.threads 1 --miner.etherbase 0x0000000000000000000000000000000000000001
 '@ | Out-File -FilePath (Join-Path $releaseDir "start-geth.bat") -Encoding ASCII
 
             # Create enhanced README
