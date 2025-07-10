@@ -4,7 +4,7 @@
 # Networks: mainnet, testnet, devnet (default: testnet)
 # Options: --mining (enable mining with single thread)
 
-NETWORK="planck"
+NETWORK="schrodinger"
 MINING=false
 HELP=false
 EXTRA_ARGS=()
@@ -12,7 +12,7 @@ EXTRA_ARGS=()
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
-        testnet|devnet|planck)
+        schrodinger|testnet|devnet|planck)
             NETWORK="$1"
             shift
             ;;
@@ -48,7 +48,8 @@ if [ "$HELP" = true ]; then
     echo -e "\033[1;37mUsage: ./start-geth.sh [network] [options]\033[0m"
     echo ""
     echo -e "\033[1;33mNetworks:\033[0m"
-    echo "  planck    - Q Coin Planck Network (Chain ID 73237) [DEFAULT]"
+    echo "  schrodinger - Q Coin Schrodinger Testnet (Chain ID 73238) [DEFAULT]"
+    echo "  planck    - Q Coin Planck Network (Chain ID 73237)"
     echo "  testnet   - Q Coin Testnet (Chain ID 73235)"
     echo "  devnet    - Q Coin Dev Network (Chain ID 73234)"
     echo ""
@@ -62,7 +63,8 @@ if [ "$HELP" = true ]; then
     echo "  🔗 External Miner Support: Full qmpow API for external mining"
     echo ""
     echo -e "\033[1;32mExamples:\033[0m"
-    echo "  ./start-geth.sh                  # Start planck node (default)"
+    echo "  ./start-geth.sh                  # Start schrodinger node (default)"
+    echo "  ./start-geth.sh planck           # Start planck node"
     echo "  ./start-geth.sh testnet          # Start testnet node"
     echo "  ./start-geth.sh devnet --mining  # Start dev node with mining"
     exit 0
@@ -132,6 +134,14 @@ fi
 
 # Network configurations
 case $NETWORK in
+    schrodinger)
+        CHAINID=73238
+        DATADIR="$HOME/.qcoin/schrodinger"
+        GENESIS="../../configs/genesis_quantum_schrodinger.json"
+        PORT=30308
+        NAME="Q Coin Schrodinger Testnet"
+        BOOTNODE_PORT=30308
+        ;;
     testnet)
         CHAINID=73235
         DATADIR="$HOME/.qcoin/testnet"
@@ -157,7 +167,7 @@ case $NETWORK in
         BOOTNODE_PORT=30307
         ;;
     *)
-        echo -e "\033[1;31m[ERROR] Invalid network '$NETWORK'. Use: testnet, devnet, planck\033[0m"
+        echo -e "\033[1;31m[ERROR] Invalid network '$NETWORK'. Use: schrodinger, testnet, devnet, planck\033[0m"
         exit 1
         ;;
 esac

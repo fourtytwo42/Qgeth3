@@ -1001,9 +1001,10 @@ if ($Component -eq "geth" -or $Component -eq "both") {
             Write-Host "Adding genesis configurations for auto-reset..." -ForegroundColor Yellow
             $configsDir = Join-Path $ProjectRoot "configs"
             if (Test-Path $configsDir) {
-                Copy-Item (Join-Path $configsDir "genesis_quantum_testnet.json") (Join-Path $releaseDir "genesis_quantum_testnet.json") -Force
-                Copy-Item (Join-Path $configsDir "genesis_quantum_dev.json") (Join-Path $releaseDir "genesis_quantum_dev.json") -Force
-                Copy-Item (Join-Path $configsDir "genesis_quantum_planck.json") (Join-Path $releaseDir "genesis_quantum_planck.json") -Force
+                            Copy-Item (Join-Path $configsDir "genesis_quantum_testnet.json") (Join-Path $releaseDir "genesis_quantum_testnet.json") -Force
+            Copy-Item (Join-Path $configsDir "genesis_quantum_dev.json") (Join-Path $releaseDir "genesis_quantum_dev.json") -Force
+            Copy-Item (Join-Path $configsDir "genesis_quantum_planck.json") (Join-Path $releaseDir "genesis_quantum_planck.json") -Force
+            Copy-Item (Join-Path $configsDir "genesis_quantum_schrodinger.json") (Join-Path $releaseDir "genesis_quantum_schrodinger.json") -Force
                 Write-Host "Genesis files added successfully" -ForegroundColor Green
             } else {
                 Write-Host "Warning: configs directory not found, skipping genesis files" -ForegroundColor Yellow
@@ -1011,17 +1012,23 @@ if ($Component -eq "geth" -or $Component -eq "both") {
             
             # Create PowerShell launcher with genesis auto-reset
             @'
-param([string]$Network = "planck", [switch]$Mining, [switch]$Help)
+param([string]$Network = "schrodinger", [switch]$Mining, [switch]$Help)
 
 if ($Help) {
     Write-Host "Q Coin Geth Launcher with Auto-Reset" -ForegroundColor Cyan
     Write-Host "Usage: .\start-geth.ps1 [network] [options]"
-    Write-Host "Networks: planck (default), testnet, devnet"
+    Write-Host "Networks: schrodinger (default), planck, testnet, devnet"
     Write-Host "Features: Automatic blockchain reset when genesis changes"
     exit 0
 }
 
 $configs = @{
+    "schrodinger" = @{ 
+        chainid = 73238; 
+        datadir = "$env:APPDATA\Qcoin\schrodinger"; 
+        port = 30308; 
+        genesis = "genesis_quantum_schrodinger.json" 
+    }
     "testnet" = @{ 
         chainid = 73235; 
         datadir = "$env:APPDATA\Qcoin\testnet"; 
@@ -1043,7 +1050,7 @@ $configs = @{
 }
 
 if (-not $configs.ContainsKey($Network)) {
-    Write-Host "Error: Invalid network '$Network'. Use: planck (default), testnet, devnet" -ForegroundColor Red
+    Write-Host "Error: Invalid network '$Network'. Use: schrodinger (default), planck, testnet, devnet" -ForegroundColor Red
     exit 1
 }
 
@@ -1084,9 +1091,13 @@ Write-Host "Starting Q Coin node..." -ForegroundColor Cyan
             @'
 @echo off
 set NETWORK=%1
-if "%NETWORK%"=="" set NETWORK=planck
+if "%NETWORK%"=="" set NETWORK=schrodinger
 
-if "%NETWORK%"=="testnet" (
+if "%NETWORK%"=="schrodinger" (
+    set CHAINID=73238
+    set DATADIR=%APPDATA%\Qcoin\schrodinger
+    set GENESIS=genesis_quantum_schrodinger.json
+) else if "%NETWORK%"=="testnet" (
     set CHAINID=73235
     set DATADIR=%APPDATA%\Qcoin\testnet
     set GENESIS=genesis_quantum_testnet.json
@@ -1099,7 +1110,7 @@ if "%NETWORK%"=="testnet" (
     set DATADIR=%APPDATA%\Qcoin\planck
     set GENESIS=genesis_quantum_planck.json
 ) else (
-    echo Error: Invalid network '%NETWORK%'. Use: planck (default), testnet, devnet
+    echo Error: Invalid network '%NETWORK%'. Use: schrodinger (default), planck, testnet, devnet
     exit /b 1
 )
 
@@ -1138,11 +1149,12 @@ Component: Quantum-Geth (Q Coin Blockchain Node)
 - External Miner Support: Full qmpow API for external mining
 
 ## Quick Start
-PowerShell: .\start-geth.ps1 [testnet|devnet] [-mining]
-Batch: start-geth.bat [testnet|devnet]
+PowerShell: .\start-geth.ps1 [schrodinger|planck|testnet|devnet] [-mining]
+Batch: start-geth.bat [schrodinger|planck|testnet|devnet]
 
 ## Network Information
-- Planck: Chain ID 73237, genesis_quantum_planck.json [DEFAULT]
+- Schrodinger: Chain ID 73238, genesis_quantum_schrodinger.json [DEFAULT]
+- Planck: Chain ID 73237, genesis_quantum_planck.json
 - Testnet: Chain ID 73235, genesis_quantum_testnet.json
 - Devnet: Chain ID 73234, genesis_quantum_dev.json
 
@@ -1159,9 +1171,10 @@ The node automatically detects when genesis parameters change and:
 - Data Directory: %APPDATA%\Qcoin\[network]\
 
 ## Genesis Files Included
+- genesis_quantum_schrodinger.json (Chain ID: 73238) [DEFAULT]
+- genesis_quantum_planck.json (Chain ID: 73237)
 - genesis_quantum_testnet.json (Chain ID: 73235)
 - genesis_quantum_dev.json (Chain ID: 73234)
-- genesis_quantum_planck.json (Chain ID: 73237)
 
 See project README for full documentation.
 '@
