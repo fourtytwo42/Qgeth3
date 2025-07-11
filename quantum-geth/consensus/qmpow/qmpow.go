@@ -164,6 +164,9 @@ type QMPoW struct {
 	// Block validation pipeline with comprehensive security validation
 	blockValidationPipeline *BlockValidationPipeline
 
+	// Anti-classical mining protection (shared across all operations)
+	antiClassicalProtector *AntiClassicalMiningProtector
+
 	// Testing support
 	fakeFailure uint64 // Block number to fail at (for testing)
 
@@ -195,7 +198,11 @@ func New(config Config) *QMPoW {
 		update:     make(chan struct{}),
 		rlpManager: NewQuantumRLPManager(),
 		blockValidationPipeline: NewBlockValidationPipeline(common.Hash{}), // Use zero hash for now
+		antiClassicalProtector: NewAntiClassicalMiningProtector(),
 	}
+	
+	// Set the global anti-classical protector for quantum metrics sharing
+	SetGlobalAntiClassicalProtector(q.antiClassicalProtector)
 
 	// Start remote mining interface
 	q.remote = &remoteSealer{
@@ -366,8 +373,7 @@ func (q *QMPoW) verifyQuantumProofMain(header *types.Header) error {
 
 	// Step 8: ENFORCED Anti-Classical Mining Protection
 	// CRITICAL: This prevents classical simulation attacks and ensures quantum authenticity
-	antiClassicalProtector := NewAntiClassicalMiningProtector()
-	validationResult, err := antiClassicalProtector.ValidateQuantumAuthenticity(header)
+	validationResult, err := q.antiClassicalProtector.ValidateQuantumAuthenticity(header)
 	if err != nil {
 		log.Warn("❌ Anti-classical validation failed",
 			"blockNumber", header.Number.Uint64(),

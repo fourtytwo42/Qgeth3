@@ -1010,6 +1010,18 @@ if ($Component -eq "geth" -or $Component -eq "both") {
                 Write-Host "Warning: configs directory not found, skipping genesis files" -ForegroundColor Yellow
             }
             
+            # Copy Python solver for quantum mining functionality
+            Write-Host "Adding Python quantum solver..." -ForegroundColor Yellow
+            $solverDir = Join-Path $releaseDir "quantum-geth\tools\solver"
+            New-Item -ItemType Directory -Path $solverDir -Force | Out-Null
+            $solverSourcePath = Join-Path $QuantumGethDir "tools\solver\qiskit_solver.py"
+            if (Test-Path $solverSourcePath) {
+                Copy-Item $solverSourcePath (Join-Path $solverDir "qiskit_solver.py") -Force
+                Write-Host "Python solver added successfully" -ForegroundColor Green
+            } else {
+                Write-Host "Warning: Python solver not found at $solverSourcePath" -ForegroundColor Yellow
+            }
+            
             # Create PowerShell launcher with genesis auto-reset
             @'
 param([string]$Network = "schrodinger", [switch]$Mining, [switch]$Help)
@@ -1257,6 +1269,18 @@ if ($Component -eq "miner" -or $Component -eq "both") {
                 } else {
                     Write-Host "  Warning: $script not found" -ForegroundColor Yellow
                 }
+            }
+            
+            # Copy Python solver for quantum mining functionality (needed for geth integration)
+            Write-Host "Adding Python quantum solver for geth integration..." -ForegroundColor Yellow
+            $solverDir = Join-Path $releaseDir "quantum-geth\tools\solver"
+            New-Item -ItemType Directory -Path $solverDir -Force | Out-Null
+            $solverSourcePath = Join-Path $QuantumGethDir "tools\solver\qiskit_solver.py"
+            if (Test-Path $solverSourcePath) {
+                Copy-Item $solverSourcePath (Join-Path $solverDir "qiskit_solver.py") -Force
+                Write-Host "Python solver added successfully" -ForegroundColor Green
+            } else {
+                Write-Host "Warning: Python solver not found at $solverSourcePath" -ForegroundColor Yellow
             }
             
             # Set up embedded Python (self-contained release)

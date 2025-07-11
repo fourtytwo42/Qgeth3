@@ -117,14 +117,22 @@ def extract_quantum_outcomes(counts: Dict[str, int], qubits: int) -> List[int]:
     """Extract quantum measurement outcomes as list of integers (0 or 1)"""
     outcomes = []
     
+    # DEBUG: Print measurement counts
+    sys.stderr.write(f"DEBUG extract_quantum_outcomes: counts={counts}, qubits={qubits}\n")
+    sys.stderr.flush()
+    
     if not counts:
         # Fallback: generate quantum randomness
+        sys.stderr.write("DEBUG: No counts, using random fallback\n")
+        sys.stderr.flush()
         for _ in range(qubits):
             outcomes.append(int(os.urandom(1)[0] % 2))
         return outcomes
     
     # Use quantum measurement statistics to generate outcomes
     total_shots = sum(counts.values())
+    sys.stderr.write(f"DEBUG: total_shots={total_shots}\n")
+    sys.stderr.flush()
     
     # Process each bit position to get quantum measurement outcomes
     for bit_pos in range(qubits):
@@ -132,11 +140,25 @@ def extract_quantum_outcomes(counts: Dict[str, int], qubits: int) -> List[int]:
         zeros_count = 0
         
         for bitstring, count in counts.items():
-            if len(bitstring) > bit_pos:
-                if bitstring[-(bit_pos + 1)] == '1':  # Qiskit uses big-endian
+            # Remove spaces and use only the meaningful bits
+            clean_bitstring = bitstring.replace(' ', '')
+            
+            # For debugging: check the length and content
+            if bit_pos == 0:  # Only debug for first bit position
+                sys.stderr.write(f"DEBUG: original bitstring='{bitstring}', clean='{clean_bitstring}', len={len(clean_bitstring)}\n")
+                sys.stderr.flush()
+            
+            # Only use the first qubits (meaningful quantum bits, not padding zeros)
+            meaningful_bits = clean_bitstring[:qubits] if len(clean_bitstring) >= qubits else clean_bitstring
+            
+            if len(meaningful_bits) > bit_pos:
+                if meaningful_bits[bit_pos] == '1':  # Read from left side (first qubits)
                     ones_count += count
                 else:
                     zeros_count += count
+        
+        sys.stderr.write(f"DEBUG: bit_pos={bit_pos}, ones_count={ones_count}, zeros_count={zeros_count}\n")
+        sys.stderr.flush()
         
         # Quantum bit value based on measurement probability with randomness
         if ones_count > zeros_count:
@@ -148,7 +170,13 @@ def extract_quantum_outcomes(counts: Dict[str, int], qubits: int) -> List[int]:
             prob_zero = zeros_count / (ones_count + zeros_count)
             outcome = 0 if (os.urandom(1)[0] / 256.0) < prob_zero else 1
         
+        sys.stderr.write(f"DEBUG: bit_pos={bit_pos}, outcome={outcome}\n")
+        sys.stderr.flush()
+        
         outcomes.append(outcome)
+    
+    sys.stderr.write(f"DEBUG: final outcomes for this puzzle: {outcomes}\n")
+    sys.stderr.flush()
     
     return outcomes
 

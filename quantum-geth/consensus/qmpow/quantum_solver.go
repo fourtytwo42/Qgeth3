@@ -41,6 +41,27 @@ type QiskitResult struct {
 	ExecutionTimes   []float64 `json:"execution_times"`
 	Backend          string    `json:"backend"`
 	ShotsPerCircuit  int       `json:"shots_per_circuit"`
+	QuantumMetrics   *QuantumMetrics `json:"quantum_metrics"`
+}
+
+// QuantumMetrics contains actual quantum metrics from the solver
+type QuantumMetrics struct {
+	Visibility           float64 `json:"visibility"`
+	BellParameter        float64 `json:"bell_parameter"`
+	EntanglementEntropy  float64 `json:"entanglement_entropy"`
+}
+
+// Global anti-classical protector for storing real quantum metrics
+var globalAntiClassicalProtector *AntiClassicalMiningProtector
+
+// GetGlobalAntiClassicalProtector returns the global anti-classical protector
+func GetGlobalAntiClassicalProtector() *AntiClassicalMiningProtector {
+	return globalAntiClassicalProtector
+}
+
+// SetGlobalAntiClassicalProtector sets the global anti-classical protector
+func SetGlobalAntiClassicalProtector(protector *AntiClassicalMiningProtector) {
+	globalAntiClassicalProtector = protector
 }
 
 // initializeQuantumFields initializes all quantum proof-of-work fields
@@ -214,6 +235,19 @@ func (q *QMPoW) SolveQuantumPuzzles(header *types.Header) error {
 		return fmt.Errorf("failed to decode proof root: %w", err)
 	}
 
+	// Store real quantum metrics for anti-classical validation
+	if result.QuantumMetrics != nil {
+		// Get the global anti-classical protector and store metrics
+		if protector := GetGlobalAntiClassicalProtector(); protector != nil {
+			realMetrics := &RealQuantumMetrics{
+				Visibility:          result.QuantumMetrics.Visibility,
+				BellParameter:       result.QuantumMetrics.BellParameter,
+				EntanglementEntropy: result.QuantumMetrics.EntanglementEntropy,
+			}
+			protector.StoreRealQuantumMetrics(header.Number.Uint64(), header.Time, realMetrics)
+		}
+	}
+
 	// Set header fields from Qiskit results
 	// Calculate outcome root from all outcomes
 	outcomeRoot := CalculateOutcomeRootFromBytes(outcomesBytes, int(*header.LNet), int(*header.QBits))
@@ -251,7 +285,11 @@ func (q *QMPoW) SolveQuantumPuzzles(header *types.Header) error {
 
 	// CRITICAL: Validate quantum authenticity immediately after computation
 	// This prevents classical simulation attacks during mining
-	antiClassicalProtector := NewAntiClassicalMiningProtector()
+	// Use the global protector that has the cached quantum metrics
+	antiClassicalProtector := GetGlobalAntiClassicalProtector()
+	if antiClassicalProtector == nil {
+		return fmt.Errorf("global anti-classical protector not initialized")
+	}
 	validationResult, err := antiClassicalProtector.ValidateQuantumAuthenticity(header)
 	if err != nil {
 		log.Warn("❌ Mining: Anti-classical validation failed",

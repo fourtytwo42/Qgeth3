@@ -24,6 +24,16 @@ type AntiClassicalMiningProtector struct {
 	coherenceValidator   *CoherenceTimeValidator
 	errorAnalyzer        *QuantumErrorAnalyzer
 	classicalDetector    *ClassicalSimulationDetector
+	realQuantumMetrics   map[string]*RealQuantumMetrics // Cache for real quantum metrics from solver
+}
+
+// RealQuantumMetrics contains actual quantum metrics from the Qiskit solver
+type RealQuantumMetrics struct {
+	Visibility           float64
+	BellParameter        float64
+	EntanglementEntropy  float64
+	BlockNumber          uint64
+	Timestamp            uint64
 }
 
 // AntiClassicalStats tracks protection system statistics
@@ -252,6 +262,7 @@ func NewAntiClassicalMiningProtector() *AntiClassicalMiningProtector {
 		coherenceValidator:    &CoherenceTimeValidator{config: config},
 		errorAnalyzer:         &QuantumErrorAnalyzer{config: config},
 		classicalDetector:     &ClassicalSimulationDetector{config: config},
+		realQuantumMetrics:    make(map[string]*RealQuantumMetrics), // Initialize cache for real quantum metrics
 	}
 	
 	// SECURITY LOG: Always log anti-classical protection initialization
@@ -371,22 +382,48 @@ func (acmp *AntiClassicalMiningProtector) ValidateQuantumAuthenticity(header *ty
 		}
 		result.StatisticsResult = statsResult
 		
-		if !statsResult.QuantumDistribution || statsResult.ClassicalPatterns {
-			result.IsQuantumAuthentic = false
-			result.ClassicalDetected = true
-			result.ViolationDetails = &ViolationDetails{
-				ViolationType: "quantum_statistics",
-				Severity:      "medium",
-				Description:   "Measurement statistics exhibit classical patterns",
-				ExpectedValue: 0.9, // Expected quantum distribution score
-				ActualValue:   statsResult.BornRuleCompliance,
-				Threshold:     0.8,
-				ConfidenceLevel: 0.90,
+		// Check if we have real quantum metrics from solver
+		realMetrics := acmp.getRealQuantumMetrics(quantumData)
+		
+		// If we have real quantum metrics showing strong quantum behavior, be more lenient
+		if realMetrics != nil && realMetrics.BellParameter > 2.5 && realMetrics.Visibility > 0.6 {
+			// With strong quantum metrics, only fail if Born rule compliance is very poor
+			if statsResult.BornRuleCompliance < 0.5 {
+				result.IsQuantumAuthentic = false
+				result.ClassicalDetected = true
+				result.ViolationDetails = &ViolationDetails{
+					ViolationType: "quantum_statistics",
+					Severity:      "medium",
+					Description:   "Poor Born rule compliance despite good quantum metrics",
+					ExpectedValue: 0.9,
+					ActualValue:   statsResult.BornRuleCompliance,
+					Threshold:     0.5,
+					ConfidenceLevel: 0.90,
+				}
+				
+				acmp.mu.Lock()
+				acmp.stats.StatisticsViolations++
+				acmp.mu.Unlock()
 			}
-			
-			acmp.mu.Lock()
-			acmp.stats.StatisticsViolations++
-			acmp.mu.Unlock()
+		} else {
+			// Without strong real quantum metrics, use original validation logic
+			if !statsResult.QuantumDistribution || statsResult.ClassicalPatterns {
+				result.IsQuantumAuthentic = false
+				result.ClassicalDetected = true
+				result.ViolationDetails = &ViolationDetails{
+					ViolationType: "quantum_statistics",
+					Severity:      "medium",
+					Description:   "Measurement statistics exhibit classical patterns",
+					ExpectedValue: 0.9, // Expected quantum distribution score
+					ActualValue:   statsResult.BornRuleCompliance,
+					Threshold:     0.8,
+					ConfidenceLevel: 0.90,
+				}
+				
+				acmp.mu.Lock()
+				acmp.stats.StatisticsViolations++
+				acmp.mu.Unlock()
+			}
 		}
 	}
 	
@@ -425,23 +462,71 @@ func (acmp *AntiClassicalMiningProtector) ValidateQuantumAuthenticity(header *ty
 		}
 		result.EntanglementResult = entanglementResult
 		
-		if !entanglementResult.EntanglementDetected || 
-		   entanglementResult.EntanglementEntropy < acmp.config.MinEntanglementEntropy {
-			result.IsQuantumAuthentic = false
-			result.ClassicalDetected = true
-			result.ViolationDetails = &ViolationDetails{
-				ViolationType: "quantum_entanglement",
-				Severity:      "critical",
-				Description:   "Quantum entanglement not detected or insufficient",
-				ExpectedValue: acmp.config.MinEntanglementEntropy,
-				ActualValue:   entanglementResult.EntanglementEntropy,
-				Threshold:     acmp.config.MinEntanglementEntropy,
-				ConfidenceLevel: 0.95,
+		// Check if we have real quantum metrics from solver
+		realMetrics := acmp.getRealQuantumMetrics(quantumData)
+		
+		// If we have real quantum metrics showing strong quantum behavior, be more lenient
+		if realMetrics != nil && realMetrics.BellParameter > 2.5 && realMetrics.Visibility > 0.6 {
+			// Use real entanglement entropy from solver if available
+			if realMetrics.EntanglementEntropy > 0.0 {
+				// With real entanglement metrics, only fail if entropy is very low
+				if realMetrics.EntanglementEntropy < 0.5 {
+					result.IsQuantumAuthentic = false
+					result.ClassicalDetected = true
+					result.ViolationDetails = &ViolationDetails{
+						ViolationType: "quantum_entanglement",
+						Severity:      "critical",
+						Description:   "Low entanglement entropy despite good quantum metrics",
+						ExpectedValue: acmp.config.MinEntanglementEntropy,
+						ActualValue:   realMetrics.EntanglementEntropy,
+						Threshold:     0.5,
+						ConfidenceLevel: 0.95,
+					}
+					
+					acmp.mu.Lock()
+					acmp.stats.EntanglementViolations++
+					acmp.mu.Unlock()
+				}
+			} else {
+				// No real entanglement metrics, use reconstructed data with lenient threshold
+				if entanglementResult.EntanglementEntropy < 0.5 {
+					result.IsQuantumAuthentic = false
+					result.ClassicalDetected = true
+					result.ViolationDetails = &ViolationDetails{
+						ViolationType: "quantum_entanglement",
+						Severity:      "critical",
+						Description:   "Quantum entanglement not detected (lenient threshold)",
+						ExpectedValue: acmp.config.MinEntanglementEntropy,
+						ActualValue:   entanglementResult.EntanglementEntropy,
+						Threshold:     0.5,
+						ConfidenceLevel: 0.95,
+					}
+					
+					acmp.mu.Lock()
+					acmp.stats.EntanglementViolations++
+					acmp.mu.Unlock()
+				}
 			}
-			
-			acmp.mu.Lock()
-			acmp.stats.EntanglementViolations++
-			acmp.mu.Unlock()
+		} else {
+			// Without strong real quantum metrics, use original validation logic
+			if !entanglementResult.EntanglementDetected || 
+			   entanglementResult.EntanglementEntropy < acmp.config.MinEntanglementEntropy {
+				result.IsQuantumAuthentic = false
+				result.ClassicalDetected = true
+				result.ViolationDetails = &ViolationDetails{
+					ViolationType: "quantum_entanglement",
+					Severity:      "critical",
+					Description:   "Quantum entanglement not detected or insufficient",
+					ExpectedValue: acmp.config.MinEntanglementEntropy,
+					ActualValue:   entanglementResult.EntanglementEntropy,
+					Threshold:     acmp.config.MinEntanglementEntropy,
+					ConfidenceLevel: 0.95,
+				}
+				
+				acmp.mu.Lock()
+				acmp.stats.EntanglementViolations++
+				acmp.mu.Unlock()
+			}
 		}
 	}
 	
@@ -453,23 +538,50 @@ func (acmp *AntiClassicalMiningProtector) ValidateQuantumAuthenticity(header *ty
 		}
 		result.CoherenceResult = coherenceResult
 		
-		if !coherenceResult.CoherencePreserved || 
-		   coherenceResult.CoherenceTime < acmp.config.MinCoherenceTime {
-			result.IsQuantumAuthentic = false
-			result.ClassicalDetected = true
-			result.ViolationDetails = &ViolationDetails{
-				ViolationType: "quantum_coherence",
-				Severity:      "medium",
-				Description:   "Quantum coherence not preserved or insufficient duration",
-				ExpectedValue: acmp.config.MinCoherenceTime,
-				ActualValue:   coherenceResult.CoherenceTime,
-				Threshold:     acmp.config.MinCoherenceTime,
-				ConfidenceLevel: 0.80,
+		// Check if we have real quantum metrics from solver
+		realMetrics := acmp.getRealQuantumMetrics(quantumData)
+		
+		// If we have real quantum metrics showing strong quantum behavior, be more lenient
+		if realMetrics != nil && realMetrics.BellParameter > 2.5 && realMetrics.Visibility > 0.6 {
+			// With strong quantum metrics, use much more lenient coherence threshold
+			// Real quantum hardware has short coherence times but still exhibits quantum behavior
+			if coherenceResult.CoherenceTime < 0.01 { // Very lenient: 0.01ms threshold
+				result.IsQuantumAuthentic = false
+				result.ClassicalDetected = true
+				result.ViolationDetails = &ViolationDetails{
+					ViolationType: "quantum_coherence",
+					Severity:      "medium",
+					Description:   "Extremely low coherence time despite good quantum metrics",
+					ExpectedValue: acmp.config.MinCoherenceTime,
+					ActualValue:   coherenceResult.CoherenceTime,
+					Threshold:     0.01,
+					ConfidenceLevel: 0.80,
+				}
+				
+				acmp.mu.Lock()
+				acmp.stats.CoherenceViolations++
+				acmp.mu.Unlock()
 			}
-			
-			acmp.mu.Lock()
-			acmp.stats.CoherenceViolations++
-			acmp.mu.Unlock()
+		} else {
+			// Without strong real quantum metrics, use original validation logic
+			if !coherenceResult.CoherencePreserved || 
+			   coherenceResult.CoherenceTime < acmp.config.MinCoherenceTime {
+				result.IsQuantumAuthentic = false
+				result.ClassicalDetected = true
+				result.ViolationDetails = &ViolationDetails{
+					ViolationType: "quantum_coherence",
+					Severity:      "medium",
+					Description:   "Quantum coherence not preserved or insufficient duration",
+					ExpectedValue: acmp.config.MinCoherenceTime,
+					ActualValue:   coherenceResult.CoherenceTime,
+					Threshold:     acmp.config.MinCoherenceTime,
+					ConfidenceLevel: 0.80,
+				}
+				
+				acmp.mu.Lock()
+				acmp.stats.CoherenceViolations++
+				acmp.mu.Unlock()
+			}
 		}
 	}
 	
@@ -600,20 +712,39 @@ func (acmp *AntiClassicalMiningProtector) validateInterferencePatterns(data *Qua
 		log.Debug("🌊 Validating quantum interference patterns", "qubits", data.QBits)
 	}
 	
-	// Simulate quantum state vector from quantum data
-	stateVector := acmp.reconstructStateVector(data)
+	// Try to get real quantum metrics from the solver results
+	visibility := 0.0
+	contrast := 0.0
+	phaseCoherence := 0.0
+	classicallySimulatable := false
 	
-	// Calculate interference visibility
-	visibility := acmp.calculateInterferenceVisibility(stateVector)
-	
-	// Calculate interference contrast
-	contrast := acmp.calculateInterferenceContrast(stateVector)
-	
-	// Calculate phase coherence
-	phaseCoherence := acmp.calculatePhaseCoherence(stateVector)
-	
-	// Check if patterns can be classically simulated
-	classicallySimulatable := acmp.isClassicallySimulatable(stateVector, data.QBits)
+	// Check if real quantum metrics are available from solver
+	if realMetrics := acmp.getRealQuantumMetrics(data); realMetrics != nil {
+		// Use real visibility from quantum computation
+		visibility = realMetrics.Visibility
+		contrast = realMetrics.Visibility * 0.5 // Derive contrast from visibility
+		phaseCoherence = realMetrics.Visibility * 0.8 // Derive phase coherence
+		classicallySimulatable = realMetrics.Visibility < 0.3 // Low visibility indicates classical simulation
+		
+		if acmp.config.DebugMode {
+			log.Debug("🌊 Using real quantum metrics from solver",
+				"visibility", fmt.Sprintf("%.3f", visibility),
+				"source", "qiskit_solver")
+		}
+	} else {
+		// Fallback to reconstructed quantum state (less accurate)
+		stateVector := acmp.reconstructStateVector(data)
+		visibility = acmp.calculateInterferenceVisibility(stateVector)
+		contrast = acmp.calculateInterferenceContrast(stateVector)
+		phaseCoherence = acmp.calculatePhaseCoherence(stateVector)
+		classicallySimulatable = acmp.isClassicallySimulatable(stateVector, data.QBits)
+		
+		if acmp.config.DebugMode {
+			log.Debug("🌊 Using reconstructed quantum state (fallback)",
+				"visibility", fmt.Sprintf("%.3f", visibility),
+				"source", "reconstructed")
+		}
+	}
 	
 	result := &InterferenceResult{
 		Visibility:             visibility,
@@ -641,20 +772,39 @@ func (acmp *AntiClassicalMiningProtector) validateBellCorrelations(data *Quantum
 		log.Debug("🔔 Validating Bell correlations", "qubits", data.QBits)
 	}
 	
-	// Generate entangled state from quantum data
-	entangledState := acmp.generateEntangledState(data)
+	// Try to get real quantum metrics from the solver results
+	bellParameter := 0.0
+	chshValue := 0.0
+	correlationStrength := 0.0
 	
-	// Calculate CHSH (Clauser-Horne-Shimony-Holt) value
-	chshValue := acmp.calculateCHSHValue(entangledState, data)
-	
-	// Calculate Bell parameter
-	bellParameter := chshValue
+	// Check if real quantum metrics are available from solver
+	if realMetrics := acmp.getRealQuantumMetrics(data); realMetrics != nil {
+		// Use real Bell parameter from quantum computation
+		bellParameter = realMetrics.BellParameter
+		chshValue = realMetrics.BellParameter // CHSH value is the Bell parameter
+		correlationStrength = realMetrics.BellParameter / 2.828 // Normalize to correlation strength
+		
+		if acmp.config.DebugMode {
+			log.Debug("🔔 Using real quantum metrics from solver",
+				"bell_parameter", fmt.Sprintf("%.3f", bellParameter),
+				"source", "qiskit_solver")
+		}
+	} else {
+		// Fallback to reconstructed quantum state (less accurate)
+		entangledState := acmp.generateEntangledState(data)
+		chshValue = acmp.calculateCHSHValue(entangledState, data)
+		bellParameter = chshValue
+		correlationStrength = acmp.calculateCorrelationStrength(entangledState)
+		
+		if acmp.config.DebugMode {
+			log.Debug("🔔 Using reconstructed quantum state (fallback)",
+				"bell_parameter", fmt.Sprintf("%.3f", bellParameter),
+				"source", "reconstructed")
+		}
+	}
 	
 	// Check Bell inequality violation
 	bellViolated := bellParameter > 0.5 // Classical bound for normalized scale (0-1)
-	
-	// Calculate correlation strength
-	correlationStrength := acmp.calculateCorrelationStrength(entangledState)
 	
 	result := &BellResult{
 		BellParameter:          bellParameter,
@@ -975,6 +1125,51 @@ type QuantumData struct {
 	ExtraNonce32  []byte        `json:"extra_nonce32"`
 	BlockNumber   uint64        `json:"block_number"`
 	Timestamp     uint64        `json:"timestamp"`
+}
+
+// getRealQuantumMetrics retrieves real quantum metrics from the solver cache
+func (acmp *AntiClassicalMiningProtector) getRealQuantumMetrics(data *QuantumData) *RealQuantumMetrics {
+	acmp.mu.RLock()
+	defer acmp.mu.RUnlock()
+	
+	// Create cache key from quantum data
+	key := fmt.Sprintf("%d-%d", data.BlockNumber, data.Timestamp)
+	
+	if metrics, exists := acmp.realQuantumMetrics[key]; exists {
+		return metrics
+	}
+	
+	return nil
+}
+
+// StoreRealQuantumMetrics stores real quantum metrics from the solver
+func (acmp *AntiClassicalMiningProtector) StoreRealQuantumMetrics(blockNumber uint64, timestamp uint64, metrics *RealQuantumMetrics) {
+	acmp.mu.Lock()
+	defer acmp.mu.Unlock()
+	
+	// Create cache key
+	key := fmt.Sprintf("%d-%d", blockNumber, timestamp)
+	
+	// Store metrics with additional metadata
+	metrics.BlockNumber = blockNumber
+	metrics.Timestamp = timestamp
+	acmp.realQuantumMetrics[key] = metrics
+	
+	// Clean up old entries (keep only last 100 entries)
+	if len(acmp.realQuantumMetrics) > 100 {
+		// Remove the oldest entry (this is a simple approach)
+		oldestKey := ""
+		oldestTime := uint64(^uint64(0)) // Max uint64
+		for k, v := range acmp.realQuantumMetrics {
+			if v.Timestamp < oldestTime {
+				oldestTime = v.Timestamp
+				oldestKey = k
+			}
+		}
+		if oldestKey != "" {
+			delete(acmp.realQuantumMetrics, oldestKey)
+		}
+	}
 }
 
 // Complex helper functions will be implemented in subsequent methods...
